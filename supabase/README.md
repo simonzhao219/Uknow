@@ -43,6 +43,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `announcements` | 系統公告 | N |
 | `system_alerts` | 背景失敗告警（error 級推 LINE，見下方〈告警 severity〉） | N |
 | `rate_limits` | 端點限流計數（pg_cron 每小時清掉超過 2 天的列） | N |
+| `scheduled_job_runs` | 排程端點（對帳、刊登照片清理）的執行帳本兼租約；GitHub 看門狗與準時度量測都讀它（見下方〈排程〉） | N |
 
 ## 衍生 View / 函數（即時計算）
 
@@ -72,6 +73,10 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `bump_rate_limit` / `prune_rate_limits` | 固定窗口限流計數（fail-open）／清理過期計數列（pg_cron 排程 `prune-rate-limits`） |
 | `refund_rate_limit` | 把 bump 過的計數原子退一格（`count > 0` 守衛；Email 邀請沒寄出時退推薦人額度；只給 service_role） |
 | `purge_stale_referral_invites` | 刪除 Email 邀請建立、逾期未驗證的空殼帳號（pg_cron 排程 `purge-stale-referral-invites`；帶 `p_email` 給客服立即刪除；只給 service_role） |
+| `begin_scheduled_run` / `finish_scheduled_run` | 排程租約：partial unique `(job) where status='running'`，同一 job 同時只跑一個，其餘落 `skipped`；15 分鐘前的 `running` 改 `abandoned`（只給 service_role） |
+| `invoke_internal_endpoint` | pg_cron 呼叫對帳／清理端點：讀 Vault 兩筆、經 pg_net 送 POST；Vault 缺值寫 `skipped/vault_missing`（不開放任何 API 角色） |
+| `scheduler_health` | `GET /internal/scheduler-health` 的資料來源（帳本、`cron.job`、`net._http_response`）；形狀由 `scripts/fixtures/scheduler-health/shape.json` 釘住 |
+| `prune_scheduled_job_runs` / `pause_scheduled_jobs` / `resume_scheduled_jobs` | 帳本 90 天清理（pg_cron 排程 `prune-scheduled-job-runs`）／一鍵停與恢復（只切 `cron.job.active`） |
 | `delete_auth_audit_for_users` | 刪除指向指定使用者的 GoTrue 稽核列（purge 同交易呼叫；補償路徑在 GoTrue `deleteUser` 之後呼叫；只給 service_role） |
 | `referral_invite_issued_at` | 從 `app_metadata.referral_invite` 取出寄出時間；壞值回 null 讓 purge 跳過該列而不中斷整批（purge 內部用；不開放任何角色） |
 | `has_active_subscription` | 會籍有效判斷（公開瀏覽用） |
@@ -83,16 +88,65 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 以 service_role 呼叫。金流相關函數的每個副作用各包一層 `begin…exception`
 （warning-only），單一步驟失敗只寫 `system_alerts`，不整筆回滾。
 
-**告警 severity**：`system_alerts` 分 info／warning／error，**只有 error 會推 LINE**（`reconcile-payments.yml` 每輪呼叫
-`/internal/system-alerts/recent` 撈 error），warning 只在後台「系統告警」頁看得到。
+**告警 severity**：`system_alerts` 分 info／warning／error，**只有 error 會推 LINE**（`reconcile-payments.yml` 的看門狗
+每小時呼叫 `/internal/system-alerts/recent` 撈 error），warning 只在後台「系統告警」頁看得到。
 - **error**：錢或會籍需要人確認的——已付款但收斂失敗、找不到訂單、金額不符、查詢層失敗下將標 expired、notify／return
   驗章失敗、SQL 側 `repair_*` 失敗、Email 邀請寄送失敗，以及 PayUni 拒絕中「每個人都付不了」的兩種：商店級
   （`payuni-merchant`：`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`，碼表在 `payuni-rejection.ts` 檔頭）與
   一小時內 ≥3 位不同使用者連續失敗（`payuni-failure-burst`）。
+  排程類：對帳查詢**擲錯**全滅（`checked ≥ 2`，502）或過半（`checked ≥ 3`）——`query_all_failed`／`query_majority_failed`，
+  加 UTC 小時桶；pg_cron 觸發的照片清理失敗（斷路器、`sweep_failed`，加 UTC 日期桶）。
 - **持卡人級拒絕**（帶 `ResCode` 的 `CREDIT*`）單筆不告警：使用者自己看得到、可以重試。
 - **warning**：對帳的單筆例外（標 expired 失敗、單筆查詢例外）——下一輪排程會自行重試，沒有持久後果。
+  pg_cron 觸發的照片清理有物件刪不掉（`not_removed`）也是 warning。
 - 「該不該寫告警」的三條件判準與去重規則（`logSystemAlertOnce`：鍵要含實體識別碼；商店級加 UTC 日期桶、burst 加小時鍵，
   沒人 resolve 時隔天／下一小時會再推）寫在 `supabase/functions/api/index.ts` 的 `logSystemAlert` 上方註解，這裡不重複。
+
+## 排程
+
+| 排程（`cron.job`） | 時間（UTC） | 做什麼 | 來源 |
+|---|---|---|---|
+| `reconcile-pending-payments` | `7 * * * *` | `invoke_internal_endpoint('reconcile')` → `POST /internal/reconcile-pending-payments` | `20261111000001` |
+| `purge-orphan-listing-photos` | `17 19 * * *` | `invoke_internal_endpoint('purge-photos')` → `POST /internal/purge-orphan-listing-photos`；實刪看 Edge secret `PHOTO_PURGE_LIVE` | `20261111000001` |
+| `prune-scheduled-job-runs` | `41 4 * * *` | 帳本 90 天清理 | `20261111000001` |
+| `prune-rate-limits` | `17 * * * *` | 限流計數清理 | `20261017000001` |
+| `purge-stale-referral-invites` | `23 3 * * *` | Email 邀請空殼帳號清理 | `20261025000011` |
+
+- **為什麼對帳與照片清理不用 GitHub 排程觸發**：GitHub 會大量跳過整點排程，對帳 24 小時只跑 3 次。pg_cron 在同一個 DB 上 48/48 準時，啟動延遲最大 0.23 秒（2026-11-04 正式站實測）。
+- **pg_net 是非同步的**：`cron.job_run_details` 只記「請求排進佇列」，端點有沒有做完要看帳本 `scheduled_job_runs`。pg_net 的 `timeout_milliseconds` 設 150000，不會重試。
+- **憑證**：URL 與 `x-internal-secret` 放在 Vault 的 `uknow_api_base_url`、`uknow_internal_secret` 兩筆，各環境由人建立，不寫進 migration。設定順序見 `docs/supabase-setup-checklist.md`〈pg_cron 排程〉。
+- **Vault 缺值**：寫一列 `skipped/vault_missing`，不送請求。拋棄式分支就是這樣空轉。
+- **pg_net 權限**（W5-31，接受平台預設）：
+  - anon／authenticated 在 SQL 層有 `net` 的權限，postgres 角色收不回來。
+  - PostgREST 不暴露 `net`，經 REST 碰不到。
+  - 本案函式都已 revoke，vault 不可讀。
+  - 由 `scheduled-job-runs.test.ts` 釘住。
+- **GitHub 看門狗兼後備觸發**：`reconcile-payments.yml` 每小時一次，`purge-listing-photos.yml` 每日一次。
+  - 判準在 `scripts/scheduler-watchdog.py`：
+    - pg_cron 對帳的完成列超過 90 分鐘、或照片清理的完成列超過 26 小時，就由 GitHub 補跑並推 LINE；
+    - 停擺告警以 6 小時節流；
+    - 人為停用每日推一則；
+    - 照片清理的開關不一致推 LINE P2。
+  - 業務失敗（例如 `query_all_failed`）也算完成，不會觸發補跑。
+- **一鍵停／恢復**（正式站 SQL Editor）：
+
+  ```sql
+  select public.pause_scheduled_jobs();   -- 只切 active=false，排程列保留；看門狗接手並每日提醒「人為停用中」
+  select public.resume_scheduled_jobs();
+  ```
+
+  函式壞掉時的備援：
+
+  ```sql
+  select cron.alter_job(job_id := jobid, active := false)
+    from cron.job where jobname in ('reconcile-pending-payments', 'purge-orphan-listing-photos');
+  ```
+
+  直接 `cron.unschedule` 也可以，但看門狗會判成「排程不存在」並推 P1。要補回時重跑 `20261111000001` 檔尾的三段 `cron.schedule`。
+- **準時度量測**（W4-26，晉升後 24～48 小時由主 session 跑）：
+  - `cron.job_run_details` join `cron.job`：pg_cron 有沒有準時排進請求。
+  - `scheduled_job_runs`：端點有沒有做完。判準以這張為準：pg_cron 完成列 24 小時 ≥ 23 列，相鄰間隔 ≤ 70 分鐘，`trigger='github'` 補跑為 0，`abandoned` 為 0。
+  - `net._http_response`：非 200 為 0（只保留約 6 小時）。
 
 ## Edge Function
 
@@ -130,6 +184,7 @@ migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
 | `20260726000002_name_write_paths` | `profiles.name` 寫入收斂到 Edge Function:撤銷 authenticated 的 `update (name)`、`handle_new_user` 不再從 metadata 帶入姓名 |
 | `20261017000003_revoke_profile_self_update_grants` | authenticated 對 `profiles` 的 UPDATE 全數撤銷——個人資料只能經 Edge Function 寫入 |
 | `20261017000004_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
+| `20261111000001_scheduled_job_runs` | 對帳與照片清理改由 pg_cron 經 pg_net 觸發；排程帳本兼租約、`scheduler_health`、Vault 憑證（見〈排程〉） |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
