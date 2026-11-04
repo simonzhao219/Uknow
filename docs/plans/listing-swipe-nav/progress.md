@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ⬜ 未開始 | | |
+| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ✅ 綠 | 45975d2 | (待填) |
 | 2 | 座標表＋區級排序＋動態載入接入＋預算決定 | ⬜ 未開始 | | |
 | 3 | 等待狀態機＋FLIP 重排＋orderMode | ⬜ 未開始 | | |
 | 4 | 凍結脈絡＋lastViewedId＋返回定位 | ⬜ 未開始 | | |
@@ -21,7 +21,7 @@
 
 ## 目前位置與下一步
 
-規劃書 v2（含 W5-24～28）已寫成，待重跑 /review-plan（P0 須清）後由主 session 審、業主親打 /tdd-implement。
+開工授權：業主 2026-11-05 在本 session 親打 /tdd-implement；階段 1 完成，下一步階段 2（座標表授權確認→座標表＋區級排序）。
 
 ## Blockers(逃生口紀錄)
 

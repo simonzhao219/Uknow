@@ -38,7 +38,7 @@ import {
   listingMatchesDistricts,
   type DistrictSelectionByCity,
 } from '../utils/districtSelection';
-import { listingMatchesSearch } from '../utils/listingSearch';
+import { filterAndSortListings } from '../utils/homeListingOrder';
 import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
@@ -54,47 +54,6 @@ import {
   setCachedFilters,
   setCachedListings,
 } from '../utils/homeListingsCache';
-
-// 計算兩個經緯度座標之間的距離（使用 Haversine 公式，單位：公里）
-const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-  const R = 6371; // 地球半徑（公里）
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
-// 台灣縣市座標對照表（用於距離計算）
-const cityCoordinates: Record<string, { lat: number; lng: number }> = {
-  台北市: { lat: 25.033, lng: 121.5654 },
-  新北市: { lat: 25.0118, lng: 121.4654 },
-  桃園市: { lat: 24.9936, lng: 121.301 },
-  台中市: { lat: 24.1477, lng: 120.6736 },
-  台南市: { lat: 22.9999, lng: 120.2269 },
-  高雄市: { lat: 22.6273, lng: 120.3014 },
-  基隆市: { lat: 25.1276, lng: 121.7392 },
-  新竹市: { lat: 24.8138, lng: 120.9675 },
-  嘉義市: { lat: 23.4801, lng: 120.4491 },
-  新竹縣: { lat: 24.8387, lng: 121.0177 },
-  苗栗縣: { lat: 24.5604, lng: 120.8214 },
-  彰化縣: { lat: 24.0518, lng: 120.5161 },
-  南投縣: { lat: 23.9609, lng: 120.9719 },
-  雲林縣: { lat: 23.7092, lng: 120.4313 },
-  嘉義縣: { lat: 23.4518, lng: 120.2554 },
-  屏東縣: { lat: 22.5519, lng: 120.5487 },
-  宜蘭縣: { lat: 24.7021, lng: 121.7378 },
-  花蓮縣: { lat: 23.9871, lng: 121.6015 },
-  台東縣: { lat: 22.7972, lng: 121.1713 },
-  澎湖縣: { lat: 23.5713, lng: 119.5794 },
-  金門縣: { lat: 24.4324, lng: 118.3175 },
-  連江縣: { lat: 26.1605, lng: 119.9297 },
-};
 
 // 依 districts 陣列組出可讀的地區字串：有「全區」只顯示全區，否則最多前 10 個。
 // 手機與桌面卡片共用，避免重複邏輯。
@@ -272,76 +231,15 @@ export function HomePage() {
     (loadError ? errorRef : headingRef).current?.focus();
   }, [loading, loadError]);
 
-  const filteredServiceProviders = useMemo(() => {
-    let filtered = serviceProviders.filter((serviceProvider) => {
-      // 關鍵字搜尋（名稱／服務介紹／服務類別）。判定抽在 utils/listingSearch.ts，
-      // 那裡才驗得到「placeholder 承諾的三個範圍都真的比對得到」。
-      if (!listingMatchesSearch(searchQuery, serviceProvider)) {
-        return false;
-      }
-
-      // 服務類別篩選（單選）
-      if (selectedCategory && serviceProvider.category !== selectedCategory) {
-        return false;
-      }
-
-      // ✅ 性別篩選（使用后端的 gender 字段）
-      if (selectedGenders.length > 0) {
-        if (!serviceProvider.gender || !selectedGenders.includes(serviceProvider.gender)) {
-          return false;
-        }
-      }
-
-      // 地區篩選：縣市層先比對，區層交由縣市 scope 的判定（該市勾全區
-      // 或區清空＝該市全過；具體區要有交集；同名區不跨市誤配）。
-      if (selectedCities.length > 0) {
-        if (!selectedCities.includes(serviceProvider.city)) {
-          return false;
-        }
-        if (
-          !listingMatchesDistricts(districtsByCity, serviceProvider.city, serviceProvider.districts)
-        ) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-
-    // 僅在取得使用者真實定位後，才依「由近到遠」排序；
-    // 未授權 / 不支援時保留後端的最新（created_at desc）排序，不假裝依距離。
-    if (userCoords) {
-      filtered = [...filtered].sort((a, b) => {
-        const aCoords = cityCoordinates[a.city];
-        const bCoords = cityCoordinates[b.city];
-        if (!aCoords && !bCoords) return 0;
-        if (!aCoords) return 1;
-        if (!bCoords) return -1;
-        const distanceA = calculateDistance(
-          userCoords.lat,
-          userCoords.lng,
-          aCoords.lat,
-          aCoords.lng,
-        );
-        const distanceB = calculateDistance(
-          userCoords.lat,
-          userCoords.lng,
-          bCoords.lat,
-          bCoords.lng,
-        );
-        return distanceA - distanceB;
-      });
-    }
-
-    return filtered;
-  }, [
-    serviceProviders,
-    searchQuery,
-    selectedCategory,
-    selectedGenders,
-    districtsByCity,
-    userCoords,
-  ]);
+  const filteredServiceProviders = useMemo(
+    () =>
+      filterAndSortListings(
+        serviceProviders,
+        { searchQuery, category: selectedCategory, genders: selectedGenders, districtsByCity },
+        userCoords,
+      ),
+    [serviceProviders, searchQuery, selectedCategory, selectedGenders, districtsByCity, userCoords],
+  );
 
   // 載入中與讀取失敗時沒有「結果數」可說：面板主鈕不寫「查看 0 位」（§6：失敗不寫找到 0 筆）
   const resultCount = loading || loadError ? null : filteredServiceProviders.length;
