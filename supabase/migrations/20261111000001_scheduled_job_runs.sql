@@ -96,3 +96,122 @@ revoke execute on function public.begin_scheduled_run(text, text) from anon, aut
 revoke execute on function public.finish_scheduled_run(bigint, text, jsonb, text) from anon, authenticated, public;
 grant execute on function public.begin_scheduled_run(text, text) to service_role;
 grant execute on function public.finish_scheduled_run(bigint, text, jsonb, text) to service_role;
+
+-- ============================================================
+-- scheduler_health()：GET /internal/scheduler-health 的資料來源（GitHub 看門狗
+-- 每小時讀）。回應形狀由 scripts/fixtures/scheduler-health/shape.json 釘住。
+--
+-- 「完成列」：status 為 succeeded／failed，且 error_code 不是傳輸／設定類
+-- （vault_missing、exception）。業務失敗（query_all_failed、circuit_open）也算
+-- 完成——pg_cron 與 Edge 都正常、是下游有問題，看門狗不該補跑或推「停擺」。
+-- lastPgCronCompletedAt 只看 pg_cron 列：GitHub 補跑寫的完成列不得刷新它，
+-- 否則停擺期間看門狗會以為恢復了。
+--
+-- pgNet6h：net._http_response 只保留約 6 小時，只當診斷用；pg_net 尚未安裝時為
+-- null（動態查詢，免得函式在 pg_net 之前建立就失效）。不回帳本明細（summary）。
+-- ============================================================
+create or replace function public.scheduler_health()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_jobs jsonb := '{}'::jsonb;
+  v_job text;
+  v_cron_name text;
+  v_present boolean;
+  v_active boolean;
+  v_completed record;
+  v_pg_completed timestamptz;
+  v_pg_row record;
+  v_counts jsonb;
+  v_dry_run boolean;
+  v_net jsonb := null;
+begin
+  foreach v_job in array array['reconcile', 'purge-photos'] loop
+    v_cron_name := case v_job
+      when 'reconcile' then 'reconcile-pending-payments'
+      else 'purge-orphan-listing-photos'
+    end;
+
+    select true, j.active into v_present, v_active from cron.job j where j.jobname = v_cron_name;
+    v_present := coalesce(v_present, false);
+    v_active := coalesce(v_active, false);
+
+    select r.finished_at, r.status, r.trigger into v_completed
+      from public.scheduled_job_runs r
+     where r.job = v_job and r.status in ('succeeded', 'failed')
+       and coalesce(r.error_code, '') not in ('vault_missing', 'exception')
+     order by r.finished_at desc nulls last, r.id desc limit 1;
+
+    select max(r.finished_at) into v_pg_completed
+      from public.scheduled_job_runs r
+     where r.job = v_job and r.trigger = 'pg_cron' and r.status in ('succeeded', 'failed')
+       and coalesce(r.error_code, '') not in ('vault_missing', 'exception');
+
+    select r.started_at, r.error_code into v_pg_row
+      from public.scheduled_job_runs r
+     where r.job = v_job and r.trigger = 'pg_cron'
+     order by r.started_at desc, r.id desc limit 1;
+
+    select jsonb_build_object(
+             'succeeded', count(*) filter (where r.status = 'succeeded'),
+             'failed', count(*) filter (where r.status = 'failed'),
+             'skipped', count(*) filter (where r.status = 'skipped'),
+             'abandoned', count(*) filter (where r.status = 'abandoned'))
+      into v_counts
+      from public.scheduled_job_runs r
+     where r.job = v_job and r.started_at > now() - interval '24 hours';
+
+    v_dry_run := null;
+    if v_job = 'purge-photos' then
+      select (r.summary ->> 'dryRun')::boolean into v_dry_run
+        from public.scheduled_job_runs r
+       where r.job = v_job and r.trigger = 'pg_cron' and r.summary ? 'dryRun'
+       order by r.started_at desc, r.id desc limit 1;
+    end if;
+
+    v_jobs := v_jobs || jsonb_build_object(v_job, jsonb_build_object(
+      'cronJobPresent', v_present,
+      'cronJobActive', v_active,
+      'lastCompletedAt', v_completed.finished_at,
+      'lastCompletedStatus', v_completed.status,
+      'lastCompletedTrigger', v_completed.trigger,
+      'lastPgCronCompletedAt', v_pg_completed,
+      'lastPgCronRowAt', v_pg_row.started_at,
+      'lastPgCronErrorCode', v_pg_row.error_code,
+      'counts24h', v_counts,
+      'lastPurgeDryRun', v_dry_run
+    ));
+    v_completed := null;
+    v_pg_row := null;
+    v_present := null;
+    v_active := null;
+  end loop;
+
+  if to_regclass('net._http_response') is not null then
+    execute $q$
+      select jsonb_build_object(
+        'non2xx', count(*) filter (where status_code is null or status_code not between 200 and 299),
+        'timedOut', count(*) filter (where timed_out),
+        'lastStatusCodes', coalesce(
+          (select jsonb_agg(coalesce(x.status_code, 0) order by x.id desc)
+             from (select id, status_code from net._http_response
+                    where created > now() - interval '6 hours'
+                    order by id desc limit 5) x),
+          '[]'::jsonb))
+      from net._http_response where created > now() - interval '6 hours'
+    $q$ into v_net;
+  end if;
+
+  return jsonb_build_object(
+    'generatedAt', now(),
+    'jobs', v_jobs,
+    'pgNet6h', coalesce(v_net, jsonb_build_object('non2xx', 0, 'timedOut', 0, 'lastStatusCodes', '[]'::jsonb))
+  );
+end;
+$$;
+
+revoke execute on function public.scheduler_health() from anon, authenticated, public;
+grant execute on function public.scheduler_health() to service_role;

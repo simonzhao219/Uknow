@@ -2962,6 +2962,25 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
 });
 
 // ============================================================
+// GET /internal/scheduler-health
+// 給 GitHub 看門狗（scripts/scheduler-watchdog.py）判斷 pg_cron 是否存活、要不要
+// 補跑。資料來自 scheduler_health() RPC；形狀由
+// scripts/fixtures/scheduler-health/shape.json 釘住。不回帳本明細。
+// ============================================================
+app.get('/internal/scheduler-health', async (c) => {
+  const secret = Deno.env.get('RECONCILE_SECRET');
+  if (!secret || !(await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret))) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  const { data, error } = await sb().rpc('scheduler_health');
+  if (error) {
+    console.error('[internal/scheduler-health] 查詢失敗:', error);
+    return c.json({ success: false, error: { message: '查詢排程狀態失敗' } }, 500);
+  }
+  return c.json({ success: true, data });
+});
+
+// ============================================================
 // GET /internal/system-alerts/recent?minutes=N
 // 給 reconcile-payments.yml 每小時呼叫，把「過去 N 分鐘內新增的 error 告警」
 // 推到 LINE（見 .github/actions/notify）。用時間窗代替 notified_at 欄：
