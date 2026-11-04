@@ -107,7 +107,15 @@ GitHub（只打正式站）
 - **密鑰落點**
   - 會短暫進 `net.http_request_queue`，送出即刪。
   - `cron.job` 的 command 只有 `select public.invoke_internal_endpoint('reconcile')`，不含密鑰，所以 `cron.job_run_details` 也不會有。
-  - 階段 0 確認 net／vault 兩個 schema 對 anon／authenticated 的權限，階段 8 以測試釘住。
+  - net／vault 權限（階段 0 ④，W5-31：業主 2026-11-05 04:00 互動選項「接受平台預設」）：
+    - pg_net 裝好後，anon／authenticated 在 SQL 層有 `net` 的 USAGE、`net.http_post` 的 EXECUTE、`net._http_response` 的 SELECT。
+    - postgres 角色收不回來，因為擁有者與授權者都是 supabase_admin。這是平台預設。
+    - 經 REST 碰不到：`supabase/config.toml` 沒設 `[api] schemas`，PostgREST 只開 public 與 graphql_public。
+    - vault schema 對 anon／authenticated 沒有 USAGE。
+    - 階段 8 以三條斷言釘住：
+      1. PostgREST 暴露的 schema 不含 `net`；
+      2. invoke 與帳本函式已 revoke；
+      3. anon／authenticated 讀不到 vault。
 - **輪替**：先改 Edge secret，再改 Vault，再手動執行一次 `invoke_internal_endpoint('reconcile')` 驗證帳本出現 `succeeded`。
   兩步之間的空檔是 401。若超過 90 分鐘，看門狗會接手並推 LINE，可接受。
 
@@ -375,9 +383,7 @@ select status_code, timed_out, error_msg, count(*) from net._http_response group
 
 ### 2.7 資料庫變更（一支 migration，版本號 rebase 後現算）
 
-- **pg_net**：`create extension if not exists pg_net`。
-  - schema、以及 Supabase 允不允許在 migration 內開，由階段 0 確認。
-  - 若不允許：改由業主在 Dashboard 開啟，migration 只斷言存在，不存在就 `raise exception`，讓問題在部署當下就出現。
+- **pg_net**：`create extension if not exists pg_net with schema extensions;`（階段 0 ①：postgres 角色在 migration 內可裝；不寫 `with schema` 的話，extension 物件會落在 public）。
 - **表 `public.scheduled_job_runs`**
   - 欄位：
     - `id bigint generated always as identity`
@@ -520,7 +526,7 @@ select status_code, timed_out, error_msg, count(*) from net._http_response group
 | 5 | 照片清理：§2.3 分流表、接 `withScheduledRun`、失敗告警、J5 skipped 判讀 | `listing-photos.unit.test.ts`（D unit）、`listing-photo-orphans.test.ts`（D）、`purge-listing-photos-request.py --self-test` | 分流表每一列；dispatch 路徑回應與現行相同；斷路器與 sweep_failed → failed＋一筆 error；notRemoved>0 → warning、succeeded；J5 判斷放在 `bad_shape` 檢查之前：skipped 回應沒有 `dryRun` 與統計欄位，照樣 exit 0，輸出不帶 body 原文；檔頭 docstring 由 J1–J4 改成 J1–J5 |
 | 6 | `scheduler_health()` RPC＋`GET /internal/scheduler-health` | `scheduler-health.test.ts`（D，留在 api-tests 軌，只改 fixture 的 PR 也會跑到） | 401；與 `shape.json` 雙向鍵集合一致；完成列的定義（業務失敗算、vault_missing／exception 不算）；`cronJobPresent`；`lastPurgeDryRun` 取非 null 的 pg_cron 列；不回明細 |
 | 7 | `scripts/scheduler-watchdog.py` | `--self-test`（framework-check），讀 `scenario-*.json` | §2.5 判準表每一列與優先序（`cronJobActive=false` 時不得落到第 6 列）；停擺時最近一筆是 github 完成列仍判逾期；resume 後 401 → 第 6 列；6 小時節流（首推、桶內不推、跨桶推、查不到上次 run 就推）；purge 26h 與開關一致性兩個方向；補跑回 skipped 為中性；一次最多一則 LINE；body 前 200 字含「下一步」 |
-| 8 | `invoke_internal_endpoint`＋`prune_scheduled_job_runs`＋`pause/resume_scheduled_jobs`＋三個 cron 排程（最後才掛） | `scheduled-job-runs.test.ts`（D） | Vault 沒值 → 回 null 並寫 `skipped/vault_missing`；有值 → 送出請求（照階段 0 的方法斷言）；`cron.job` 有三個預期排程（紅燈：沒排程時這條測試紅）；白名單外的 job 名擲錯；prune 只刪 90 天前；pause 後 `cron.job` 仍有兩列、`active=false`，resume 後恢復 `true`；測後還原 `cron.job`；權限 |
+| 8 | `invoke_internal_endpoint`＋`prune_scheduled_job_runs`＋`pause/resume_scheduled_jobs`＋三個 cron 排程（最後才掛） | `scheduled-job-runs.test.ts`（D） | Vault 沒值 → 回 null 並寫 `skipped/vault_missing`；有值 → 送出請求（照階段 0 的方法斷言）；`cron.job` 有三個預期排程（紅燈：沒排程時這條測試紅）；白名單外的 job 名擲錯；prune 只刪 90 天前；pause 後 `cron.job` 仍有兩列、`active=false`，resume 後恢復 `true`；測後還原 `cron.job`；權限依 W5-31 驗三條：PostgREST 暴露的 schema 不含 `net`、四支函式 anon／authenticated 不可 EXECUTE、anon／authenticated 對 vault 沒有 USAGE |
 | 9 | 兩支 workflow 改寫＋文件 | `check-workflows.py`、`check-spec-drift.py`、`check-migration-versions.py`、`check-plans-scaffold.py`、`check-test-names.py` | 8b 註記改寫；B1～B4 與新 J5 案例綠；同步清單見下 |
 
 **階段 9 文件同步清單**（第 2 輪架構 P2）

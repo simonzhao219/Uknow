@@ -7,7 +7,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 0 | spike：pg_net 安裝、Vault 讀取、cron.job 讀取、net／vault 權限、net.http_post 斷言法、TradeStatus 碼表 | ⛔ ④⑥ 停下回報 | — | — |
+| 0 | spike：pg_net 安裝、Vault 讀取、cron.job 讀取、net／vault 權限、net.http_post 斷言法、TradeStatus 碼表 | 🟡 ①②③⑤ ✅；④ 依 W5-31 接受平台預設；⑥ 待業主放行 docs.payuni.com.tw（W5-32 (a)），階段 2 等它 | — | — |
 | 1 | 帳本表＋begin/finish_scheduled_run＋scheduled-runs.ts | ⬜ 未開始 | | |
 | 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ⬜ 未開始 | | |
 | 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ⬜ 未開始 | | |
@@ -39,6 +39,16 @@
 
 ## Blockers（逃生口紀錄）
 
-- 2026-11-05：階段 0 的 ④⑥ 不過，依主 session 指示停下回報，不自行改設計。等主 session 或業主裁決後才進階段 1。
+- 2026-11-05：階段 0 的 ④⑥ 不過，依主 session 指示停下回報，沒有自行改設計。
+  - ④ → W5-31（業主 2026-11-05 04:00 互動選項：「接受平台預設 (Recommended)」）。plan §2.2 與階段 8 的權限斷言已照改。
+  - ⑥ → W5-32：走 (a)，業主放行 `docs.payuni.com.tw` 後由本 session 查官方碼表；仍查不到就回報主 session。主 session 指示階段 1、3～9 先做，階段 2 等碼表。
 
 ## 框架摩擦
+
+- 雲端容器的 `supabase start` 拉不到 `public.ecr.aws`（CloudFront blob 被代理擋），但 Docker Hub 拉得到。做法：
+  1. 先 `nohup dockerd &` 起 daemon；
+  2. 逐一 `docker pull supabase/<img>`（postgrest 要從 `postgrest/postgrest` 拉）；
+  3. `docker tag` 成 `public.ecr.aws/supabase/<img>`；
+  4. 再 `supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector,supavisor,mailpit`；
+  5. 跑測試前 export `supabase status -o env` 的 URL 與兩把 key（同 ci.yml）。
+- 這段該進 friction-log，收尾時搬過去。
