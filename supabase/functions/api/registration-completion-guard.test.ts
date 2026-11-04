@@ -470,3 +470,92 @@ Deno.test('register_profile：anon 與 authenticated 不得執行', async () => 
     await sql.end();
   }
 });
+
+// ============================================================
+// 推薦碼查詢（auth P0-1、P1-2＝ref P1-1，第 5 波 S2 階段 2）：register 改走
+// validate_referral_code。查詢失敗不得吞成「沒填碼」（付款時會被預設推薦人覆寫
+// ＝錯綁）；查無、停權推薦人、失效碼一律 400 且同形，不洩漏碼是否存在。
+// ============================================================
+
+async function seedReferrer(client: ReturnType<typeof adminClient>, name: string) {
+  const referrer = await createTestUser(client, { name });
+  assertEquals((await payForUser(client, referrer.id)).error, null);
+  return { referrer, code: await getActiveReferralCode(client, referrer.id) };
+}
+
+Deno.test('/auth/register：查推薦碼失敗 → 503 REFERRAL_CHECK_UNAVAILABLE，不寫入', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+  const { referrer, code } = await seedReferrer(client, '陳推薦');
+  try {
+    const before = await readIdentity(client, user.id);
+    const token = await getUserAccessToken(client, user.email);
+    const res = await withRestTableFailure(
+      ['rpc/validate_referral_code'],
+      () => registerAs(token, { ...FIRST_BODY, referralCode: code }),
+    );
+    assertEquals(res.status, 503, await res.clone().text());
+    assertEquals((await res.json()).error?.code, 'REFERRAL_CHECK_UNAVAILABLE');
+    assertEquals(await readIdentity(client, user.id), before);
+  } finally {
+    await deleteTestUsers(client, [user.id, referrer.id]);
+  }
+});
+
+Deno.test('/auth/register：查無、停權推薦人、失效碼 → 400 且回應同形，不寫入', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+  const suspended = await seedReferrer(client, '停權推薦');
+  const inactive = await seedReferrer(client, '失效推薦');
+  try {
+    await client.from('profiles').update({ suspended_at: new Date().toISOString() })
+      .eq('id', suspended.referrer.id);
+    await client.from('referral_codes').update({ status: 'inactive' })
+      .eq('code', inactive.code);
+    const before = await readIdentity(client, user.id);
+    const token = await getUserAccessToken(client, user.email);
+
+    const bodies: string[] = [];
+    for (const referralCode of ['zz-no-such-code', suspended.code, inactive.code]) {
+      const res = await registerAs(token, { ...FIRST_BODY, referralCode });
+      assertEquals(res.status, 400, `${referralCode}: ${await res.clone().text()}`);
+      bodies.push(await res.text());
+    }
+    assertEquals(bodies[1], bodies[0], '停權推薦人與查無此碼必須同形');
+    assertEquals(bodies[2], bodies[0], '失效碼與查無此碼必須同形');
+    assertEquals(JSON.parse(bodies[0]).error, '推薦碼不存在或已失效');
+    assertEquals(await readIdentity(client, user.id), before);
+  } finally {
+    await deleteTestUsers(client, [user.id, suspended.referrer.id, inactive.referrer.id]);
+  }
+});
+
+Deno.test('/auth/register：填自己的推薦碼 → 400，不寫入', async () => {
+  const client = adminClient();
+  const { referrer: self, code } = await seedReferrer(client, '自己');
+  try {
+    const before = await readIdentity(client, self.id);
+    const token = await getUserAccessToken(client, self.email);
+    const res = await registerAs(token, { ...FIRST_BODY, referralCode: code });
+    assertEquals(res.status, 400, await res.clone().text());
+    assertEquals((await res.json()).error, '不能使用自己的推薦碼');
+    assertEquals(await readIdentity(client, self.id), before);
+  } finally {
+    await deleteTestUsers(client, [self.id]);
+  }
+});
+
+Deno.test('/auth/register：referralCode 不是字串 → 400（不是 500），不寫入', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: '' });
+  try {
+    const before = await readIdentity(client, user.id);
+    const token = await getUserAccessToken(client, user.email);
+    const res = await registerAs(token, { ...FIRST_BODY, referralCode: 123 });
+    assertEquals(res.status, 400, await res.clone().text());
+    assertEquals((await res.json()).error, '推薦碼格式錯誤');
+    assertEquals(await readIdentity(client, user.id), before);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
