@@ -136,10 +136,10 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | — | Opus | `feature/pg-cron-schedulers` | — | 待開 |
-| S2 | — | Opus | `feature/payment-concurrency-guard` | — | 待開 |
-| S3 | — | Sonnet | `fix/transient-not-final` | — | 待開 |
-| S5 | — | Sonnet | `fix/csv-and-network-search` | — | 待開 |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 規劃中 |
+| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 規劃中 |
+| S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | — | 施工中 |
+| S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | — | 施工中 |
 | S4 | — | Sonnet | `feature/posthog-monitoring` | — | S1、S2 進實作後開 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -149,3 +149,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
 | 11/04 21:30 | 主 session 開局：讀交接、第 4 波 plan／review、〈慣例〉。#502 的正式站部署 run 41706804315 已在 21:14 核准，煙霧測試 `/health` sha＝`26c5ae8`（第 1 次探測）、PayUni production、預設推薦人 ok；dispatch deploy-smoke（ref=main）run 41844045128 綠。#502 收尾完成。業主裁決 W5-1～8（全照建議）；主 session 定 W5-9、W5-10。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S3、S5 |
+| 11/04 22:25 | 開 #506（本檔，draft，已訂閱）。開 S2、S1（Opus，規劃）與 S3、S5（Sonnet），tag `uknow-wave-5`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S1、S2 規劃交業主審 |
