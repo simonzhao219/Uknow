@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-plan v2 已納入 W5-35／36 與 v1 審查 P0＋P1，待重跑 /review-plan 與主 session 親審；業主親打 /tdd-implement 後從階段 1 開始。
+/review-plan 第二輪 P0=0；plan v2.1 已吸收 v2 審查全部 P1/P2（未再審）。待主 session 親審與 Q7/Q9/Q10 裁決，業主親打 /tdd-implement 後從階段 1 開始。
 
 ## Blockers(逃生口紀錄)
 
