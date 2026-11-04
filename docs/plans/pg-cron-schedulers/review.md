@@ -1,5 +1,80 @@
 # 對帳與照片清理改由 pg_cron 觸發 規劃書審查報告
 
+- 第 1 輪審第 1 版（8d148aa），保留在本檔下半部。
+- 第 2 輪審第 2 版（784b68af），見本檔上半部「第 2 輪」節；處置見 plan §9。
+- 第 3 輪只覆核第 3 版對第 2 輪的處置，結果附在第 2 輪節末；處置見 plan §10（3.1 版）。
+
+## 第 2 輪（第 2 版）
+
+| 視角 | P0 | P1 | P2 | 無缺口面向 |
+|---|---|---|---|---|
+| 系統 | 1〔需人工裁決〕 | 4 | 4 | Vault 缺值寫帳本、trigger 分流表、空窗期安全、migration 加法、對帳冪等底線；第 1 輪 #2、#7、#9、#10、#18～#23 處置到位 |
+| 架構 | 0 | 5 | 6 | 沿用端點、`scheduled-runs.ts` 位置、Vault 只由 definer 讀、spike 與守衛相容；fixture 在 Deno／Python 兩端技術上可行 |
+| UI/UX | 0 | 2 | 3 | 三態、BottomNav、a11y；第 1 輪 #16、#17、#33 處置到位 |
+| 需求 | 0 | 2 | 3 | W5-15③、W5-17、W5-18 落實；驗收 4、5 可測；沒有新的腦補需求 |
+
+**P0**
+
+- 〔§2.5 pay P1-3〕「只有 `'0'` 是未付款」的前提若不成立（reviewer 記憶中還有 4／8／9），棄付單會永久變成 unknown、永不 expire，且每小時 502 → 階段 0 碼表改為硬閘門，文件明確列為未付款／逾期的碼走原本的 expire 路徑。（系統，需人工裁決）
+
+**P1**
+
+- 〔§2.5〕queryFailures 算進全滅：只剩一兩張棄付單「查無此單」時，每小時 502；看門狗以 lastSucceededAt 判活，會把業務失敗誤判成停擺、補跑並開 issue。（系統）
+- 〔§2.5〕移除 `?? list[0]` 後，單項缺 MerTradeNo 或數字型的已付款單永遠收斂不了。（系統）
+- 〔§2.9〕SOP 步驟 4 在「migration 已套用、Edge 尚未部署」期間必然失敗，晉升清單時序不可行。（系統）
+- 〔§2.5〕`nullsFirst` 漏寫會靜默反向；欄位從不清除；更新失敗未定義。（系統）
+- 〔§5〕2、3 互相依賴；「全部 unknown」會同時觸發全滅與逐張告警。（架構）
+- 〔§3、§5〕`withScheduledRun` 的 fn 回傳契約未定義。（架構）
+- 〔§5〕handler 寫死 queryFn，端點層測試沒有測試縫。（架構）
+- 〔§2.5〕清理加租約後，GitHub 補跑收到 skipped 會被判 `bad_shape`。（架構）
+- 〔§2.7〕CI 的本機 cron 會寫 vault_missing 列，污染帳本斷言。（架構）
+- 〔§2.5〕看門狗 LINE 範本超過 notify 的 200 字截斷，「下一步」最容易被截掉。（UI/UX）
+- 〔§7〕人為 unschedule 後 24 小時內每小時推「停擺」P1。（UI/UX）
+- 〔§1、§2.6〕驗收 1 與 GitHub 補跑列的關係沒交代；手動驗證列沒有扣除條件。（需求）
+- 〔§2.8〕`checked >= 3` 的依據不足，沒寫 1/2 的取捨。（需求）
+
+**P2**
+
+- 系統：502 的 error 形狀與 curl 重試；並行測試要用兩條連線；`cronDispatches24h` 的 join 與 §7 敘述不符；`lastPurgeDryRun` 的取值。
+- 架構：
+  - migration 跨階段累加；
+  - prune 沒有測試；
+  - fixture 未定案（範例 JSON 不合法、單向比對）；
+  - workflow「兩個 job」的說法；
+  - 文件同步漏項：supabase-functions.md 導航、晉升清單、framework-check、spec-drift；
+  - `payuni-query-alert.unit.test.ts` 是既有檔。
+- UI/UX：unknown 逐張告警的洗版；開關不一致與清理失敗缺操作入口；SOP 的 `update_secret`、失敗對照、驗證列辨識。
+- 需求：「帳本為空、無派發」吞掉「排程沒掛上」；purge 逾期每小時重推；prune 排程沒有測試。
+
+**需人工裁決**：只有上面的 P0。第 3 版以「階段 0 ⑥ 硬閘門加暫定碼表」處置；官方碼表若不符，停下回報主 session。
+
+
+### 第 3 輪覆核（第 3 版；系統、架構兩個視角）
+
+| 視角 | P0 | P1 | P2 |
+|---|---|---|---|
+| 系統 | 0 | 3 | 2 |
+| 架構（含 UI/UX 項覆核） | 0 | 1 | 3 |
+
+第 2 輪的 P0 與各 P1 都確認已處置。新問題集中在看門狗層：
+
+- **P1-A** `lastCompletedAt` 沒有限定 trigger。（系統）
+- **P1-B** pause 用 unschedule，會先命中「排程不存在」那一列，導致人為停用時持續推 P1。（系統、架構）
+- **P1-C** `manually_disabled` 會殘留，節流公式沒有寫出來。（系統）
+- **P2**：
+  - 24 小時節流沒有機制；
+  - curl `--retry` 也會重打 5xx；
+  - `handleReconcile` 落點與 3 → 4 依賴沒寫；
+  - J5 要放在 `bad_shape` 之前；
+  - `cron.job` 的測試隔離。
+
+**需人工裁決**：系統 reviewer 標 P1-B 的兩種解法（定優先序／改 `alter_job`）要人裁決。
+執行 session 判斷這是技術取捨、不涉及業務，在 3.1 版採 `alter_job`：停用期間 `cron.job` 保留原樣，恢復時不必重寫排程字串。主 session 可推翻。處置見 plan §10。
+
+---
+
+## 第 1 輪（第 1 版）
+
 <!-- /review-plan 彙整四個 fresh-context reviewer 的發現。聚合規則：只彙整、去重、排序，不改判。
      多位 reviewer 重複提出的同一缺口合併為一條，標出來源視角，severity 取最高原判。 -->
 
