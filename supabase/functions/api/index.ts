@@ -25,6 +25,7 @@ import {
   recentConsecutiveFailureUsers,
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
+import { handleReconcile } from './reconcile-handler.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
   ACCOUNT_SUSPENDED,
@@ -2929,26 +2930,19 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
   }
 
   try {
-    // 先跑自癒 pass：把「已存有 PayUni SUCCESS 回應」的卡單直接收斂成
-    // 訂閱（migration 0007），不需要 PayUni 查詢 API。補完的訂單會離開
-    // pending，下面的掃描自然不會再碰到。
-    const { data: healSummary, error: healError } = await sb()
-      .rpc('complete_paid_pending_orders', { p_user_id: null });
-    // ⚠️ 已知缺口(已評估、刻意延後,見 friction-log 2026-08-17 記債清單):
-    // 這裡只寫 console.error,而且執行會繼續、端點仍回 { success: true }——
-    // 對排程說謊:安全網的第一段靜默沒跑,reconcile-payments.yml 的回應形狀
-    // 斷言照樣過。沒有一併修的原因是要測「RPC 自己失敗」需要 DDL 級的
-    // fault injection,且改回應契約會動到錢的安全網的監控。
-    // 下一個做 console.error 掃描的人:這個坑已經被看過了,不用重新發現。
-    if (healError) console.error('[reconcile-pending-payments] heal pass 失敗:', healError);
-
-    const summary = await reconcilePendingOrders(
-      sb(),
-      queryPayUniTradeStatus,
-      resolveOrderFromPayUni,
-      { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
-    );
-    return c.json({ success: true, data: { ...summary, heal: healSummary ?? null } });
+    const outcome = await handleReconcile({
+      heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
+      reconcile: () =>
+        reconcilePendingOrders(
+          sb(),
+          queryPayUniTradeStatus,
+          resolveOrderFromPayUni,
+          { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
+        ),
+      logError: (message, ...detail) => console.error(message, ...detail),
+    });
+    // deno-lint-ignore no-explicit-any
+    return c.json(outcome.response.body, outcome.response.httpStatus as any);
   } catch (e) {
     console.error('[reconcile-pending-payments]', e);
     return c.json({ success: false, error: String(e) }, 500);
