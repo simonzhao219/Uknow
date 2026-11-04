@@ -16,11 +16,13 @@
 | 6 | scheduler_health RPC＋GET /internal/scheduler-health | ✅ 綠 | d40c1f73 | （本 commit） |
 | 7 | scripts/scheduler-watchdog.py | ✅ 綠 | a74b0c68 | （本 commit） |
 | 8 | invoke_internal_endpoint＋cron 排程（最後才掛） | ✅ 綠 | 5c749608 | （本 commit） |
-| 9 | 兩支 workflow 改寫＋文件同步 | ⬜ 未開始 | | |
+| 9 | 兩支 workflow 改寫＋文件同步 | ✅（workflow 3f876471、文件 f23d33e4；以 check-workflows／spec-drift／self-test 為驗證） | — | — |
 
 （紅綠燈 hash 以 PR 內文為準，rebase 後更新 PR 內文的表。）
 
 ## 目前位置與下一步
+
+- 2026-11-05：階段 0（④ W5-31）、1、3～9 完成；**只剩階段 2**（pay P1-3，等 W5-32 官方碼表）。階段 2 完成後要補：`supabase/README.md`〈告警 severity〉的 `unknown_trade_status`、「全部 unknown → 不全滅」案例。之後收尾：check:full → /review-implementation → 清規劃檔 → PR。
 
 規劃第 2 版（處置第 1 輪審查、W5-15～19 裁決）已完成並重跑 /review-plan；等主 session 親審後，業主在本 session 親打 `/tdd-implement pg-cron-schedulers`。開工先做階段 0 spike。
 
@@ -61,6 +63,8 @@
   - 其餘是邀請衍生的錯誤。
 - 本案的測試檔全部綠。以 CI 的 api-tests 軌為準。
 
+- 照片清理的 GitHub 排程改在 UTC 20:47（pg_cron 19:17 之後 1.5 小時）檢查並補跑；plan 沒寫時間。
+- `purge-listing-photos-request.py` 新增 B5：排程觸發（看門狗補跑）的 body 多帶 `trigger:"github"`，dispatch 不帶（端點記成 manual）。
 - 照片清理在 pg_cron 路徑也忽略 body 的 `include_names`（plan §2.3 只列了 dry_run／force_ratio）：排程不需要 name，回應與帳本都不帶 uid。
 - 清理的 `notRemoved > 0` 告警用 dedupe `{reason:'not_removed', day}`，severity 為 warning（plan §2.4）。
 
