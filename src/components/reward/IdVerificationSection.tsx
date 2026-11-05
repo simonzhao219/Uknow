@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { StatusCallout } from '../ui/status-callout';
 import { Upload } from 'lucide-react';
 import type { IdPhotosResponse } from '@contract';
+import { privateClass } from '../../utils/analytics/privacy';
 
 export type IdPhotosData = IdPhotosResponse['data'];
 
@@ -83,7 +84,7 @@ export function IdVerificationSection({ loadStatus, uploadPhotos }: IdVerificati
 
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
+            <div className={privateClass('space-y-1')}>
               <label htmlFor="id-front" className="text-sm font-medium">
                 身分證正面
               </label>
@@ -96,7 +97,7 @@ export function IdVerificationSection({ loadStatus, uploadPhotos }: IdVerificati
                 onChange={(e) => setFront(e.target.files?.[0])}
               />
             </div>
-            <div className="space-y-1">
+            <div className={privateClass('space-y-1')}>
               <label htmlFor="id-back" className="text-sm font-medium">
                 身分證反面
               </label>

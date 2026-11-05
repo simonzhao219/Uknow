@@ -3,7 +3,9 @@
 // 設計依據：docs/plans/posthog-monitoring/plan.md §2（W4-35～37、W5-35～39）。
 // 選項名稱已對 posthog-js@1.445.5 的型別定義核實。
 
-export const PH_BLOCK_CLASS = 'ph-no-capture';
+import { PH_BLOCK_CLASS } from './privacy';
+
+export { PH_BLOCK_CLASS };
 
 /** catch-all：欄位只要寫對 type／autocomplete 就自動被整塊擋掉。 */
 export const BLOCK_SELECTOR = [

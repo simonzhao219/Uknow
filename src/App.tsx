@@ -36,6 +36,7 @@ import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { useAuthBootstrap } from './hooks/useAuthBootstrap';
 import { usePageview } from './hooks/usePageview';
+import { PrivateRegion } from './components/common/PrivateRegion';
 import { clearInflight, fetchProfile } from './utils/fetchProfile';
 import { clearAccountLocalState } from './utils/clearAccountLocalState';
 import { resetHomeListingsCache } from './utils/homeListingsCache';
@@ -401,26 +402,32 @@ function AppContent() {
                     <Route
                       path="/payment/checkout"
                       element={
-                        <ProtectedRoute>
-                          <PaymentCheckout />
-                        </ProtectedRoute>
+                        <PrivateRegion>
+                          <ProtectedRoute>
+                            <PaymentCheckout />
+                          </ProtectedRoute>
+                        </PrivateRegion>
                       }
                     />
                     <Route
                       path="/payment/result"
                       element={
-                        <ProtectedRoute>
-                          <PaymentResult />
-                        </ProtectedRoute>
+                        <PrivateRegion>
+                          <ProtectedRoute>
+                            <PaymentResult />
+                          </ProtectedRoute>
+                        </PrivateRegion>
                       }
                     />
                     {/* Admin Routes */}
                     <Route
                       path="/admin"
                       element={
-                        <AdminRoute>
-                          <AdminDashboard />
-                        </AdminRoute>
+                        <PrivateRegion>
+                          <AdminRoute>
+                            <AdminDashboard />
+                          </AdminRoute>
+                        </PrivateRegion>
                       }
                     />
                     {/* 舊網址：管理員很可能把它加在手機主畫面。轉址本身不守門

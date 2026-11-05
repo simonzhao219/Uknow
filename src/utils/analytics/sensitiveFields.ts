@@ -45,8 +45,8 @@ export const SENSITIVE_FIELDS: SensitiveField[] = [
     inputId: 'bankAccount',
     attrs: ['inputMode="numeric"'],
   },
-  { file: 'components/reward/WithdrawalProcess.tsx', anchor: '上傳身分證正面照 *' },
-  { file: 'components/reward/WithdrawalProcess.tsx', anchor: '上傳身分證反面照 *' },
+  { file: 'components/reward/WithdrawalProcess.tsx', anchor: '<Label>上傳身分證正面照' },
+  { file: 'components/reward/WithdrawalProcess.tsx', anchor: '<Label>上傳身分證背面照' },
   { file: 'components/reward/IdVerificationSection.tsx', anchor: 'htmlFor="id-front"' },
   { file: 'components/reward/IdVerificationSection.tsx', anchor: 'htmlFor="id-back"' },
 ];

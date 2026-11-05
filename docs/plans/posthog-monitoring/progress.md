@@ -12,12 +12,12 @@
 | 1 | 設定純函式與 key 目標 | ✅ | 6838c1c4 | f21c94f0 |
 | 2 | 懶載入 facade＋真實 SDK 外送驗證 | ✅ | 33f75ea3 | a90f41af |
 | 3 | 接線與預算 | ✅ | 798ec594 | b5583de4 |
-| 4 | 敏感欄位 block | ⬜ 未開始 | | |
+| 4 | 敏感欄位 block | ✅ | 6404d222 | (本 commit) |
 | 5 | 文件與收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-階段 3 綠（全 check 綠）。entry 實測：raw 997.8→999.7 kB（+1.9）、gzip 310.2→311.0 kB（+0.8，在 S4 ≤+1.0 內）；總 JS raw 1555.8→1917.8 kB（posthog-js 動態 chunk，不影響首屏）。BUDGET 已調（entry raw 1002、gzip 313、total 1950，註解分項）。下一步：階段 4 敏感欄位 block——先盤點現況欄位與 dialog 實作型態，寫目標屬性表，再做 `PrivateField`／`privateProps`、catch-all 與清單測試。
+階段 4 綠（全 check 綠）。已套用：CompleteProfile（身分證／生日／手機＋autoComplete／inputMode）、IdNumberInput 根容器、WithdrawalProcess（身分證／銀行代號／帳號／證件照正背面）、IdVerificationSection，付款頁與後台於路由層包 `PrivateRegion`。下一步：階段 5 文件與收尾——規格書「監控與隱私」小節（註明 localStorage 存 PostHog 匿名 id、與 §10.4 不同 key）、ui-ux-guidelines（新欄位須設對 autocomplete／type 或併入 privateClass）、`_headers` 註解、環境變數與回滾手段登記；check-spec-drift；`npm run check:full`；`/review-implementation`；刪規劃檔；PR 內文。
 
 ## Blockers(逃生口紀錄)
 
