@@ -31,4 +31,10 @@
 - 階段 1：〈兩個並行補發〉紅燈 commit 在 CI 上意外綠——postgres.js 查詢 lazy，第二條連線未真的並行(測試寫錯，非功能已存在)。
   解鎖後以 `test:` commit 8f5173d 修正(.execute())；修正前 DB 於本機重現 2 列、修正後 1 列。
 
+- 階段 4(逃生口 2，待業主裁決)：`src/appShell.test.ts`〈apiClient 的 session 過期、取消註冊與 AuthPage 清理無效 session
+  都會清提示〉逐檔掃 `components/CompleteProfile.tsx` 須含 `clearAuthHint()`。W5-12 後稍後註冊改走 `useFunnelLogout`
+  (內含 clearAuthHint)，CompleteProfile 不再自己清。提議：清單中的 `components/CompleteProfile.tsx` 換成
+  `hooks/useFunnelLogout.ts`(守的行為不變：註冊中途離開一定清提示)。規劃階段 4 漏列此測試。
+  **授權**：業主 2026-11-05 08:25（台北）互動選項：「授權修改 (Recommended)」——由本 session 代刪 tdd-lock，只換該檔名；測試名「取消註冊」改「註冊中途登出」以符實。
+
 ## 框架摩擦
