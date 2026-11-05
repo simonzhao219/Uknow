@@ -1,0 +1,32 @@
+# 續約路徑潛伏組（renewal-path-hardening）實作進度
+
+<!-- plans-keep: 第 5 波 S6 進度鷹架；退場條件＝/tdd-implement 收尾刪除；未實作完則隨主 session PR 先合併，第 6 波接手後刪 -->
+
+分支：`feature/renewal-path-hardening`
+規劃書：`./plan.md`｜審查：`./review.md`（P0 須全數處置才可開工）
+紅綠燈 hash 以 PR 內文為準（W5-10）；本表只在 rebase 前暫記。
+
+## 階段狀態
+
+| # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
+|---|---|---|---|---|
+| 1 | 環偵測函式＋自領停發 | ⬜ 未開始 | | |
+| 2 | 訂單換線意圖＋prepare RPC 新 outcome＋付款端 0d＋changed_at | ⬜ 未開始 | | |
+| 3 | Edge prepare 改寫 | ⬜ 未開始 | | |
+| 4 | `/profile` 續費卡單旗標＋heal | ⬜ 未開始 | | |
+| 5 | pair-history 表＋回填＋king_round_base | ⬜ 未開始 | | |
+| 6 | 結帳頁 server profile＋新約確認框 | ⬜ 未開始 | | |
+| 7 | e2e mocked＋journey f70＋規格書同步 | ⬜ 未開始 | | |
+
+## 目前位置與下一步
+
+規劃完成、/review-plan 進行中。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
+施工前先請主 session 代跑 plan §7 的唯讀查詢 1–7，結果記在下方。
+
+## 正式站唯讀查詢結果
+
+（待主 session 代跑）
+
+## Blockers（逃生口紀錄）
+
+## 框架摩擦
