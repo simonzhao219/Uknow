@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 設定純函式與 key 目標 | ⬜ 未開始 | | |
+| 1 | 設定純函式與 key 目標 | ✅ | a017aea8 | (本 commit) |
 | 2 | 懶載入 facade | ⬜ 未開始 | | |
 | 3 | 接線與預算 | ⬜ 未開始 | | |
 | 4 | 敏感欄位 block | ⬜ 未開始 | | |
@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-規劃 v2.1 經主 session 親審通過（W5-37/38/39 已裁），不跑第三輪。等業主在本 session 親打 /tdd-implement posthog-monitoring，從階段 1 開始。
+階段 1 綠（40 測試）。下一步：階段 2 懶載入 facade＋真實 SDK 外送驗證——第一步先驗證 rrweb 在 jsdom 可行（不可行才改第二個 dev server＋Playwright）；需先 `npm i posthog-js@1.445.5`（精確版本）。
 
 ## Blockers(逃生口紀錄)
 

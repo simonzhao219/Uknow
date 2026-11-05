@@ -45,8 +45,22 @@ export interface PosthogKeys {
 
 /** keys 參數只給測試注入；正式呼叫一律用 commit 在這裡的 POSTHOG_KEYS。 */
 export function resolvePosthogTarget(
-  _env: PosthogTargetEnv,
-  _keys: PosthogKeys = POSTHOG_KEYS,
+  env: PosthogTargetEnv,
+  keys: PosthogKeys = POSTHOG_KEYS,
 ): PosthogTarget {
-  return { key: 'STUB' };
+  // 緊急關閉與 journey（前端指向拋棄式分支）優先於一切，連假 key 也不例外。
+  if (env.VITE_ANALYTICS === 'off') return { key: null };
+  if (env.explicitSupabaseProject) return { key: null };
+
+  const branch = env.CF_PAGES_BRANCH;
+  if (!branch) {
+    // 本機建置：預設關閉。只有 phc_test_ 前綴的假 key 能打開（整合測試用）。
+    const override = env.VITE_POSTHOG_KEY;
+    return { key: override?.startsWith(TEST_POSTHOG_KEY_PREFIX) ? override : null };
+  }
+
+  // Cloudflare Pages 建置：只認 git 裡的 key，VITE_POSTHOG_KEY 一律忽略
+  // （避免有人把別的 key 誤設在 Pages 環境變數而繞過 main/develop 分流）。
+  const key = branch === 'main' ? keys.production : keys.develop;
+  return { key: key === PLACEHOLDER_POSTHOG_KEY ? null : key };
 }
