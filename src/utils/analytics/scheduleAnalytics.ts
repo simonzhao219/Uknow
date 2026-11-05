@@ -10,4 +10,7 @@ export interface ScheduleDeps {
   start: () => void;
 }
 
-export function scheduleAnalytics(_deps: ScheduleDeps): void {}
+export function scheduleAnalytics(deps: ScheduleDeps): void {
+  if (deps.isRedirecting) return;
+  deps.whenLoaded(() => deps.idle(deps.start));
+}

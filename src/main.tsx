@@ -1,6 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './styles/globals.css';
+import { scheduleAnalytics } from './utils/analytics/scheduleAnalytics';
+import { startAnalytics } from './utils/analytics/analyticsRuntime';
 import { canonicalRedirectUrl } from './utils/canonicalHost';
 
 // 全域最後防線：fire-and-forget 的 async handler（輪詢、背景 revalidate、
@@ -18,3 +20,18 @@ if (canonicalUrl) {
 } else {
   createRoot(document.getElementById('root')!).render(<App />);
 }
+
+// 監控（PostHog）：window load 之後再等 idle 才動態載入 SDK，不進 entry、不搶首屏。
+// key 為佔位值或未注入時 startAnalytics 什麼都不做（W5-35 預設關閉）。
+scheduleAnalytics({
+  isRedirecting: canonicalUrl !== null,
+  whenLoaded: (cb) => {
+    if (document.readyState === 'complete') cb();
+    else window.addEventListener('load', () => cb(), { once: true });
+  },
+  idle: (cb) => {
+    if ('requestIdleCallback' in window) window.requestIdleCallback(() => cb(), { timeout: 5000 });
+    else setTimeout(cb, 2000);
+  },
+  start: startAnalytics,
+});

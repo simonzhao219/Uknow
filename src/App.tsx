@@ -35,6 +35,7 @@ import { importWithRetry } from './utils/lazyWithRetry';
 import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { useAuthBootstrap } from './hooks/useAuthBootstrap';
+import { usePageview } from './hooks/usePageview';
 import { clearInflight, fetchProfile } from './utils/fetchProfile';
 import { clearAccountLocalState } from './utils/clearAccountLocalState';
 import { resetHomeListingsCache } from './utils/homeListingsCache';
@@ -152,6 +153,7 @@ export const UserContext = React.createContext<{
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
+  usePageview();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   const clearAccountState = () => {
     clearCache();

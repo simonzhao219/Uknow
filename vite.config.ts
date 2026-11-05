@@ -5,16 +5,30 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 
 import { resolveBuildSha } from './config/buildSha';
+import { resolvePosthogTarget } from './config/posthogTarget';
 import { resolveSupabaseTarget } from './config/supabaseTarget';
 
 // 分支感知的 Supabase 目標：只有 main 打正式站，其餘分支（develop 與各種
 // 預覽）指向 develop 的分支 DB。規則、理由與覆蓋順序見 config/supabaseTarget.ts；
 // 這裡只負責把結果餵給 Vite 的 env（projectConfig.ts 讀 VITE_SUPABASE_*）。
+// 必須在下面覆寫 env 之前記下：journey 會外部明確指定 VITE_SUPABASE_PROJECT_ID，
+// 這種建置不得載入監控（見 config/posthogTarget.ts）。
+const explicitSupabaseProject = Boolean(process.env.VITE_SUPABASE_PROJECT_ID);
 const supabaseTarget = resolveSupabaseTarget(process.env);
 if (supabaseTarget) {
   process.env.VITE_SUPABASE_PROJECT_ID = supabaseTarget.projectId;
   process.env.VITE_SUPABASE_ANON_KEY = supabaseTarget.anonKey;
 }
+
+// PostHog 監控 key（預設關閉：兩把 key 先是佔位值，見 config/posthogTarget.ts）。
+// 不論有沒有 key 都明確寫入（沒有就寫空字串）：避免 Pages 環境變數或 .env 檔的值漏進 bundle。
+process.env.VITE_POSTHOG_KEY =
+  resolvePosthogTarget({
+    CF_PAGES_BRANCH: process.env.CF_PAGES_BRANCH,
+    VITE_POSTHOG_KEY: process.env.VITE_POSTHOG_KEY,
+    VITE_ANALYTICS: process.env.VITE_ANALYTICS,
+    explicitSupabaseProject,
+  }).key ?? '';
 
 // 把 commit sha 埋進 index.html，讓部署後 smoke 能驗「線上跑的是不是這個 commit」。
 // 理由與來源優先序見 config/buildSha.ts。

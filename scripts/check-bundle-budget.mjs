@@ -21,9 +21,14 @@ const ASSETS = 'build/assets';
 // entry chunk（index-*.js）是「開啟任何一頁都要先下載完」的那一塊，
 // 唯一真正影響首屏的數字。其餘 chunk 都是路由層 lazy 載入的。
 const BUDGET = {
-  entryRawKB: 1000,
-  entryGzipKB: 312, // 原 310；H1 hotfix 時 develop 已貼著 310.0，期限與清除邏輯進 entry 約 +0.2 kB
-  totalRawKB: 1600,
+  // S4（PostHog 監控）分項：entry 實測 raw +1.9 kB／gzip +0.8 kB（facade、gate、
+  // 排程、pageview hook），故在 S7 的 W5-30 額度之外另加 raw +2、gzip +1.0。
+  // 誰後合併，誰在 PR 內文寫明兩項合計值（S7 另有 gzip +3 的專用額度）。
+  entryRawKB: 1002, // 原 1000；S4 +2
+  entryGzipKB: 313, // 原 310→312（H1 hotfix）；S4 +1.0
+  // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
+  // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。
+  totalRawKB: 1950, // 原 1600；S4 +350
 };
 
 const kb = (bytes) => Math.round((bytes / 1024) * 10) / 10;
