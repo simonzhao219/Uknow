@@ -83,6 +83,7 @@
 | W5-19 | S1 審查 P0 #1「過半失敗也告警」無出處 | 出處是本檔所屬 `dispatch-prompts.md` S1 段原文（需求 reviewer 讀不到派工檔），豁免；`checked>=2` 門檻在 S1 plan 寫明理由 |
 | W5-28 | S7 其餘規劃題 | 照 S7 建議：凍結脈絡存模組層；未換篇返回維持原 scrollY、換過篇才置中最後那張；無首頁脈絡不顯示換篇；輪播聚焦時 ←→ 換照片；審查 P0（換 :id 時元件狀態未重設）必處置 |
 | W5-30 | S7 Q5 座標資料授權、entry 預算 | 授權 S7 在階段 2 開頭於有網路處確認國土測繪中心資料來源與授權，不成立就停下；entry gzip 預算准於階段 2 實測後上調，上限比現行多 3 kB，超過就停下回報 |
+| W5-40 | S7 座標資料：TGOS（www.tgos.tw）整站維護中，zip 下載不到 | 先做不依賴座標表的階段（輪播邊界換篇、按鈕、鍵盤、焦點等），TGOS 恢復後補階段 2；到 11/08（台北）仍下載不到再與業主討論備案；不改用其他來源 |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-33 | S7 界線資料實際下載點 `www.tgos.tw` 不在白名單 | **業主再放行 www.tgos.tw**（業主 2026-11-05 互動選項）；S7 下載並把 SHA-256、URL、取得日期記入腳本檔頭 |
@@ -219,3 +220,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 06:15 | S7：資料授權確認成立（data.gov.tw datasetId 7441，政府資料開放授權第 1 版），但 zip 在 www.tgos.tw → 業主裁 **W5-33**、**W5-34**。S4 交規劃（#511，P0 1、P1 13）→ 業主裁 **W5-35**、**W5-36**；主 session 定 S4 預算與 P0 驗證法 | 業主放行 www.tgos.tw；S4 修 plan 重審 |
 | 11/05 07:40 | S4 交規劃 v2.1（第二輪 /review-plan P0 0；以 posthog-js 1.445.5 原始碼核實：compress_events 讓 before_send 看不到 DOM 屬性 → maskAttributeFn 白名單；未設選項會被專案端遠端開啟 → 全部明確 false）。業主裁 **W5-37～39**；主 session 親審通過 | 業主到 S4 session 親打 `/tdd-implement posthog-monitoring` |
 | 11/05 08:00 | 業主已在 S4 親打 `/tdd-implement`、放行 `www.tgos.tw` 並告知 S7（主 session 實測 200）。S1、S2、S4、S7 四項都在實作 | 等各 session 回報 PR |
+| 11/05 08:30 | S7：tgos 白名單通，但 TGOS 整站維護中，資料 zip 404。主 session 定 **W5-40**：先做不依賴座標表的階段 | 11/08 前 TGOS 未恢復再議 |
