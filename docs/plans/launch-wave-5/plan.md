@@ -184,7 +184,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 5 | 晉升合進 main 後核准 `production` 部署 | 等晉升 |
 | 6 | 晉升前在 eu.posthog.com 建 develop、正式站兩個 project，把 `phc_` key 給主 session（W5-35）；專案端勾選：Discard client IP、開 Session replay，關 exception autocapture／dead clicks／console／network／canvas（S4 Q8） | S4 合併前 |
 | 8 | 晉升上線第一天在 PostHog 抽看 5～10 支錄影（註冊、付款、提領頁），確認無個資（W5-39） | 晉升後 |
-| 7 | 環境網路白名單再加 `www.tgos.tw`，並告知 S7（W5-33） | 待做 |
+| 7 | 環境網路白名單再加 `www.tgos.tw`，並告知 S7（W5-33） | ✅ 11/05 |
 
 ## 7. 執行 session 名冊（主 session 維護）
 
@@ -195,7 +195,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
-| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（draft） | 規劃 v2.1 通過；等業主親打 `/tdd-implement` |
+| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（draft） | 實作中 |
 | S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
@@ -218,3 +218,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 04:10 | 業主已在 S2 親打 `/tdd-implement`，並放行四個網域（W5-32）；主 session 從同一個環境實測四個都通（302／200），已通知 S1、S7 重試。S1、S2 都已進實作 → 照 W5-2 開 **S4**（Sonnet，規劃） | 等各 session 回報 |
 | 11/05 06:15 | S7：資料授權確認成立（data.gov.tw datasetId 7441，政府資料開放授權第 1 版），但 zip 在 www.tgos.tw → 業主裁 **W5-33**、**W5-34**。S4 交規劃（#511，P0 1、P1 13）→ 業主裁 **W5-35**、**W5-36**；主 session 定 S4 預算與 P0 驗證法 | 業主放行 www.tgos.tw；S4 修 plan 重審 |
 | 11/05 07:40 | S4 交規劃 v2.1（第二輪 /review-plan P0 0；以 posthog-js 1.445.5 原始碼核實：compress_events 讓 before_send 看不到 DOM 屬性 → maskAttributeFn 白名單；未設選項會被專案端遠端開啟 → 全部明確 false）。業主裁 **W5-37～39**；主 session 親審通過 | 業主到 S4 session 親打 `/tdd-implement posthog-monitoring` |
+| 11/05 08:00 | 業主已在 S4 親打 `/tdd-implement`、放行 `www.tgos.tw` 並告知 S7（主 session 實測 200）。S1、S2、S4、S7 四項都在實作 | 等各 session 回報 PR |
