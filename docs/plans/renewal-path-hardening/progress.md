@@ -20,7 +20,7 @@
 
 ## 目前位置與下一步
 
-規劃完成、/review-plan 進行中。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
+規劃完成、/review-plan 完成（P0 0／P1 16／P2 13，見 review.md）。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
 施工前先請主 session 代跑 plan §7 的唯讀查詢 1–7，結果記在下方。
 
 ## 正式站唯讀查詢結果
