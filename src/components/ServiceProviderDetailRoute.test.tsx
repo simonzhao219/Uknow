@@ -335,6 +335,8 @@ describe('ServiceProviderDetailRoute 滑動換篇', () => {
 
   it('只有一張照片時，在照片上往左滑（盡頭續滑）換下一篇', async () => {
     const solo = mk('b', 'BBB美容師', 1);
+    // 背景重驗也要回單張版，否則重驗後輪播變三張、起點不在盡頭
+    singleFor.mockResolvedValue({ data: solo, error: null });
     setup('b', { rows: [A, solo, C] });
     await screen.findByRole('heading', { name: 'BBB美容師' });
     await settleLazy();
