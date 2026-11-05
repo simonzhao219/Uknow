@@ -37,6 +37,7 @@ import {
 import { countAwaitingCollection, countExpiring } from './dashboard/dashboardSummary';
 import { CategoryBadge } from './common/CategoryBadge';
 import { BreakableEmail } from './common/BreakableEmail';
+import { privateClass } from '../utils/analytics/privacy';
 
 /**
  * 會員中心＝狀態總覽，不是導覽選單（ui-ux-guidelines §13；任務／推薦／獎勵的
@@ -342,15 +343,15 @@ export function MemberDashboard() {
           </Button>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
+          <div className={privateClass()}>
             <p className="text-sm text-muted-foreground">真實姓名</p>
             <p className="font-medium">{user?.name}</p>
           </div>
-          <div>
+          <div className={privateClass()}>
             <p className="text-sm text-muted-foreground">聯絡電話</p>
             <p className="font-medium">{user?.phone}</p>
           </div>
-          <div>
+          <div className={privateClass()}>
             <p className="text-sm text-muted-foreground">Email</p>
             <p className="font-medium">
               <BreakableEmail email={user?.email} />

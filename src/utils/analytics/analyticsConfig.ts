@@ -73,15 +73,18 @@ const KEPT_ATTRIBUTES = new Set([
   'dir',
   'lang',
   'disabled',
-  'checked',
-  'selected',
   'hidden',
   'aria-hidden',
   'aria-expanded',
-  'aria-checked',
   'aria-disabled',
-  'aria-selected',
   'aria-pressed',
+  // rrweb 重播用的內嵌樣式與尺寸／捲動位置（不含內容）；rr_dataURL／rr_src 仍遮罩。
+  '_csstext',
+  'rr_width',
+  'rr_height',
+  'rr_scrollleft',
+  'rr_scrolltop',
+  'rr_mediastate',
 ]);
 
 export function maskAttribute(name: string, value: string): string {
@@ -103,6 +106,10 @@ const URL_KEYS = new Set([
 ]);
 
 const TRACKING_KEYS = new Set([
+  'gad_source',
+  'gclsrc',
+  'mc_cid',
+  'mc_eid',
   'gclid',
   'fbclid',
   'msclkid',
@@ -116,8 +123,8 @@ const TRACKING_KEYS = new Set([
 function cleanBag(bag: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(bag)) {
-    // person property 的 $initial_utm_*／$initial_gclid 等同樣是追蹤參數。
-    const base = k.startsWith('$initial_') ? k.slice('$initial_'.length) : k;
+    // person／session property 的 $initial_utm_*、$session_entry_gclid 等同樣是追蹤參數。
+    const base = k.replace(/^\$(?:initial|session_entry)_/, '');
     if (TRACKING_KEYS.has(base) || base.startsWith('utm_')) continue;
     if (URL_KEYS.has(k) && typeof v === 'string') out[k] = stripUrl(v);
     else out[k] = v;
@@ -173,6 +180,10 @@ export function buildPosthogOptions(opts: { sampleRate?: number } = {}): Posthog
     enable_recording_console_log: false,
     capture_performance: false,
     disable_surveys: true,
+    disable_conversations: true,
+    disable_product_tours: true,
+    // 不自動收 campaign 參數（utm_*、gclid…）；sanitizeEvent 仍會清掉殘留的追蹤鍵。
+    save_campaign_params: false,
     advanced_disable_feature_flags: true,
     disable_capture_url_hashes: true,
     mask_personal_data_properties: true,

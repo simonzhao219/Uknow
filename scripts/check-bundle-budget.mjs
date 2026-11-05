@@ -66,8 +66,25 @@ for (const [label, actual, budget] of checks) {
   console.log(`${over ? '✗' : '✓'} ${label}  ${actual} kB / ${budget} kB  (${pct}%)`);
 }
 
+// 監控預設關閉的建置證據（S4）：CI 建置沒有 CF_PAGES_BRANCH，PostHog key 一律不注入，
+// bundle 裡只該有佔位前綴（phc_PLACEHOLDER）。出現其他 phc_ 字樣＝key 漏進非 Pages 建置。
+const leakedKeys = new Set();
+for (const f of files) {
+  const text = readFileSync(join(ASSETS, f), 'utf8');
+  for (const m of text.matchAll(/phc_[A-Za-z0-9_]+/g)) {
+    if (!m[0].startsWith('phc_PLACEHOLDER')) leakedKeys.add(`${f}: ${m[0]}`);
+  }
+}
+if (leakedKeys.size > 0) {
+  failed = true;
+  console.error('\n✗ 建置產物含有 PostHog key（CI 建置應為關閉態，只允許 phc_PLACEHOLDER 前綴）：');
+  for (const k of leakedKeys) console.error(`  ${k}`);
+} else {
+  console.log('✓ 監控關閉態  建置產物不含 PostHog key');
+}
+
 if (failed) {
-  console.error('\n✗ 超出 bundle 預算。先確認這些位元組是必要的，再考慮調整');
+  console.error('\n✗ 超出 bundle 預算或檢查失敗。先確認這些位元組是必要的，再考慮調整');
   console.error('  scripts/check-bundle-budget.mjs 的 BUDGET（並在 PR 說明理由）。');
   process.exit(1);
 }

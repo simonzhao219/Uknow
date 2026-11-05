@@ -49,6 +49,10 @@ export const SENSITIVE_FIELDS: SensitiveField[] = [
   { file: 'components/reward/WithdrawalProcess.tsx', anchor: '<Label>上傳身分證背面照' },
   { file: 'components/reward/IdVerificationSection.tsx', anchor: 'htmlFor="id-front"' },
   { file: 'components/reward/IdVerificationSection.tsx', anchor: 'htmlFor="id-back"' },
+  // 會員中心「個人資料」卡：唯讀文字，只有文字遮罩會露出長度，所以整塊 block。
+  { file: 'components/MemberDashboard.tsx', anchor: '>真實姓名</p>' },
+  { file: 'components/MemberDashboard.tsx', anchor: '>聯絡電話</p>' },
+  { file: 'components/MemberDashboard.tsx', anchor: '>Email</p>' },
 ];
 
 /** 路由層必須包 PrivateRegion 的路徑（付款頁、後台）。 */

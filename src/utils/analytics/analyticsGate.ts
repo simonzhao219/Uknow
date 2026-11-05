@@ -14,6 +14,13 @@ export function analyticsEnabled(key: string | undefined): boolean {
 
 /** 這個路徑可不可以錄影。`/payment/*` 與 `/admin*` 一律不錄；只比第一段、不分大小寫。 */
 export function recordingAllowed(pathname: string): boolean {
-  const first = pathname.split('/')[1]?.toLowerCase() ?? '';
-  return !NO_RECORDING_SEGMENTS.has(first);
+  const raw = pathname.split('/')[1] ?? '';
+  // React Router 會把百分比編碼解碼後再比對路由（/%61dmin 會進後台頁），所以這裡也先解碼。
+  let first = raw;
+  try {
+    first = decodeURIComponent(raw);
+  } catch {
+    // 格式錯誤的編碼：路由比對不到禁錄頁，沿用原字串即可。
+  }
+  return !NO_RECORDING_SEGMENTS.has(first.toLowerCase());
 }

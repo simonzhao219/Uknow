@@ -16,6 +16,9 @@ describe('真實 SDK 外送內容', () => {
     expect(await waitUntil(() => t.snapshots().length > 0, 10000)).toBe(true);
     console.warn('CONSOLE-SECRET-LATE');
     console.error(new Error('CONSOLE-SECRET-ERROR'));
+    // vitest 只在 window 沒有使用者 error 監聽時才把 ErrorEvent 當成未處理錯誤；
+    // 這個事件是刻意模擬未捕獲例外（驗證 exception 自動捕捉不生效），所以掛一個空監聽。
+    window.addEventListener('error', () => {});
     window.dispatchEvent(
       new ErrorEvent('error', { message: 'EXC-SECRET', error: new Error('EXC-SECRET') }),
     );
