@@ -104,6 +104,7 @@
 | W5-60 | S6：journey f70 缺章（fresh 後三代獎金、任務、自領停發、ch7、ch9） | **留第 6 波**，已由 Deno 整合測試與 mock e2e 涵蓋（業主 2026-11-05） |
 | W5-61 | S6 獨立審查 P2-1：批次自癒 `complete_paid_pending_orders(null)` 單一交易內握前輪 profiles 列鎖，0a′ 等 advisory 時可與線上 fresh 付款死鎖，被選中方的一代獎金被 `when others` 吞掉而靜默漏發 | **本 PR 修**：批次路徑在 0a′ 改 `pg_try_advisory_xact_lock`，拿不到就跳過留給下一輪；補測試（業主 2026-11-06） |
 | W5-62 | S6 獨立審查 P2-2：新 Edge 若先於 migration 部署，prepare 全 500（含首購） | **晉升清單加一步**（核准正式站部署前確認 migration 已套用）；部署 workflow 自動檢查列第 6 波（業主 2026-11-06） |
+| W5-63 | S6 P2-3：會員現任推薦人即預設推薦人時，新約留空確認框仍寫「您的推薦人將改變」（實際不變；推薦人與獎金正確） | **先合 #514，留第 6 波**：後端回第三態「預設推薦人即現任」，前端寫「您的推薦人維持不變」、不揭露是誰（業主 2026-11-06） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -199,7 +200,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 `setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；子網域盤點＋完整 CSP；#383、#384。
 **S2（#510）留下的**：後台刪帳號工具（W5-12「註冊中要刪找客服」目前沒有工具）；停權狀態確認期間付款鈕灰掉無說明（UIUX P2）；`/auth/register` 先驗推薦碼後查已完成註冊（已付款者舊分頁拿 400 而非 403）。
 **S1（#512）留下的**：unknown 單人工確認已付款後的手動開通入口（W5-44③）。
-**S6（#514）留下的**：journey f70 缺章（W5-60）；deploy-supabase.yml 部署 Edge 前自動確認 migration 已套用（W5-62）；確認框推薦人句在「讀 status 後才成環」競態下與結果不符（P2-3）。
+**S6（#514）留下的**：journey f70 缺章（W5-60）；deploy-supabase.yml 部署 Edge 前自動確認 migration 已套用（W5-62）；確認框推薦人句在「讀 status 後才成環」競態下與結果不符（P2-3）；現任推薦人即預設推薦人時新約留空仍寫「將改變」（W5-63）。
 **S6 實作**若 11/22 前沒合，列第 6 波第一優先（期限 2027-10-27）。
 
 ## 6. 業主待辦
@@ -226,7 +227,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1、4、5、6 綠；2、3、8b 等 TGOS |
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511 ✅ cebc239 | 收工；晉升前填 key（W5-35） |
-| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | #514（draft） | 7 階段綠；補 W5-58／59；獨立審查中 |
+| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | #514 | **已合（fb8f95c）**，收工 |
 | S8 | `session_01MQovbBQu7kxFjWhxHoGSZi` | Sonnet | `fix/terminology-guard` | #513 ✅ 2957408 | 收工 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
@@ -265,3 +266,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 21:30 | S4 補完複審四項（銀行 SelectContent 遮蔽、以 SDK 實例斷言擴充不存在並以舊 import 實測轉紅、harness 解碼 Blob／gzip 並新增壓縮路徑測試、`strict_script_versioning:true`）；主 session 核對 delta、CI 全綠 → **#511 合進 develop（cebc239）**。PostHog 維持關閉（佔位 key） | 晉升前業主給 key；S6 等業主親打；S7 施工 |
 | 11/06 01:40 | S6 交 **#514**（draft；7 階段綠、/review-implementation P0 0、3 條 P1 已修、2 條 P1 記偏離、journey dispatch 中）。業主裁 **W5-58～60**。主 session 另派獨立 Opus 審查員審 #514 | S6 補 W5-58／59；等審查、CI、journey |
 | 11/06 02:00 | #514 獨立 Opus 審查：**P0 0、P1 0**、P2 3（鎖序、R1～R7、新舊版本相容、正式站 migration 安全皆核實）。業主裁 **W5-61**（批次自癒死鎖本 PR 修）、**W5-62**（部署順序進晉升清單＋第 6 波）；P2-3 交 S6 確認 | S6 修 W5-61 → CI 綠 → 合 #514 |
+| 11/06 03:05 | S6 修 W5-61（紅 3ac750b1／綠 356cb48c；批次設交易層旗標、0a′ try 鎖拋 U6R01、批次記 skipped_locked；主 session 對基準版逐行比對只差三處）；CI 全綠、journey 全套於 74e0c0b 綠。S6 回報 P2-3 有兩條非競態錯句 → 業主裁 **W5-63**（留第 6 波）。**#514 合進 develop（fb8f95c）**，S6 收工 | develop 部署後確認 S6 migration 已套；S7 收尾 → 晉升 |
