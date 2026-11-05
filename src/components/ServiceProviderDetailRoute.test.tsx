@@ -358,3 +358,107 @@ describe('ServiceProviderDetailRoute 滑動換篇', () => {
     expect(await screen.findByText(/已是最後一篇/)).toBeTruthy();
   });
 });
+
+// 換篇動畫（W5-27）：換篇後新內容由側邊滑入（不做跟手拖曳）；頭尾再換篇時內容區輕微回彈。
+// 偏好減少動態時兩者都不動，但頭尾仍有文字播報。jsdom 沒有 Element.animate，用 spy。
+describe('ServiceProviderDetailRoute 換篇動畫', () => {
+  const animate = vi.fn();
+  const content = () => document.querySelector('[data-browse-content]');
+  const stubReducedMotion = (reduced: boolean) =>
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: reduced && query.includes('prefers-reduced-motion'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+
+  beforeEach(() => {
+    animate.mockReset();
+    Element.prototype.animate = animate as unknown as typeof Element.prototype.animate;
+    stubReducedMotion(false);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('往下一篇換篇後，新內容從右側滑入', async () => {
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    fireEvent.click(nextButton());
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(content()?.className).toContain('slide-in-from-right');
+  });
+
+  it('往上一篇換篇後，新內容從左側滑入', async () => {
+    setup('b');
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    fireEvent.click(prevButton());
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    expect(content()?.className).toContain('slide-in-from-left');
+  });
+
+  it('第一次從首頁進來（不是換篇）時內容不做滑入動畫', async () => {
+    setup('b');
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(content()).not.toBeNull();
+    expect(content()?.className).not.toContain('slide-in');
+  });
+
+  it('偏好減少動態時換篇不做滑入動畫', async () => {
+    stubReducedMotion(true);
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    fireEvent.click(nextButton());
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(content()).not.toBeNull();
+    expect(content()?.className).not.toContain('slide-in');
+  });
+
+  it('最後一篇再按下一篇，內容區向左輕推再回原位', async () => {
+    setup('c');
+    await screen.findByRole('heading', { name: 'CCC美容師' });
+
+    fireEvent.click(nextButton());
+
+    expect(animate).toHaveBeenCalledTimes(1);
+    const [keyframes] = animate.mock.calls[0];
+    expect(JSON.stringify(keyframes)).toContain('translateX(-24px)');
+    expect(animate.mock.instances[0]).toBe(content());
+  });
+
+  it('第一篇再按上一篇，內容區向右輕推再回原位', async () => {
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    fireEvent.click(prevButton());
+
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(animate.mock.calls[0][0])).toContain('translateX(24px)');
+  });
+
+  it('偏好減少動態時頭尾不回彈，仍播報已是最後一篇', async () => {
+    stubReducedMotion(true);
+    setup('c');
+    await screen.findByRole('heading', { name: 'CCC美容師' });
+
+    fireEvent.click(nextButton());
+
+    expect(animate).not.toHaveBeenCalled();
+    expect(await screen.findByText(/已是最後一篇/)).toBeTruthy();
+  });
+
+  it('一般換篇（不在頭尾）不觸發回彈動畫', async () => {
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    fireEvent.click(nextButton());
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(animate).not.toHaveBeenCalled();
+  });
+});
