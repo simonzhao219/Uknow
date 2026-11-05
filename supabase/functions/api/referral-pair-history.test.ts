@@ -140,6 +140,66 @@ Deno.test('推薦王：連續兩次新約、中間對帳漏發 → 第二次新�
   }
 });
 
+Deno.test('推薦王：新約寫 king_round_base 失敗 → 付款完成、帳本照清、清桶照做、error 告警帶應寫的 base', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  const fn = `pg_temp_s6_fail_base_${seq++}`;
+  try {
+    const t = await threshold(sql);
+    const king = await createTestUser(client, { name: '王 base 故障' });
+    ids.push(king.id);
+    assertEquals((await payForUser(client, king.id)).error, null);
+    await downlines(client, ids, await getActiveReferralCode(client, king.id), t);
+    await expire(sql, king.id);
+
+    // 故障注入：只擋這位會員的 king_round_base 寫入。
+    await sql.unsafe(`
+      create function public.${fn}() returns trigger language plpgsql as $f$
+      begin
+        if new.user_id = '${king.id}'::uuid and new.king_round_base is distinct from old.king_round_base then
+          raise exception 'S6 測試：king_round_base 寫入失敗';
+        end if;
+        return new;
+      end $f$;
+      create trigger ${fn} before update on public.task_progress
+        for each row execute function public.${fn}();`);
+
+    const trade = `S6-KING-FAIL-${Date.now()}-${seq++}`;
+    const [r] = await sql`
+      select public.prepare_payment_order(
+        p_user_id => ${king.id}::uuid, p_trade_no => ${trade}, p_renewal_mode => 'fresh',
+        p_referrer_user_id => null::uuid, p_referrer_code => null::text,
+        p_referrer_source => 'keep') as r`;
+    assertEquals(r.r.outcome, 'ok');
+    await sql`
+      select public.process_successful_payment(${king.id}::uuid, ${trade}, ${trade},
+        ${sql.json({ Status: 'SUCCESS' })})`;
+
+    const [o] = await sql`select status from public.payment_orders where transaction_id = ${trade}`;
+    assertEquals(o.status, 'completed');
+    const [l] = await sql`
+      select count(*)::int as n from public.reward_transactions
+      where user_id = ${king.id} and type = 'ledger_reset'`;
+    assertEquals(l.n, 1, 'ledger_reset 照清');
+    const [tp] = await sql`
+      select total_referrals, king_round_base from public.task_progress where user_id = ${king.id}`;
+    assertEquals(tp.total_referrals, 0, '清桶照做');
+    assertEquals(tp.king_round_base, {}, 'base 沒寫成');
+    const [a] = await sql`
+      select severity, context from public.system_alerts
+      where source = 'king_round_base' and context->>'user_id' = ${king.id}`;
+    assertEquals(a.severity, 'error');
+    assertEquals(a.context.base, 1, '告警帶應寫的 base，供人工補');
+    assertEquals(typeof a.context.month_key, 'string');
+  } finally {
+    await sql.unsafe(`drop trigger if exists ${fn} on public.task_progress;
+      drop function if exists public.${fn}();`);
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
 Deno.test('pair-history：當月加入的被推薦人在上線新約後續約 → 上線任務不再 +1', async () => {
   const client = adminClient();
   const sql = postgres(DB_URL, { max: 1 });

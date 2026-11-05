@@ -18,7 +18,7 @@
 --      既有表零變動。
 --   2. task_progress.king_round_base jsonb：{月份: 新約當下該月已應發的張數}。
 --   3. process_successful_payment：基準 = 20261113000002，唯一差異 = 3-0 清當月桶前先鎖
---      task_progress、寫 king_round_base。
+--      task_progress、寫 king_round_base；base 自成子交易，失敗只寫 error 告警（W5-58）。
 --   4. apply_referral_side_effects：基準 = 20261113000002，唯一差異 = 3d 的 pair 判準改為
 --      「插入 referral_pair_history 成功」。月桶仍是計數與「本月推薦詳情」清單的來源。
 --   5. reconcile_king_credits：基準 = 20260724000003，唯一差異 = 目標張數加上 king_round_base。
@@ -329,29 +329,38 @@ begin
       -- 當月從 0 計門檻、round_ordinal 接續；已發的 credit 不動。取 greatest 保住「已達門檻
       -- 但對帳尚未補發」的張數，且多次新約不丟前一次的 base。先鎖 task_progress，擋住併發的
       -- 「新下線 +1」插在讀桶與清桶之間。配對名單另存在 referral_pair_history，不受清桶影響。
-      select referral_king_monthly_threshold into v_king_threshold
-      from public.reward_config where id = true;
-      v_king_threshold := coalesce(v_king_threshold, 8);
-      select coalesce(jsonb_array_length(monthly_referrals -> v_reset_month_key), 0),
-             coalesce((king_round_base ->> v_reset_month_key)::int, 0)
-        into v_bucket_len, v_old_base
-      from public.task_progress
-      where user_id = p_user_id
-      for update;
-      select coalesce(max(round_ordinal), 0) into v_max_round
-      from public.referral_king_rewards
-      where user_id = p_user_id and month_key = v_reset_month_key;
-      v_new_base := greatest(
-        v_max_round,
-        coalesce(v_old_base, 0) + coalesce(v_bucket_len, 0) / v_king_threshold);
+      -- W5-58：base 的計算與寫入自成子交易——失敗只寫 error 告警（context 帶應寫的 base，
+      -- 供客服人工補），付款、ledger_reset 與下面的清桶照常。
+      v_new_base := null;
+      begin
+        select referral_king_monthly_threshold into v_king_threshold
+        from public.reward_config where id = true;
+        v_king_threshold := coalesce(v_king_threshold, 8);
+        select coalesce(jsonb_array_length(monthly_referrals -> v_reset_month_key), 0),
+               coalesce((king_round_base ->> v_reset_month_key)::int, 0)
+          into v_bucket_len, v_old_base
+        from public.task_progress
+        where user_id = p_user_id
+        for update;
+        select coalesce(max(round_ordinal), 0) into v_max_round
+        from public.referral_king_rewards
+        where user_id = p_user_id and month_key = v_reset_month_key;
+        v_new_base := greatest(
+          v_max_round,
+          coalesce(v_old_base, 0) + coalesce(v_bucket_len, 0) / v_king_threshold);
+        if v_new_base > 0 then
+          update public.task_progress
+          set king_round_base = jsonb_set(king_round_base, array[v_reset_month_key], to_jsonb(v_new_base))
+          where user_id = p_user_id;
+        end if;
+      exception when others then
+        perform public.log_system_alert('king_round_base', 'error', sqlerrm,
+          jsonb_build_object('trade_no', p_trade_no, 'user_id', p_user_id,
+                             'month_key', v_reset_month_key, 'base', v_new_base));
+      end;
       update public.task_progress
       set total_referrals   = 0,
           monthly_referrals = monthly_referrals - v_reset_month_key,
-          king_round_base   = case
-            when v_new_base > 0
-              then jsonb_set(king_round_base, array[v_reset_month_key], to_jsonb(v_new_base))
-            else king_round_base
-          end,
           updated_at        = now()
       where user_id = p_user_id;
     exception when others then

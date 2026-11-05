@@ -260,13 +260,14 @@ async function readAccountStatus(
 // 新約未填碼時會套用的預設推薦人（§7.4 A10／A11）。prepare 的 default 分支與
 // /subscriptions/status 的 freshDefaultReferrerAvailable 共用（單一真相）：碼取自
 // reward_config.default_referrer_code，合法性唯一判準是 validate_referral_code
-// （停權／失效都在裡面），另有自我推薦護欄。讀取失敗回 read_failed，由呼叫端決定
-// fail-closed（status）或 A11 不阻斷金流（prepare）。
+// （停權／失效都在裡面），另有自我推薦護欄與環判定（W5-59：預設推薦人在本人推薦樹內＝
+// 付款時會記 keep，與付款端 0d 同一判準 referral_would_cycle）。讀取失敗回 read_failed，
+// 由呼叫端決定 fail-closed（status）或 A11 不阻斷金流（prepare）。
 type FreshDefaultReferrer =
   | { ok: true; referrerUserId: string; code: string }
   | {
     ok: false;
-    reason: 'unset' | 'code_not_applicable' | 'self_referral' | 'read_failed';
+    reason: 'unset' | 'code_not_applicable' | 'self_referral' | 'cycle' | 'read_failed';
     code?: string;
   };
 async function resolveFreshDefaultReferrer(
@@ -285,8 +286,15 @@ async function resolveFreshDefaultReferrer(
     .rpc('validate_referral_code', { p_code: code });
   if (codeErr) return { ok: false, reason: 'read_failed', code };
   if (!codeRows || codeRows.length === 0) return { ok: false, reason: 'code_not_applicable', code };
-  if (codeRows[0].referrer_user_id === userId) return { ok: false, reason: 'self_referral', code };
-  return { ok: true, referrerUserId: codeRows[0].referrer_user_id, code };
+  const referrerUserId = codeRows[0].referrer_user_id;
+  if (referrerUserId === userId) return { ok: false, reason: 'self_referral', code };
+  const { data: cycles, error: cycleErr } = await client.rpc('referral_would_cycle', {
+    p_referee: userId,
+    p_new_referrer: referrerUserId,
+  });
+  if (cycleErr) return { ok: false, reason: 'read_failed', code };
+  if (cycles === true) return { ok: false, reason: 'cycle', code };
+  return { ok: true, referrerUserId, code };
 }
 
 // ============================================================
@@ -2203,10 +2211,10 @@ app.post('/payuni/prepare', async (c) => {
     intent = { userId: null, code: null, source: 'keep' };
     const resolved = await resolveFreshDefaultReferrer(client, user.id);
     if (resolved.ok) {
-      // 預設推薦人在本人樹內的情形由建單 RPC 改記 keep（同 A11）。
+      // 預設推薦人在本人樹內已由 resolve 判成 cycle（W5-59）；建單 RPC 鎖內仍再判一次。
       intent = { userId: resolved.referrerUserId, code: resolved.code, source: 'default' };
     } else {
-      // 未設、不存在／已失效／推薦人停權（validate 的職責）、本人（自我推薦護欄）、讀取失敗。
+      // 未設、不存在／已失效／推薦人停權（validate 的職責）、本人（自我推薦護欄）、成環、讀取失敗。
       await alertDefaultUnavailable(
         resolved.reason === 'read_failed' ? 'code_not_applicable' : resolved.reason,
         resolved.code ? { code: resolved.code } : {},

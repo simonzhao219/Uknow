@@ -309,7 +309,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 並說明推薦人會怎麼變：填了別人的碼＝「將改為 {姓名}」、填回現任推薦人的碼＝「維持
 {姓名}」、留空且預設推薦人可用＝「將改變」（不揭露預設推薦人，§7.4）、留空且預設推薦人
 不可用＝不寫推薦人句（付款時維持原推薦人）；新推薦碼欄的說明與 placeholder 說同一件事
-（`/subscriptions/status` 的 `freshDefaultReferrerAvailable`）。有可清空的資產時確認鈕為
+（`/subscriptions/status` 的 `freshDefaultReferrerAvailable`；預設推薦人在本人推薦樹內時判為不可用，
+與付款時的環判定一致）。有可清空的資產時確認鈕為
 紅實心，沒有時為流程鈕。
 
 模式由建單時寫入 `payment_orders.renewal_mode`，付款成功當下才據以決定效期
@@ -601,7 +602,8 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
   以 `round_ordinal` 區分。〔實作〕`20260724000002_referral_king_multi_credit.sql`
 - **新約後**：已發的 credit（含未領）保留；當月從 0 計門檻——當月張數 = 新約當下該月
   已應發的張數 + `floor(新約後當月新人數 / 門檻)`，`round_ordinal` 接續（新約當下已達門檻
-  但對帳尚未補發的那張也算已應發，之後照補）。〔實作〕`task_progress.king_round_base`、
+  但對帳尚未補發的那張也算已應發，之後照補）。記這個張數失敗時付款照常完成、帳本與當月計數照清，
+  只寫 error 告警（帶月份與應記的張數，人工補記）。〔實作〕`task_progress.king_round_base`、
   `20261113000003_referral_pair_history.sql`
 - **月份 key** 錨定**付款時間**（非執行時間），時區 `Asia/Taipei`。
 - **計數自癒**：credit 發放獨立於計數 append，每次付款都重新對帳補足差額
