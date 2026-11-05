@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -681,9 +681,29 @@ export function PaymentCheckout() {
   }
 
   if (suspended) {
+    // 出口依身分：首購者（註冊中）回首頁會再被導回結帳頁，給與頁首相同的「登出」；
+    // 續費者是完整會員，給「回首頁」（W5-5，plan §4）。
     return (
       <div className="max-w-md mx-auto mt-12">
-        <SuspendedNotice />
+        <SuspendedNotice
+          action={
+            isRenewal ? (
+              <Button asChild tone="secondary" className="w-full">
+                <Link to="/">回首頁</Link>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                tone="secondary"
+                className="w-full"
+                disabled={funnelLogout.isLoggingOut}
+                onClick={() => void funnelLogout.logout()}
+              >
+                登出
+              </Button>
+            )
+          }
+        />
       </div>
     );
   }

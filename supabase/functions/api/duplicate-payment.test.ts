@@ -49,10 +49,11 @@ async function complete(client: Client, userId: string, tradeNo: string) {
 }
 
 async function subs(client: Client, userId: string) {
+  // 依迄日排序：expire() 只把迄日改到過去、起日不動，依起日排會把那筆排到中間。
   const { data } = await client.from('subscriptions')
     .select('id, start_date, end_date, payment_transaction_id')
     .eq('user_id', userId)
-    .order('start_date', { ascending: true });
+    .order('end_date', { ascending: true });
   return data ?? [];
 }
 
@@ -225,9 +226,12 @@ Deno.test('process_successful_payment：告警寫入失敗時付款仍完成開�
     await insertOrder(client, user.id, t2, null);
     await complete(client, user.id, t1);
     const ok = JSON.stringify({ Status: 'SUCCESS' });
-    // 同一交易內讓 system_alerts 寫入必定失敗（check 違反），交易結束即復原。
+    // 同一交易內把 log_system_alert 換成必定擲錯的版本（它本身會吞 insert 錯誤，只擋 insert
+    // 測不到外層隔離），交易結束即復原。
     await sql.begin(async (tx) => {
-      await tx`alter table system_alerts add constraint t_block_dup check (source <> 'duplicate_payment') not valid`;
+      await tx`create or replace function public.log_system_alert(
+        p_source text, p_severity text, p_message text, p_context jsonb default '{}'::jsonb)
+        returns void language plpgsql as $f$ begin raise exception 'alert down'; end $f$`;
       await tx`select process_successful_payment(${user.id}::uuid, ${t2}, ${t2}, ${ok}::jsonb)`;
       const [row] = await tx`select status from payment_orders where transaction_id = ${t2}`;
       assertEquals(row.status, 'completed');

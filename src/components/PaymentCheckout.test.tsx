@@ -956,6 +956,30 @@ describe('停權者的結帳頁', () => {
     expect((pay as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('載入中（尚未拿到 profile）不渲染付款鈕', async () => {
+    getSessionMock.impl = () => new Promise(() => {});
+    renderPage();
+    expect(await screen.findByText('載入中...')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+  });
+
+  it('停權的首購者出口是登出，走與頁首相同的 useFunnelLogout', async () => {
+    stubBackend({ profile: SUSPENDED_PROFILE });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '登出' }));
+    await waitFor(() => expect(funnelLogout.logout).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('link', { name: '回首頁' })).toBeNull();
+  });
+
+  it('停權的續費者出口是回首頁，不登出', async () => {
+    stubBackend({
+      profile: { ...SUSPENDED_PROFILE, registrationStep: 3, subscriptionEndDate: recentEnd },
+    });
+    renderPage();
+    expect(await screen.findByRole('link', { name: '回首頁' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '登出' })).toBeNull();
+  });
+
   it('送單收到 403 ACCOUNT_SUSPENDED 時切到停權說明，不跳錯誤 toast', async () => {
     stubBackend({
       profile: { registrationStep: 1, name: '快照過時' },

@@ -1066,7 +1066,7 @@ app.get('/referrals/validate/:code', async (c) => {
     return c.json({ valid: false, error: { message: '服務暫時無法使用' } }, 503);
   }
   if (!data || data.length === 0) {
-    return c.json({ valid: false, error: { message: '推薦碼不存在或已失效' } });
+    return c.json({ valid: false, error: { message: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE } });
   }
 
   const row = data[0];
@@ -2099,11 +2099,11 @@ app.post('/payuni/prepare', async (c) => {
     const { data: codeRows, error: codeErr } = await client
       .rpc('validate_referral_code', { p_code: referredByCode });
     if (codeErr || !codeRows || codeRows.length === 0) {
-      return c.json({ success: false, error: '推薦碼不存在或已失效' }, 400);
+      return c.json({ success: false, error: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE }, 400);
     }
     const referrerUserId = codeRows[0].referrer_user_id;
     if (referrerUserId === user.id) {
-      return c.json({ success: false, error: '不能使用自己的推薦碼' }, 400);
+      return c.json({ success: false, error: REFERRAL_CODE_SELF_MESSAGE }, 400);
     }
     // referred_by_is_default 一併重置：使用者親自填碼換線 = 非自動來源。
     // 這裡是 referred_by_* 的第二個寫入點（不經 apply_referral_side_effects），
