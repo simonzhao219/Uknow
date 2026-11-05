@@ -107,9 +107,9 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 | 排程（`cron.job`） | 時間（UTC） | 做什麼 | 來源 |
 |---|---|---|---|
-| `reconcile-pending-payments` | `7 * * * *` | `invoke_internal_endpoint('reconcile')` → `POST /internal/reconcile-pending-payments` | `20261111000001` |
-| `purge-orphan-listing-photos` | `17 19 * * *` | `invoke_internal_endpoint('purge-photos')` → `POST /internal/purge-orphan-listing-photos`；實刪看 Edge secret `PHOTO_PURGE_LIVE` | `20261111000001` |
-| `prune-scheduled-job-runs` | `41 4 * * *` | 帳本 90 天清理 | `20261111000001` |
+| `reconcile-pending-payments` | `7 * * * *` | `invoke_internal_endpoint('reconcile')` → `POST /internal/reconcile-pending-payments` | `20261112000001` |
+| `purge-orphan-listing-photos` | `17 19 * * *` | `invoke_internal_endpoint('purge-photos')` → `POST /internal/purge-orphan-listing-photos`；實刪看 Edge secret `PHOTO_PURGE_LIVE` | `20261112000001` |
+| `prune-scheduled-job-runs` | `41 4 * * *` | 帳本 90 天清理 | `20261112000001` |
 | `prune-rate-limits` | `17 * * * *` | 限流計數清理 | `20261017000001` |
 | `purge-stale-referral-invites` | `23 3 * * *` | Email 邀請空殼帳號清理 | `20261025000011` |
 
@@ -144,7 +144,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
     from cron.job where jobname in ('reconcile-pending-payments', 'purge-orphan-listing-photos');
   ```
 
-  直接 `cron.unschedule` 也可以，但看門狗會判成「排程不存在」並推 P1。要補回時重跑 `20261111000001` 檔尾的三段 `cron.schedule`。
+  直接 `cron.unschedule` 也可以，但看門狗會判成「排程不存在」並推 P1。要補回時重跑 `20261112000001` 檔尾的三段 `cron.schedule`。
 - **準時度量測**（W4-26，晉升後 24～48 小時由主 session 跑）：
   - `cron.job_run_details` join `cron.job`：pg_cron 有沒有準時排進請求。
   - `scheduled_job_runs`：端點有沒有做完。判準以這張為準：pg_cron 完成列 24 小時 ≥ 23 列，相鄰間隔 ≤ 70 分鐘，`trigger='github'` 補跑為 0，`abandoned` 為 0。
@@ -186,7 +186,7 @@ migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
 | `20260726000002_name_write_paths` | `profiles.name` 寫入收斂到 Edge Function:撤銷 authenticated 的 `update (name)`、`handle_new_user` 不再從 metadata 帶入姓名 |
 | `20261017000003_revoke_profile_self_update_grants` | authenticated 對 `profiles` 的 UPDATE 全數撤銷——個人資料只能經 Edge Function 寫入 |
 | `20261017000004_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
-| `20261111000001_scheduled_job_runs` | 對帳與照片清理改由 pg_cron 經 pg_net 觸發；排程帳本兼租約、`scheduler_health`、Vault 憑證（見〈排程〉） |
+| `20261112000001_scheduled_job_runs` | 對帳與照片清理改由 pg_cron 經 pg_net 觸發；排程帳本兼租約、`scheduler_health`、Vault 憑證（見〈排程〉） |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。

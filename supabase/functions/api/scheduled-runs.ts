@@ -3,7 +3,7 @@
 //
 // pg_cron 經 pg_net 呼叫端點是非同步的：cron.job_run_details 只記「請求排進
 // 佇列」，看不到端點有沒有做完。所以由端點自己寫 scheduled_job_runs
-// （migration 20261111000001），GitHub 看門狗與準時度量測都讀它。
+// （migration 20261112000001），GitHub 看門狗與準時度量測都讀它。
 //
 // 契約（scheduled-runs.unit.test.ts 釘住）：
 //   * fn 回傳 ScheduledRunOutcome。業務上的失敗（例如 query_all_failed 的
@@ -92,7 +92,7 @@ export async function withScheduledRun(
 }
 
 /**
- * 以 service_role client 呼叫 begin／finish_scheduled_run（migration 20261111000001）。
+ * 以 service_role client 呼叫 begin／finish_scheduled_run（migration 20261112000001）。
  * 傳 factory 而不是 client：index.ts 在模組頂層組 deps，那時建 client 會讓沒有
  * SUPABASE_URL 的單元測試在 import 時就炸掉。
  */

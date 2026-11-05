@@ -133,7 +133,7 @@ def decide_reconcile(status: int, health: dict | None, now: datetime, prev_run: 
         if _throttle_by_grid(now, prev_run):
             _line(d, "P1", "正式站 pg_cron 對帳排程不存在",
                   "【排程】正式站 cron.job 沒有對帳排程，GitHub 本輪補跑。下一步：在 SQL Editor 重跑 migration "
-                  "20261111000001 檔尾的三段 cron.schedule。")
+                  "20261112000001 檔尾的三段 cron.schedule。")
         return d
     if not job.get("cronJobActive"):
         d = Decision(True, rule="R4", summary=["對帳排程人為停用中（cron.job.active = false）：GitHub 代跑"])

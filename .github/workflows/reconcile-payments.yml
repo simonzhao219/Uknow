@@ -13,7 +13,7 @@ name: Reconcile Pending Payments
 #   - 回應形狀斷言：HTTP 200 但 body 是錯誤內容也要紅
 #   - 失敗自動開 issue：排程失敗的通知只寄給最後改檔的人，很容易蒸發
 # pg-cron-schedulers（第 5 波 S1）起，**對帳由 Supabase pg_cron 觸發**（每小時第 7 分，
-# migration 20261111000001）。這支 workflow 改當**看門狗兼後備觸發**：
+# migration 20261112000001）。這支 workflow 改當**看門狗兼後備觸發**：
 #   - 每小時讀 GET /internal/scheduler-health，判斷 pg_cron 是否存活
 #     （決策在 scripts/scheduler-watchdog.py，表格案例由 framework-check 跑）
 #   - pg_cron 停擺、排程不見、人為停用、或 Edge 尚未部署（404）時自己補跑對帳

@@ -1,5 +1,5 @@
 // ============================================================
-// scheduled_job_runs 帳本與租約（migration 20261111000001）：
+// scheduled_job_runs 帳本與租約（migration 20261112000001）：
 // begin_scheduled_run／finish_scheduled_run 的交易語意與權限。
 //
 // 這張帳本是排程觀測的單一來源：pg_cron 經 pg_net 呼叫端點是非同步的，

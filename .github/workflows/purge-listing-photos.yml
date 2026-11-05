@@ -21,7 +21,7 @@ name: Purge Listing Photos
 # curl -v，也不印回應 body。要看清單時業主在本機 curl（規格書 §11 的 SOP）。
 #
 # pg-cron-schedulers（第 5 波 S1）起，**每日清理由 Supabase pg_cron 觸發**（UTC 19:17＝台北
-# 03:17，migration 20261111000001；實刪看正式站 Edge secret PHOTO_PURGE_LIVE）。
+# 03:17，migration 20261112000001；實刪看正式站 Edge secret PHOTO_PURGE_LIVE）。
 # 這支 workflow 的排程改當**看門狗兼後備觸發**：
 #   - 讀 GET /internal/scheduler-health；26 小時沒有完成的清理就自己補跑並推 LINE P2
 #   - 開關一致性：pg_cron 路徑的實刪狀態與 repo var PHOTO_PURGE_LIVE 不一致時推 LINE P2
