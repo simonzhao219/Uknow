@@ -614,7 +614,7 @@ export function PaymentCheckout() {
       navigate('/', { replace: true });
       return;
     }
-    // 首購者：與頁首「登出」同一支（D2）——同一導向、同一 toast、同樣不清草稿。
+    // 首購者：與頁首「登出」同一支（D2）——同一導向、同一 toast、同一清理。
     await funnelLogout.logout();
   };
 

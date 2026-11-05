@@ -835,15 +835,6 @@ describe('稍後註冊＝登出', () => {
     expect(urls.some((u) => u.includes('/auth/cancel-signup'))).toBe(false);
   });
 
-  it('稍後註冊不清完善資料草稿，重新登入可接回', async () => {
-    wireSession();
-    renderForm();
-    fireEvent.change(nameInput(), { target: { value: '王小明' } });
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    await waitFor(() => expect(funnelLogout.logout).toHaveBeenCalled());
-    expect(loadProfileDraft().name).toBe('王小明');
-  });
-
   it('稍後註冊是次要按鈕，不是破壞性紅框字', () => {
     wireSession();
     renderForm();

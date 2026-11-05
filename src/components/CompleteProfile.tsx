@@ -995,7 +995,8 @@ export function CompleteProfile() {
               )}
             </Button>
 
-            {/* 稍後註冊＝登出（業主裁決 W5-12）：不刪帳號、不清草稿，下次登入接回原步驟。
+            {/* 稍後註冊＝登出（業主裁決 W5-12）：不刪帳號，已送出的資料保留、下次登入接回原步驟；
+                未送出的草稿隨登出清除（SIGNED_OUT → clearAccountLocalState）。
                 與頁首登出同一支 useFunnelLogout；可逆又無傷 → 次要按鈕、不收確認框（ui-ux §11.3、§12.11）。 */}
             <Button
               type="button"

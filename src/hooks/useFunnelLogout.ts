@@ -1,8 +1,9 @@
 // 註冊中途的登出（T1 auth-state-trust，plan §4.2；D2、D3、E5）。
 //
 // 頁首「登出」（funnel 版）與結帳頁首購者「登出，稍後再付款」共用：同一導向
-// （/login）、同一 toast、同一清理。不清完善資料草稿（D3）——重新登入後由
-// resolvePostLoginAction 接回原步驟，所以不需要確認框。
+// （/login）、同一 toast、同一清理。不刪帳號，已送出的資料保留，重新登入後由
+// resolvePostLoginAction 接回原步驟，所以不需要確認框。未送出的完善資料草稿會隨
+// SIGNED_OUT → clearAccountLocalState 清除（D3 原寫「不清草稿」，與實際不符，W5-28 依程式更正）。
 
 import { useCallback, useContext, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';

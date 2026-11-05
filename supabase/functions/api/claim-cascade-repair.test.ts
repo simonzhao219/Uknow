@@ -142,15 +142,25 @@ Deno.test('repair_orphaned_claim_rewards：兩個並行補發 → 每代恰好�
     // 造孤兒：刪掉 cascade 寫成的續約獎勵。
     await client.from('reward_transactions').delete().eq('source_claim_id', credit!.id);
 
-    let second: Promise<unknown> | null = null;
+    let second: Promise<{ r: { candidates_found: number; repaired_count: number } }[]> | null =
+      null;
     await sql1.begin(async (tx) => {
       await tx`select repair_orphaned_claim_rewards(${a.id}::uuid)`;
       // 連線 1 已插入、尚未 commit：連線 2 此時再跑一次。postgres.js 的查詢是 lazy
       // 的（await／then 才送出），用 .execute() 立刻送，才是真的並行。
-      second = sql2`select repair_orphaned_claim_rewards(${a.id}::uuid)`.execute();
+      second = sql2<{ r: { candidates_found: number; repaired_count: number } }[]>`
+        select repair_orphaned_claim_rewards(${a.id}::uuid) as r`.execute();
       await new Promise((r) => setTimeout(r, 500));
     });
-    await second;
+    const [{ r: secondResult }] = await second!;
+    // 分辨擋下第二筆的是鎖還是唯一索引：有鎖時第二條連線等到第一條 commit、重查後走
+    // 「已補過就跳過」（不計候選、不補發）；只有索引時它會照常呼叫發獎、撞索引被吞，
+    // repaired_count 仍是 1——列數一樣是 1，但這條斷言會紅。
+    assertEquals(
+      secondResult.repaired_count,
+      0,
+      `第二個補發應在鎖後跳過：${JSON.stringify(secondResult)}`,
+    );
 
     const { data: rows } = await client
       .from('reward_transactions')

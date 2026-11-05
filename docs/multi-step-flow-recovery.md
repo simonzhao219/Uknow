@@ -103,7 +103,7 @@ same-URL 重新整理。
   不換頁、不開新分頁，於 LINE 等會擋 `target=_blank` 的內建瀏覽器也一致可用。
 - **架構（就算卸載也接得回）**：`src/utils/formDraft.ts` 把填到一半的內容持久化到
   `sessionStorage`，`CompleteProfile` 以 lazy initializer 於掛載時同步 rehydrate，
-  成功送出時清除（「稍後註冊」等同登出，不清）。選 `sessionStorage`（而非 localStorage）是刻意的
+  成功送出或登出（含「稍後註冊」，等同登出）時清除。選 `sessionStorage`（而非 localStorage）是刻意的
   隱私取捨：撐得過同分頁導頁與重整（正是本 bug 情境），但分頁關閉即清，身分證
   字號等個資不長期落地。純函式核心（sanitize / parse）以 vitest 釘死，e2e 另以
   「讀條款後表單仍在」「重整後表單仍在」兩情境如實驗收。
