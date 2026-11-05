@@ -344,11 +344,11 @@ Deno.test('reconcile：碼表外狀態滿 5 天也不標 expired，按單號只�
   }
 });
 
-Deno.test('reconcile：DataSource＝B（incomplete）滿 5 天也不標 expired、不告警', async () => {
+Deno.test('reconcile：DataSource＝B（incomplete）未滿 4 天 → 本輪不下結論、不告警', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Incomplete Data' });
   try {
-    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
     const s = await reconcilePendingOrders(
       client,
       () => Promise.resolve({ stillProcessing: true as const, incomplete: true as const }),
@@ -361,6 +361,37 @@ Deno.test('reconcile：DataSource＝B（incomplete）滿 5 天也不標 expired�
     assertEquals([row.status, row.reconcile_unknown_at], ['pending', null]);
     assertEquals(await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo), []);
   } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// W5-44（主 session 2026-11-05）：持續回 B 超過 4 天（同 expire 天數）就轉 unknown 交人工，
+// 否則付了錢卻一直 B 的單永遠不收斂、也沒有人知道。
+Deno.test('reconcile：DataSource＝B 超過 4 天 → 轉 unknown：不標 expired、一筆 error、排到後段', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Incomplete Too Long' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    const s = await reconcilePendingOrders(
+      client,
+      () => Promise.resolve({ stillProcessing: true as const, incomplete: true as const }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(s.expired, 0);
+    assertEquals(s.unknownStatus >= 1, true);
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.status, 'pending');
+    assertEquals(row.reconcile_unknown_at !== null, true);
+    const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    assertEquals(alerts.length, 1);
+    assertEquals(alerts[0].severity, 'error');
+    assertEquals(
+      (alerts[0].context as Record<string, unknown>).statusReason,
+      'incomplete_too_long',
+    );
+  } finally {
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
     await deleteTestUsers(client, [user.id]);
   }
 });
