@@ -44,6 +44,8 @@ import {
   isRegistrationLocked,
 } from '../utils/registrationFlow';
 import { useSubscription } from '../hooks/useSubscription';
+import { useRetryFocus } from '../hooks/useRetryFocus';
+import { LoadErrorCallout } from './common/LoadErrorCallout';
 import { StatusCallout } from './ui/status-callout';
 import { BreakableEmail } from './common/BreakableEmail';
 import { LINE_OFFICIAL_ACCOUNT_HANDLE, PROFILE_LOCKED_FIELDS } from '../utils/constants';
@@ -80,6 +82,12 @@ export function PaymentCheckout() {
   const [newCodeUnavailableMessage, setNewCodeUnavailableMessage] = useState<string | null>(null);
   // S6：後端回 REFERRAL_CYCLE 時，欄位錯誤改說成環的原因（不是「不存在或已失效」）。
   const [newCodeInvalidMessage, setNewCodeInvalidMessage] = useState<string | null>(null);
+  // W5-54：localStorage 分支背景 /profile 讀不到——不擋付款，只顯示可重試的提示。
+  const [serverProfileUnconfirmed, setServerProfileUnconfirmed] = useState(false);
+  const profileRetry = useRetryFocus({
+    loading: suspensionPending,
+    failed: serverProfileUnconfirmed,
+  });
   const newCodeInputRef = useRef<HTMLInputElement>(null);
   const renewalSectionRef = useRef<HTMLDivElement>(null);
   // S6：送單被拒後的內嵌狀態（toast 會消失，這些要留在畫面上）。
@@ -160,6 +168,53 @@ export function PaymentCheckout() {
     // 組件卸載時清除
     return () => clearInterval(intervalId);
   }, [pendingUser, navigate, showToast, supabase]);
+
+  // localStorage 分支的背景 /profile（W5-5 停權確認；S6 擴大成以伺服器資料重判身分，W5-54）。
+  // 讀不到不擋付款（後端 prepare 兜底），但顯示「暫時無法確認會員狀態」＋只重發這支的重試。
+  const confirmServerProfile = (
+    session: Parameters<typeof fetchProfileForSession>[0],
+    snapshotHasEndDate: boolean,
+  ) => {
+    setSuspensionPending(true);
+    setServerProfileUnconfirmed(false);
+    // force：要的是「此刻」的停權狀態，不併進別處沒逾時的在飛請求（否則可能永不回來、鈕永遠停用）。
+    return fetchProfileForSession(session, { force: true, timeoutMs: PROFILE_FETCH_TIMEOUT_MS })
+      .then((result) => {
+        if (result.kind !== 'ok') {
+          setServerProfileUnconfirmed(true);
+          return;
+        }
+        const profile = result.profile;
+        if (isCheckoutBlockedBySuspension(profile)) {
+          setSuspended(true);
+          return;
+        }
+        // 快照只當首繪（S6，pay P1-1）：已是會員、已付款開通中 → 照 API 分支導走；
+        // 伺服器說是曾訂閱者而快照不是 → 換成伺服器資料，切成續約／新約雙模式。
+        if (
+          profile.accountStatus === 'active' ||
+          (profile.paidAwaitingActivation && profile.lastTradeNo)
+        ) {
+          const redirect = resolveCheckoutPageRedirect(profile);
+          if (redirect) navigate(redirect, { replace: true });
+          return;
+        }
+        if (profile.subscriptionEndDate && !snapshotHasEndDate) {
+          setPendingUser((prev: any) => ({ ...prev, ...profile }));
+        }
+      })
+      .catch(() => setServerProfileUnconfirmed(true))
+      .finally(() => setSuspensionPending(false));
+  };
+
+  const retryServerProfile = async () => {
+    const { session } = await readSession(supabase.auth);
+    if (!session) {
+      setServerProfileUnconfirmed(true);
+      return;
+    }
+    await confirmServerProfile(session, !!pendingUser?.subscriptionEndDate);
+  };
 
   // 檢查是否有待付款的用戶資料
   useEffect(() => {
@@ -279,32 +334,7 @@ export function PaymentCheckout() {
         }
         // 快照沒有停權欄位（W5-5）：背景以 /profile 確認，回來前付款鈕停用；
         // 暫時讀不到就不擋（後端 prepare 的 403 兜底）。
-        setSuspensionPending(true);
-        // force：要的是「此刻」的停權狀態，不併進別處沒逾時的在飛請求（否則可能永不回來、鈕永遠停用）。
-        fetchProfileForSession(session, { force: true, timeoutMs: PROFILE_FETCH_TIMEOUT_MS })
-          .then((result) => {
-            if (result.kind !== 'ok') return; // W5-54：讀不到不擋，後端 prepare 兜底
-            const profile = result.profile;
-            if (isCheckoutBlockedBySuspension(profile)) {
-              setSuspended(true);
-              return;
-            }
-            // 快照只當首繪（S6，pay P1-1）：已是會員、已付款開通中 → 照 API 分支導走；
-            // 伺服器說是曾訂閱者而快照不是 → 換成伺服器資料，切成續約／新約雙模式。
-            if (
-              profile.accountStatus === 'active' ||
-              (profile.paidAwaitingActivation && profile.lastTradeNo)
-            ) {
-              const redirect = resolveCheckoutPageRedirect(profile);
-              if (redirect) navigate(redirect, { replace: true });
-              return;
-            }
-            if (profile.subscriptionEndDate && !userData.subscriptionEndDate) {
-              setPendingUser((prev: any) => ({ ...prev, ...profile }));
-            }
-          })
-          .catch(() => {})
-          .finally(() => setSuspensionPending(false));
+        confirmServerProfile(session, !!userData.subscriptionEndDate);
       } catch (error) {
         console.error('PaymentCheckout: Error parsing pendingUser:', error);
         localStorage.removeItem('pendingUser');
@@ -1172,7 +1202,12 @@ export function PaymentCheckout() {
                           setNewReferrerName(null);
                           setNewCodeInvalidMessage(null);
                         }}
-                        onBlur={() => handleValidateNewCode(newReferralCode)}
+                        onBlur={() => {
+                          // 後端已判定這個碼成環（REFERRAL_CYCLE）且碼沒改過：不重驗，
+                          // 否則 validate 回「有效」會把環的原因洗掉。
+                          if (newCodeInvalidMessage) return;
+                          handleValidateNewCode(newReferralCode);
+                        }}
                         data-testid="new-referral-code-input"
                       />
                       {newCodeStatus === 'checking' && (
@@ -1265,6 +1300,15 @@ export function PaymentCheckout() {
               <p className="text-sm text-center text-muted-foreground" role="status">
                 正在確認您的會員狀態…
               </p>
+            )}
+            {!suspensionPending && serverProfileUnconfirmed && (
+              <LoadErrorCallout
+                ref={profileRetry.errorRef}
+                title="暫時無法確認會員狀態"
+                description="仍可直接付款，送出時會再確認一次。"
+                retryLabel="重試"
+                onRetry={() => profileRetry.retry(retryServerProfile)}
+              />
             )}
             {checkoutNotice === 'modeRetry' && (
               <StatusCallout

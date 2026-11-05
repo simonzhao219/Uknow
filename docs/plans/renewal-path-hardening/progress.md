@@ -20,7 +20,7 @@
 
 ## 目前位置與下一步
 
-業主 11/05 22:37 開工（review.md 處置節）。階段 1～7 完成；下一步：CI 全綠 → journey dispatch → check:full → /review-implementation → 收尾。階段 2 與 3 須同一 PR 合併（plan §2.3）。
+業主 11/05 22:37 開工（review.md 處置節）。階段 1～7 完成；check:full 綠；/review-implementation 完成（P0 0，見 implementation-review.md，P1 三項已修、兩項記偏離）。下一步：推送 → CI 全綠 → journey dispatch → 收尾清理。階段 2 與 3 須同一 PR 合併（plan §2.3）。
 本機驗證環境：scratchpad 的 `apply.sh`（PG16＋shim，套全部 migration）；deno 測試的正式紅綠以 CI api-tests 為準。
 舊敘述：規劃完成、/review-plan 完成（P0 0／P1 16／P2 13，見 review.md）。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
 施工前先請主 session 代跑 plan §7 的唯讀查詢 1–7，結果記在下方。
@@ -40,6 +40,14 @@
 | 7 | changed_at > completed_at | **3**（延遲 2～38 秒；三人獎金與 edge 都已正常發放，潛伏、無損失） | 1 |
 
 結論：migration B 回填正式站新增 15 列 pair、不改既有 21 列 reward_transactions；king_round_base 無 fresh 歷史可補（ledger_reset 0）；1 張既有 credit 不受影響；q7 佐證 changed_at 閘門 bug 成立。
+
+## 偏離規劃（實作審查後確認）
+
+- journey f70：3b／6b 章名與 plan 不同；新約後三代獎金、任務、自領停發未在 journey 逐項斷言，ch7 credit 補充與 ch9 墨黑鈕斷言未寫——
+  由 Deno 整合測試與 mocked e2e 覆蓋，journey 補章留待第 6 波。
+- 回填寫成具名函式 `backfill_referral_pair_history()`（冪等、可測），並排除已刪帳號（`exists`）。
+- 契約 `lastTradeNo` 為 optional（缺值走客服退路）；`GET /profile` 的 heal 會取換線 advisory lock；prepare 的預設成環告警不另包子交易。
+- W5-54 降級提示用 `LoadErrorCallout`＋只重發 `/profile`，不重跑整頁載入（避免清掉使用者已選的續費模式）。
 
 ## Blockers（逃生口紀錄）
 

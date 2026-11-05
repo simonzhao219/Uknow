@@ -1141,6 +1141,16 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
     await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
   });
 
+  it('背景確認失敗時顯示暫時無法確認＋重試，重試成功後切成雙模式（W5-54）', async () => {
+    stubBackend({ profile: ['error', RENEWER_PROFILE] });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    expect(await screen.findByText('暫時無法確認會員狀態')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重試' }));
+    expect(await screen.findByTestId('renewal-mode-section')).toBeTruthy();
+    expect(screen.queryByText('暫時無法確認會員狀態')).toBeNull();
+  });
+
   it('送單收到 RENEWAL_MODE_REQUIRED 時重抓會員資料並提示選擇續約或新約', async () => {
     stubBackend({
       profile: [{ registrationStep: 1 }, RENEWER_PROFILE],
@@ -1251,6 +1261,39 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
     fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
     expect(await screen.findByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人')).toBeTruthy();
     expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('REFERRAL_CYCLE 標記後離開碼欄位不重驗，環的原因留在欄位上', async () => {
+    stubBackend({
+      profile: RENEWER_PROFILE,
+      validateName: '一代會員',
+      prepare: {
+        status: 400,
+        body: {
+          success: false,
+          error: {
+            code: 'REFERRAL_CYCLE',
+            message: '此推薦碼屬於您的推薦網絡成員，無法作為推薦人',
+          },
+        },
+      },
+    });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048777' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('new-referrer-name');
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
+    await screen.findByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人');
+    fireEvent.blur(input);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId('new-referrer-name')).toBeNull();
+    expect(screen.getByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人')).toBeTruthy();
   });
 
   it('新約填回現任推薦人的碼時，確認框寫推薦人維持（W5-55）', async () => {
