@@ -11,12 +11,12 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | C:唯一索引+repair 鎖 | ✅ 綠 | e905070(CI run 41899960223 紅 2 條)；並行測試修正 8f5173d | 7b98a21(CI run 41902489456 綠) |
-| 2 | B:register 走 validate(後端) | ✅ 綠(待 CI) | eaec081(CI run 41902489456 紅 4 條) | dbd9c52 |
+| 2 | B:register 走 validate(後端) | ✅ 綠 | eaec081(CI run 41902489456 紅 4 條) | dbd9c52(CI run 41941807197 綠) |
 | 3 | B:register 400／503 前端 | ✅ 綠 | 7ce5d4c(本機 vitest 紅 3 條) | bcb7fa7 |
-| 4 | D:稍後註冊改登出、cancel-signup 退場 | ⬜ 未開始 | | |
-| 5 | E:prepare 停權 403+prepare_payment_order(後端) | ⬜ 未開始 | | |
-| 6 | E:結帳頁停權卡(前端) | ⬜ 未開始 | | |
-| 7 | A+W5-14:重複付款偵測、付款途中停權告警 | ⬜ 未開始 | | |
+| 4 | D:稍後註冊改登出、cancel-signup 退場 | ✅ 綠 | 6b29d0f(CI run 41941807197 D 紅 1 條；本機 vitest 紅 4 條) | b7f84de(CI run 41942455580 綠)；appShell 測試 64815b2(業主授權) |
+| 5 | E:prepare 停權 403+prepare_payment_order(後端) | ✅ 綠 | c027e80(CI run 41942455580 紅 10 條) | b3b4e70(CI run 41943509156 綠) |
+| 6 | E:結帳頁停權卡(前端) | ✅ 綠 | 5037fc1(本機 vitest 紅 5 條) | 448281b |
+| 7 | A+W5-14:重複付款偵測、付款途中停權告警 | ✅ 綠(待 CI) | 922820b(CI run 41943509156 紅 5 條) | dda4a53 |
 | 8 | 收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
@@ -36,5 +36,9 @@
   (內含 clearAuthHint)，CompleteProfile 不再自己清。提議：清單中的 `components/CompleteProfile.tsx` 換成
   `hooks/useFunnelLogout.ts`(守的行為不變：註冊中途離開一定清提示)。規劃階段 4 漏列此測試。
   **授權**：業主 2026-11-05 08:25（台北）互動選項：「授權修改 (Recommended)」——由本 session 代刪 tdd-lock，只換該檔名；測試名「取消註冊」改「註冊中途登出」以符實。
+
+- 階段 7：〈告警寫入失敗時付款仍完成開通〉〈prepare 已有未逾期 pending 單時仍建新單〉〈對帳延遲開通不判重複〉紅燈時即綠——
+  前者因 log_system_alert 本身吞錯、後兩者是現況特徵，作為回歸防線保留(逃生口 1 的變體：不跳過階段，其餘 5 條真紅)。
+- 階段 7 會改變 9 支既有測試裡「同一人 active 時再付一次 null 單」的錨點(改接續＋告警)；它們斷言的是獎金與任務，CI 全綠為準。
 
 ## 框架摩擦
