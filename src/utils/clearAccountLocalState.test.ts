@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 //
 // 登出與換帳號時清本機「屬於某個帳號」的狀態（R3 §1.3 P2-2、P2-3）。
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { resetAnalytics } = vi.hoisted(() => ({ resetAnalytics: vi.fn() }));
+vi.mock('./analytics/analyticsRuntime', () => ({ resetAnalytics }));
+
 import { clearAccountLocalState } from './clearAccountLocalState';
 
 beforeEach(() => {
+  resetAnalytics.mockClear();
   localStorage.clear();
   sessionStorage.clear();
 });
@@ -26,5 +31,12 @@ describe('clearAccountLocalState', () => {
     clearAccountLocalState();
     expect(localStorage.getItem('homeViewMode')).toBe('photo');
     expect(localStorage.getItem('pending_referral_code')).toBe('ABC123');
+  });
+});
+
+describe('clearAccountLocalState 與監控身分', () => {
+  it('同時重置 analytics 匿名身分（登出、換帳號、無效 session 共用這一處）', () => {
+    clearAccountLocalState();
+    expect(resetAnalytics).toHaveBeenCalledTimes(1);
   });
 });
