@@ -224,19 +224,24 @@ RECONCILE_CASES: list[tuple[str, str | None, tuple, bool, bool, str, str]] = [
     ("R4 人為停用、其他時段 → 補跑、不推", "paused", (200, "2026-11-20T05:37:03Z", PREV), True, False, "", "R4"),
     # stalled：L = 22:07:41，now 01:37 → m≈209；上次 run 00:37 → m_prev≈149。
     # bucket(209)=0、bucket(149)=0 → 同桶不推；但首次跨過 90 分的那次 run 會推（下一案）
-    ("R6 停擺且最近完成列是 GitHub 補跑 → 仍判逾期、補跑；同桶不重推", "stalled", (200, NOW, PREV), True, False, "", "R6"),
-    ("R6 停擺首次跨過 90 分 → 補跑、推 P1", "stalled", (200, "2026-11-19T23:40:00Z", "2026-11-19T23:30:00Z"), True, True, "P1", "R6"),
-    ("R6 停擺持續、跨進下一個 6 小時桶 → 再推", "stalled", (200, "2026-11-20T05:40:00Z", "2026-11-20T05:00:00Z"), True, True, "P1", "R6"),
+    ("R6 停擺且最近完成列是 GitHub 補跑 → 仍判逾期、補跑；同桶不重推", "stalled", (200, NOW, "2026-11-20T01:00:00Z"), True, False, "", "R6"),
+    # W5-45：補跑門檻 90 分不變；停擺 LINE 要連漏兩輪（≥150 分）才推——只漏一輪時，
+    # 看門狗名目 H:37 執行，加上 GitHub 的啟動延遲必然越過 90 分，會變成每漏一輪就推。
+    ("R6 只漏一輪（92 分）→ 補跑、不推（W5-45）", "stalled", (200, "2026-11-19T23:40:00Z", "2026-11-19T23:30:00Z"), True, False, "", "R6"),
+    ("R6 連漏兩輪、首次跨過 150 分 → 補跑、推 P1", "stalled", (200, "2026-11-20T00:40:00Z", "2026-11-19T23:40:00Z"), True, True, "P1", "R6"),
+    ("R6 停擺持續、跨進下一個 6 小時桶 → 再推", "stalled", (200, "2026-11-20T06:40:00Z", "2026-11-20T06:00:00Z"), True, True, "P1", "R6"),
     ("R6 上次 run 之後 pg_cron 曾恢復（L > P）→ 視同首推", "stalled", (200, NOW, "2026-11-19T22:00:00Z"), True, True, "P1", "R6"),
     ("R6 從未完成、上次 run 在同一 6 小時格 → 補跑、不推", "never-completed", (200, NOW, PREV), True, False, "", "R6"),
     ("R6 從未完成、查不到上次 run → 推", "never-completed", (200, NOW, None), True, True, "P1", "R6"),
-    ("R6 pg_net 401 → 推 P1 且 body 帶 401 診斷", "net-401", (200, "2026-11-19T23:40:00Z", "2026-11-19T23:30:00Z"), True, True, "P1", "R6"),
+    ("R6 pg_net 401 → 推 P1 且 body 帶 401 診斷", "net-401", (200, "2026-11-20T00:40:00Z", "2026-11-19T23:40:00Z"), True, True, "P1", "R6"),
 ]
 
 # (說明, 情境, (status, now, repo_live), 預期 backfill, 預期 notify, 預期 rule)
 PURGE_CASES: list[tuple[str, str | None, tuple, bool, bool, str]] = [
     ("正常：6 小時前完成、實刪與 repo var 一致 → 不補不推", "healthy", (200, NOW, "true"), False, False, ""),
     ("P1 超過 26 小時沒完成 → 補跑、推 P2", "purge-stale", (200, NOW, "true"), True, True, "P1"),
+    # 只看 pg_cron 的完成列：GitHub 補跑或人工 dry-run 刷新的 lastCompletedAt 不算（審查 P2）
+    ("P1 最近完成列只有 GitHub 補跑、pg_cron 已 30 小時沒完成 → 仍補跑、推 P2", "purge-github-only", (200, NOW, "true"), True, True, "P1"),
     ("P1 health 404 → 補跑、不推（空窗）", None, (404, NOW, "true"), True, False, "P1"),
     ("P1 health 500 → 補跑、推 P2", None, (500, NOW, "true"), True, True, "P1"),
     ("P2 Edge dry-run、repo var 開 → 推 P2", "purge-dry-run", (200, NOW, "true"), False, True, "P2"),
