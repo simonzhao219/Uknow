@@ -2794,8 +2794,9 @@ export async function reconcilePendingOrders(
         }
         continue;
       }
-      if (order.reconcile_unknown_at) {
+      if (order.reconcile_unknown_at && !(result.stillProcessing && result.queryFailure)) {
         // 之前判讀不了、這輪查得到可判讀的結果：清回 null，回到視窗前段。
+        // 查詢層一時失敗（queryFailure）不算可判讀，保留原標記。
         const { error: clearErr } = await client.from('payment_orders')
           .update({ reconcile_unknown_at: null }).eq('id', order.id);
         if (clearErr) {
