@@ -102,6 +102,8 @@
 | W5-58 | S6：king_round_base 寫入失敗會讓整筆 fresh 付款回滾 | **子交易隔離＋error 告警，付款照常完成**（含 ledger_reset）；告警附 user_id／月份／應寫 base 供人工補（業主 2026-11-05） |
 | W5-59 | S6：預設推薦人在會員自己網絡內（會成環）時確認框仍寫「推薦人將改變」 | **本 PR 修**：先判成環，會成環視為 keep、不寫推薦人句（業主 2026-11-05） |
 | W5-60 | S6：journey f70 缺章（fresh 後三代獎金、任務、自領停發、ch7、ch9） | **留第 6 波**，已由 Deno 整合測試與 mock e2e 涵蓋（業主 2026-11-05） |
+| W5-61 | S6 獨立審查 P2-1：批次自癒 `complete_paid_pending_orders(null)` 單一交易內握前輪 profiles 列鎖，0a′ 等 advisory 時可與線上 fresh 付款死鎖，被選中方的一代獎金被 `when others` 吞掉而靜默漏發 | **本 PR 修**：批次路徑在 0a′ 改 `pg_try_advisory_xact_lock`，拿不到就跳過留給下一輪；補測試（業主 2026-11-06） |
+| W5-62 | S6 獨立審查 P2-2：新 Edge 若先於 migration 部署，prepare 全 500（含首購） | **晉升清單加一步**（核准正式站部署前確認 migration 已套用）；部署 workflow 自動檢查列第 6 波（業主 2026-11-06） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -172,6 +174,7 @@ W5-10 的兩條文件升級（本 PR）；上線後現場查詢（W4-26）。
    - 甲段（migration 套用後、Edge 核准部署前）：正式站 Edge Secrets 有 `RECONCILE_SECRET` 與 `PHOTO_PURGE_LIVE=true`；Vault 建 `uknow_api_base_url`、`uknow_internal_secret`；（若階段 0 結論如此）Dashboard 開 pg_net；`cron.job` 有 5 列。
    - 乙段（Edge 部署後）：`select public.invoke_internal_endpoint('reconcile')` 回 request id，1 分鐘後帳本最新列 `succeeded`；核准後第一個整點 +7 分，帳本出現 `pg_cron` 完成列。
    - develop 在 S1 合併、migration 套用後，同樣做甲段（不設 `PHOTO_PURGE_LIVE`）。
+4a. **W5-62**：核准 `production` 部署前，先確認本次 migration（含 S6 `20261113*`）已在正式站套用（`supabase_migrations.schema_migrations` 有對應版本、`prepare_payment_order` 六參數版與 `referral_would_cycle` 存在）；未套用不核准——新 Edge 配舊 DB 會讓建單全 500。
 5. S1 上線後第一輪：帳本 `scheduled_job_runs.summary` 的 `unknownStatus`、`missing_field` 計數（W5-44②），異常就開修。
 6. 開 R5。
 
@@ -196,7 +199,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 `setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；子網域盤點＋完整 CSP；#383、#384。
 **S2（#510）留下的**：後台刪帳號工具（W5-12「註冊中要刪找客服」目前沒有工具）；停權狀態確認期間付款鈕灰掉無說明（UIUX P2）；`/auth/register` 先驗推薦碼後查已完成註冊（已付款者舊分頁拿 400 而非 403）。
 **S1（#512）留下的**：unknown 單人工確認已付款後的手動開通入口（W5-44③）。
-**S6（#514）留下的**：journey f70 缺章（W5-60）。
+**S6（#514）留下的**：journey f70 缺章（W5-60）；deploy-supabase.yml 部署 Edge 前自動確認 migration 已套用（W5-62）；確認框推薦人句在「讀 status 後才成環」競態下與結果不符（P2-3）。
 **S6 實作**若 11/22 前沒合，列第 6 波第一優先（期限 2027-10-27）。
 
 ## 6. 業主待辦
@@ -261,3 +264,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 21:10 | #513 CI 綠 → **合進 develop（2957408）**，S8 收工。S4 修 #511（module.slim＋SessionReplayExtensions、最壞遠端設定測試、P1／P2 全修；業主授權解鎖一次）→ 獨立 Opus 複審（scratch worktree 跑 npm ci 對照原始碼）：**P0／P1 清零**；P2：銀行 SelectContent portal 未 block、worst-case 內容斷言在舊程式上不紅、harness 非字串本文假綠；主 session 定 **W5-57**。退回 S4 補完 | S4 補完 → CI 綠 → 合 #511 |
 | 11/05 21:30 | S4 補完複審四項（銀行 SelectContent 遮蔽、以 SDK 實例斷言擴充不存在並以舊 import 實測轉紅、harness 解碼 Blob／gzip 並新增壓縮路徑測試、`strict_script_versioning:true`）；主 session 核對 delta、CI 全綠 → **#511 合進 develop（cebc239）**。PostHog 維持關閉（佔位 key） | 晉升前業主給 key；S6 等業主親打；S7 施工 |
 | 11/06 01:40 | S6 交 **#514**（draft；7 階段綠、/review-implementation P0 0、3 條 P1 已修、2 條 P1 記偏離、journey dispatch 中）。業主裁 **W5-58～60**。主 session 另派獨立 Opus 審查員審 #514 | S6 補 W5-58／59；等審查、CI、journey |
+| 11/06 02:00 | #514 獨立 Opus 審查：**P0 0、P1 0**、P2 3（鎖序、R1～R7、新舊版本相容、正式站 migration 安全皆核實）。業主裁 **W5-61**（批次自癒死鎖本 PR 修）、**W5-62**（部署順序進晉升清單＋第 6 波）；P2-3 交 S6 確認 | S6 修 W5-61 → CI 綠 → 合 #514 |
