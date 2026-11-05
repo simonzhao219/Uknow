@@ -15,8 +15,8 @@
 | 4 | 凍結脈絡＋lastViewedId＋返回定位 | ✅ 綠 | 6673372 | 7565a3e |
 | 5 | PhotoCarousel onEdgeSwipe＋swipeIntent | ✅ 綠 | 5b01c9c | 095a500 |
 | 6 | 詳情頁換篇（key wrapper／控制列／鍵盤／焦點） | ✅ 綠（夾具一行經業主授權修正） | 48f41bd | 899cab4 |
-| 7 | 換篇滑入動畫與頭尾回彈 | ✅ 綠 | a225172 | (待填) |
-| 8 | e2e mocked Gherkin＋骨架探針 | ⬜ 未開始 | | |
+| 7 | 換篇滑入動畫與頭尾回彈 | ✅ 綠 | a225172 | 22a01b4 |
+| 8a | e2e mocked Gherkin（換篇、返回）＋版面位移探針 | ✅ 綠（一寫就綠，見 Blockers 逃生口 1） | — | (待填) |
 | 9 | 文件同步與收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
@@ -24,7 +24,7 @@
 **順序調整（W5-40，主 session 2026-11-05）**：TGOS 維護期間先做不依賴座標表的階段。依賴分析：階段 4（凍結脈絡等）只依賴階段 1 的 `filterAndSortListings`，與座標表無關；階段 3（等待＋FLIP）依賴階段 2 的表；階段 8 的 e2e 拆為 8a（換篇／返回，不依賴排序）與 8b（定位已授權時依距離排序，依賴 2、3）。
 新順序：**5 → 4 → 6 → 7 → 8a → 2 → 3 → 8b → 9**。TGOS 恢復後補階段 2（自動重試已排，11/08 台北仍下載不到就回報主 session，不改用其他來源）。
 hash 說明：2026-11-05 推送守衛把分支 rebase 到最新 origin/develop（3712737），下表為 rebase 後的 hash（舊 hash 已不在分支上）；階段 6 另有 wip commit 53c4987（非綠燈證據）。
-目前位置：階段 1、5、4、6、7 完成；下一步階段 8a（e2e mocked Gherkin）。階段 2、3、8b 等 TGOS 恢復。預算硬上限（W5-43）：entry gzip ≤315 kB、raw ≤1010 kB，超過就停下回報；階段 6 實測 raw 1002.7／gzip 311.8；階段 7 實測 raw 1002.8／gzip 312.1（gzip 預算已依授權上限調到 315）。
+目前位置：階段 1、5、4、6、7、8a 完成；其餘階段 2、3、8b、9 等 TGOS 恢復後依序做（階段 9 文件同步與收尾排最後，需 2、3 完成）。階段 2、3、8b 等 TGOS 恢復。預算硬上限（W5-43）：entry gzip ≤315 kB、raw ≤1010 kB，超過就停下回報；階段 6 實測 raw 1002.7／gzip 311.8；階段 7 實測 raw 1002.8／gzip 312.1（gzip 預算已依授權上限調到 315）。
 
 ## Blockers(逃生口紀錄)
 
@@ -38,6 +38,10 @@ hash 說明：2026-11-05 推送守衛把分支 rebase 到最新 origin/develop�
 
 - **階段 6 測試夾具錯誤（逃生口 2，2026-11-05）**：`ServiceProviderDetailRoute.test.tsx`〈只有一張照片時，在照片上往左滑（盡頭續滑）換下一篇〉把首頁快取的 B 換成單張照片版本，但 `singleFor` 預設仍回傳原本三張照片的 B，詳情頁背景重驗後輪播變三張、起點不在盡頭，所以不換篇——是測試夾具與快取資料不一致，不是實作問題（其餘 30 條全綠）。需要的修正只有一行：該測試內加 `singleFor.mockResolvedValue({ data: solo, error: null })`。紅燈期測試被 hook 鎖定，依規則不私改，已向主 session 請求裁決。
   - **授權（業主 2026-11-05 12:43 UTC，在本 session 親口）：「授權修改」**——僅限上述一行夾具（該測試內加 `singleFor.mockResolvedValue({ data: solo, error: null })`，斷言與測試意圖不變）。依派工規定由我代刪 `.claude/tdd-lock`（雲端打不了 `! rm`），修完後跑 `npm run check` 全綠再提交階段 6 綠燈。
+
+- **階段 8a 測試一寫就綠（逃生口 1，2026-11-05）**：e2e 驗的行為（換篇、返回一次回首頁、篩選範圍、無脈絡不顯示）在階段 4～7 已實作並有 vitest 紅綠燈證據，e2e 是整合層的保險，所以新場景第一次跑就綠。確認斷言有咬合力：撰寫過程中一次場景因搜尋關鍵字讓第四位也符合而讀到「1/4」，斷言如預期失敗，修正夾具後才綠。
+- **偏離規劃（階段 8）**：plan 寫的「有脈絡的骨架同形探針」不成立——脈絡只在首頁清單已進快取時才存在，那時詳情頁一律從快取即時渲染、不會出現骨架，兩者不會同時發生。改為量「有換篇控制（從首頁進）與沒有（直接開連結）時，詳情頁各區塊位置一致（≤2px，375／1280）」，直接驗證「控制放在返回鈕同一列、不新增列」這個真正的風險（`test_browse_controls_do_not_shift_the_detail_layout`）。
+- **本機跑 e2e 的方法（給接手者）**：Python 3.13 venv（scratchpad）＋`pip install -r e2e/requirements.txt`；Playwright 1.56 期待 chromium build 1194，容器預裝 1243，以 `PLAYWRIGHT_BROWSERS_PATH` 指向一個只放 symlink 的目錄（`chromium-1194/chrome-linux`→預裝 chrome-linux64、`chromium_headless_shell-1194/chrome-linux/headless_shell`→預裝 chrome-headless-shell）即可，不必重裝瀏覽器。
 
 ## 框架摩擦
 
