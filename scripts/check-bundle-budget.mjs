@@ -24,7 +24,10 @@ const BUDGET = {
   // S4（PostHog 監控）分項：entry 實測 raw +1.9 kB／gzip +0.8 kB（facade、gate、
   // 排程、pageview hook），故在 S7 的 W5-30 額度之外另加 raw +2、gzip +1.0。
   // 誰後合併，誰在 PR 內文寫明兩項合計值（S7 另有 gzip +3 的專用額度）。
-  entryRawKB: 1002, // 原 1000；S4 +2
+  // S6（續約路徑潛伏組）：結帳頁在 entry 內，續費身分確認、建單拒絕的內嵌狀態、新約確認框
+  // 文案（freshRenewalCopy）實測 raw +3.1 kB／gzip +1.2 kB（gzip 仍在 313 內，不調）。
+  // 業主 2026-11-06 01:16 互動選項核准 raw 1002→1005。
+  entryRawKB: 1005, // 原 1000；S4 +2；S6 +3
   entryGzipKB: 313, // 原 310→312（H1 hotfix）；S4 +1.0
   // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
   // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。

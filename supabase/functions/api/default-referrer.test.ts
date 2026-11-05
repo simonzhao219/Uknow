@@ -268,6 +268,53 @@ Deno.test('apply：未填推薦碼首購 → 綁定預設推薦人、發 gen1、
   }
 });
 
+Deno.test('apply：首購綁預設推薦人 → changed_at 記付款時點、刪掉 gen1 後自癒補回（W5-52）', async () => {
+  const client = adminClient();
+  const original = await snapshotDefaultCode(client);
+  const referrer = await createTestUser(client, { name: '預設推薦人 時點' });
+  const user = await createTestUser(client, { name: '自然流量首購 時點' });
+  try {
+    await payForUser(client, referrer.id);
+    await setDefaultCode(client, await getActiveReferralCode(client, referrer.id));
+
+    // PayUni 授權時點在一小時前（台北時間字串），早於付款交易的 now()。
+    const payTime = new Date(Date.now() - 3600_000 + 8 * 3600_000).toISOString()
+      .slice(0, 19).replace('T', ' ');
+    const { tradeNo, error } = await payForUser(client, user.id, {
+      payuniResponse: { Status: 'SUCCESS', PayTime: payTime },
+    });
+    assertEquals(error, null, `首購付款失敗: ${error?.message}`);
+
+    const { data: prof } = await client
+      .from('profiles').select('referred_by_changed_at').eq('id', user.id).single();
+    const { data: order } = await client
+      .from('payment_orders').select('completed_at').eq('transaction_id', tradeNo).single();
+    assertEquals(
+      new Date(prof?.referred_by_changed_at).getTime(),
+      new Date(order?.completed_at).getTime(),
+      'changed_at 應等於付款時點，不是交易的 now()',
+    );
+
+    const { data: sub } = await client
+      .from('subscriptions').select('id').eq('payment_transaction_id', tradeNo).single();
+    await client.from('reward_transactions').delete()
+      .eq('referee_user_id', user.id).eq('generation', 1).eq('type', 'referral_reward')
+      .eq('subscription_id', sub?.id);
+    const { error: repairErr } = await client.rpc('repair_orphaned_payments', {
+      p_user_id: user.id,
+    });
+    assertEquals(repairErr, null, `自癒失敗: ${repairErr?.message}`);
+    const { data: rewards } = await client
+      .from('reward_transactions').select('user_id')
+      .eq('referee_user_id', user.id).eq('generation', 1).eq('type', 'referral_reward')
+      .eq('subscription_id', sub?.id);
+    assertEquals(rewards?.map((r) => r.user_id), [referrer.id], '#167 閘門放行首購那筆的自癒');
+  } finally {
+    await setDefaultCode(client, original);
+    await deleteTestUsers(client, [referrer.id, user.id]);
+  }
+});
+
 Deno.test('apply：有真推薦碼者付款 → 不受預設影響，is_default 為 false', async () => {
   const client = adminClient();
   const original = await snapshotDefaultCode(client);
@@ -412,7 +459,16 @@ Deno.test('prepare fresh：被預設綁定者換到真推薦人 → 旗標重置
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ renewalMode: 'fresh', referredByCode: realCode }),
     });
-    assertEquals(res.status, 200, `prepare fresh 應成功: ${await res.text()}`);
+    assertEquals(res.status, 200, `prepare fresh 應成功: ${await res.clone().text()}`);
+    // S6（ref P0-1）：換線只在這張新約單付款成功時生效（建單只記意圖）。
+    const { data: prepared } = await res.json();
+    const { error: payErr } = await client.rpc('process_successful_payment', {
+      p_user_id: user.id,
+      p_trade_no: prepared.tradeNo,
+      p_transaction_id: `PU-${prepared.tradeNo}`,
+      p_payuni_response: { Status: 'SUCCESS' },
+    });
+    assertEquals(payErr, null);
 
     const { data: prof } = await client
       .from('profiles')

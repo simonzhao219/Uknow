@@ -45,6 +45,17 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
     And "U1" 因 "K0" 的補繳任務進度不增加【DB】
 
   @journey @renewal_saga
+  Scenario: 第 3b 章 新約棄單改續約——換線只跟著付了款的新約走
+    # 第 5 波 S6(ref P0-1):建單只把換線意圖記在訂單上,棄單後改付續約不得換線。
+    Given saga 將 "K0" 推入剛過期
+    When "K0" 開付款頁選新約、填 "U2" 的碼並確認後放棄付款
+    Then "K0" 的會員資料推薦人仍為 "U1"【DB】
+    And "K0" 以 API 建單不帶續費模式被拒為 RENEWAL_MODE_REQUIRED
+    When "K0" 以續約完成一筆補繳
+    Then "K0" 的上代仍為 "U1"【DB】
+    And "K0" 的會員資料推薦人仍為 "U1"【DB】
+
+  @journey @renewal_saga
   Scenario: 第 4 章 fresh 換樹清空——A14 揭露、A15 二次確認、U2 首次配對
     Given saga 將 "K0" 推入剛過期
     When "K0" 開付款頁選新約、填 "U2" 的碼、經 A14 揭露與 A15 二次確認完成付款
@@ -80,6 +91,13 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
     Then "K0" 的付款頁新約選項恢復可選
 
   @journey @renewal_saga
+  Scenario: 第 6b 章 環防線——以自己一代的碼選新約被擋在碼欄位
+    # 第 5 波 S6(ref P0-2):新推薦人在自己的推薦樹內(任何深度)不得換過去。
+    When "K0" 開付款頁選新約、填 "W1" 的碼並確認送出
+    Then 付款頁的新推薦碼欄位顯示推薦網絡成員不可作為推薦人
+    And "K0" 沒有以 "W1" 為新推薦人的待付款訂單【DB】
+
+  @journey @renewal_saga
   Scenario: 第 7 章 S9 與 Q14a——填現任上代碼照樣清空,歷史桶跨清空保留
     Given saga 將 "K0" 的任務月桶平移至上月
     When "K0" 開付款頁選新約、填 "U2" 的碼、經 A14 揭露與 A15 二次確認完成付款
@@ -108,6 +126,7 @@ Feature: 阿凱的七年 — 續約獎勵任務機制的組合行為劇本
   Scenario: 第 9 章 A10 fresh 版——不填碼的新約掛回預設推薦人,帳本清空
     Given saga 將 "W1" 推入剛過期
     When "W1" 開付款頁選新約且不填推薦碼、經 A15 二次確認完成付款
+    Then "W1" 的新約二次確認說明推薦人將改變
     Then "W1" 的上代在管理台會員詳情顯示為預設推薦人
     And "W1" 的預設推薦標記已寫入【DB】
     And "W1" 的可提領點數已歸零【DB】

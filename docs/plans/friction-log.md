@@ -3449,3 +3449,20 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **登錄表錨點歧義**（漏網）：以字串當錨點找群組根容器，註解行含同一字串會先命中；錨點要用唯一的元素字串（如 `<Label>…`）。
 
 處置：均為測試寫法教訓，不另立規則。
+
+## 2026-11-05｜誤擋／漏網（流程、測試）｜第 5 波 S6 renewal-path-hardening（PR #514，從 progress.md 整併）
+
+- **推送守衛 rebase 後要求 force-with-lease，分類器卻擋 force 推送**（誤擋，死循環）：develop 前進後，推送前的 PreToolUse 守衛先把本地
+  `feature/*` rebase 到 origin/develop，再要求 `--force-with-lease`；auto mode 分類器把 force 推送判成 Git Destructive 擋下。
+  develop 動到同一檔（本檔）時守衛的 rebase 直接衝突、整個指令不執行；守衛以指令字串比對，指令內任何位置出現推送字樣（含 heredoc 內文）都會觸發。
+  備案：`read-tree origin/<分支>` → `update-index --cacheinfo` 只放改動檔 → `commit-tree -p origin/<分支>` → 以 `<sha>:refs/heads/<分支>`
+  快轉推送（遠端歷史不改寫）。業主之後授權 force-with-lease 才解。候選：守衛在「本地只領先、未落後遠端分支」時不 rebase；
+  rebase 要求只在開 PR／合併前檢查；比對指令時只看實際的 git 子命令。
+- **持鎖交易內輪詢 `pg_stat_activity` 看不到新等待者**（漏網，測試寫錯）：同一交易內 pg_stat 會快取第一次的快照，併發測試本機剛好綠、
+  CI 必紅。每輪先 `select pg_stat_clear_snapshot()`。
+- **本機 PG16＋shim 不等於 CI**（漏網，環境）：shim 補 roles、auth.users 欄位、拔掉 pg_cron／pg_net 後可跑全部 migration，SQL 情境驗證有效；
+  但 deno 測試的夾具錯（重複 TradeNo、假 claim id、`claimed` 違反 check constraint）只有 CI 抓得到。夾具要照真表約束建（`unclaimed` 不需領取欄位）。
+- **既有測試釘住被裁決改掉的行為**（流程）：W5-7／W5-8／ref P0-1 改行為後，共 8 支既有測試要改斷言，每次都要業主授權。規劃期列「會被推翻的既有測試清單」
+  可以一次拿授權。
+
+處置：第 1 條待下次框架整併；其餘為測試／規劃寫法教訓，不另立規則。

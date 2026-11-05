@@ -159,6 +159,9 @@ export const RenewalInfoSchema = obj({
   paidBackfillAmount: num(), // paidBackfillCount × 年費
   freshForfeitPoints: num(), // 選 fresh 將作廢的可提領點數（A14 揭露）
   freshForfeitReferrals: num(), // 選 fresh 將歸零的累積推薦人數（A14）
+  // S6（W5-51）：新約留空時會不會綁預設推薦人（只給布林，§7.4 不揭露碼與姓名）。
+  // optional：前端先上、Edge 後上的空窗不得讓整個 renewal 解析失敗；缺值視為 false（keep）。
+  freshDefaultReferrerAvailable: optional(bool()),
 });
 export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
 
@@ -859,6 +862,33 @@ export const REFERRAL_CODE_SELF_MESSAGE = '不能使用自己的推薦碼';
 // 第 5 波 S2（W5-5）：停權者打 /payuni/prepare 的 403 錯誤碼（`{ success: false, error: { code, message } }`）。
 // 前端據此把結帳頁切到停權說明（快照過時、頁面上沒看到停權時的最後一道）。
 export const ACCOUNT_SUSPENDED = 'ACCOUNT_SUSPENDED';
+
+// 第 5 波 S6：/payuni/prepare 的新拒絕，形狀同停權 403（`{ success: false, error: { code, message } }`）。
+// 409：已付款待開通（pay P1-4）——不再建單，前端導 `/payment/result?tradeNo=<lastTradeNo>`；
+//   lastTradeNo 必填，缺漏視為契約錯誤（前端顯示客服入口、不導向）。
+export const PAYMENT_PENDING_ACTIVATION = 'PAYMENT_PENDING_ACTIVATION';
+// 400：曾訂閱者沒選續約／新約（pay P1-1）——前端重抓 /profile、切成雙模式。
+export const RENEWAL_MODE_REQUIRED = 'RENEWAL_MODE_REQUIRED';
+// 400：新推薦碼屬於自己的推薦網絡成員（ref P0-2）——標在新推薦碼欄位。
+export const REFERRAL_CYCLE = 'REFERRAL_CYCLE';
+
+export const PrepareErrorBodySchema = obj({
+  success: schema<false>((
+    v,
+    p,
+  ) => (v === false ? [] : [`${p}: 預期 false，收到 ${JSON.stringify(v)}`])),
+  error: obj({
+    code: literals(
+      ACCOUNT_SUSPENDED,
+      PAYMENT_PENDING_ACTIVATION,
+      RENEWAL_MODE_REQUIRED,
+      REFERRAL_CYCLE,
+    ),
+    message: str(),
+  }),
+  lastTradeNo: optional(str()),
+});
+export type PrepareErrorBody = Infer<typeof PrepareErrorBodySchema>;
 
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',

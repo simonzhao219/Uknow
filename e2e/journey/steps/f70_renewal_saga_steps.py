@@ -22,6 +22,7 @@ from pytest_bdd import given, parsers, scenarios, then, when
 from datetime import datetime, timezone
 
 from builders import payment
+from builders.payuni_sandbox_page import SANDBOX_URL_GLOB
 from builders.login import login_admin, login_via_gui
 from builders.org_builder import build_single_actor
 from pages.payment_checkout_page import PaymentCheckoutPage
@@ -688,7 +689,16 @@ def saga_fresh_no_code(saga, guarded_page, journey_config, supabase_admin,
     # renewal info 計為「本輪已付過補繳 1 筆」→ AC-15 的
     # needsFreshConfirm 仍成立、二次確認照樣彈出(run 31156146124
     # 實測),與 ch4 走同一個 pay_fresh_via_gui 序列。
-    payment.pay_fresh_via_gui(guarded_page, journey_config, supabase_admin, user)
+    saga["marks"]["w1_fresh_dialog_text"] = payment.pay_fresh_via_gui(
+        guarded_page, journey_config, supabase_admin, user
+    )
+
+
+@then(parsers.parse('"{node}" 的新約二次確認說明推薦人將改變'))
+def fresh_dialog_says_referrer_changes(saga, node):
+    # W5-7／W5-51:留空且預設推薦人可用 → 確認框說「推薦人將改變」(不揭露預設推薦人)。
+    text = saga["marks"].get("w1_fresh_dialog_text") or ""
+    assert "您的推薦人將改變" in text, f"{node} 的新約確認框沒有推薦人句:{text!r}"
 
 
 # ===========================================================================
@@ -726,3 +736,102 @@ def history_free_renewal_note(guarded_page, run_state, node):
     # rewardHistory.ts 的 FREE_RENEWAL_NOTE:viaFreeRenewal(source_claim_id
     # 鍵)的續約獎勵列第二行註記。
     expect(guarded_page.get_by_text("任務免費續約").first).to_be_visible(timeout=15_000)
+
+
+# ===========================================================================
+# 第 3b 章 新約棄單改續約(第 5 波 S6,ref P0-1)
+# ===========================================================================
+
+
+def _open_fresh_with_code(page: Page, user: JourneyUser, code_owner: JourneyUser) -> None:
+    _fresh_gui_login(page, user)
+    page.goto("/payment/checkout")
+    expect(page.get_by_test_id("renewal-mode-section")).to_be_visible(timeout=30_000)
+    page.get_by_test_id("renewal-mode-fresh").click()
+    code_input = page.get_by_test_id("new-referral-code-input")
+    code_input.fill(code_owner.referral_code)
+    code_input.blur()
+    expect(page.get_by_test_id("new-referrer-name")).to_contain_text(
+        code_owner.name, timeout=10_000
+    )
+
+
+def _pending_fresh_orders(admin, user_id: str, referrer_id: str) -> list:
+    return admin.rest_select(
+        "payment_orders",
+        {"select": "transaction_id", "user_id": f"eq.{user_id}", "status": "eq.pending",
+         "renewal_mode": "eq.fresh", "fresh_referrer_user_id": f"eq.{referrer_id}"},
+    )
+
+
+@when(parsers.parse('"{node}" 開付款頁選新約、填 "{referrer}" 的碼並確認後放棄付款'))
+def saga_fresh_abandoned(guarded_page, supabase_admin, run_state, node, referrer):
+    user = run_state.users[node]
+    new_ref = run_state.users[referrer]
+    _open_fresh_with_code(guarded_page, user, new_ref)
+    # 建單後不進 PayUni(等同在付款頁按返回、不付款)。
+    guarded_page.route(SANDBOX_URL_GLOB, lambda route: route.abort())
+    try:
+        PaymentCheckoutPage(guarded_page).click_pay()
+        expect(guarded_page.get_by_test_id("fresh-confirm-dialog")).to_be_visible(timeout=15_000)
+        guarded_page.get_by_test_id("fresh-confirm-action").click()
+        for _ in range(60):
+            if _pending_fresh_orders(supabase_admin, user.user_id, new_ref.user_id):
+                break
+            guarded_page.wait_for_timeout(500)
+        else:
+            raise AssertionError(f"{node} 的新約訂單沒有建立(換線意圖應記在訂單上)")
+    finally:
+        guarded_page.unroute(SANDBOX_URL_GLOB)
+
+
+@then(parsers.parse('"{node}" 的會員資料推薦人仍為 "{referrer}"【DB】'))
+def profile_referrer_unchanged(supabase_admin, run_state, node, referrer):
+    rows = supabase_admin.rest_select(
+        "profiles",
+        {"select": "referred_by_user_id", "id": f"eq.{run_state.users[node].user_id}"},
+    )
+    assert rows and rows[0]["referred_by_user_id"] == run_state.users[referrer].user_id, (
+        f"{node} 的會員資料推薦人被改掉了(建單不得換線):{rows}"
+    )
+
+
+@then(parsers.parse('"{node}" 以 API 建單不帶續費模式被拒為 RENEWAL_MODE_REQUIRED'))
+def api_prepare_without_mode_rejected(supabase_admin, run_state, node):
+    user = run_state.users[node]
+    token = supabase_admin.password_grant_token(user.email, user.password)
+    resp = supabase_admin.api_post("/payuni/prepare", token)
+    body = resp.json()
+    assert resp.status_code == 400, f"曾訂閱者不帶模式應 400,實為 {resp.status_code}:{body}"
+    assert body.get("error", {}).get("code") == "RENEWAL_MODE_REQUIRED", body
+
+
+# ===========================================================================
+# 第 6b 章 環防線(第 5 波 S6,ref P0-2)
+# ===========================================================================
+
+
+@when(parsers.parse('"{node}" 開付款頁選新約、填 "{referrer}" 的碼並確認送出'))
+def saga_fresh_cycle_attempt(guarded_page, run_state, node, referrer):
+    _open_fresh_with_code(guarded_page, run_state.users[node], run_state.users[referrer])
+    PaymentCheckoutPage(guarded_page).click_pay()
+    expect(guarded_page.get_by_test_id("fresh-confirm-dialog")).to_be_visible(timeout=15_000)
+    guarded_page.get_by_test_id("fresh-confirm-action").click()
+
+
+@then("付款頁的新推薦碼欄位顯示推薦網絡成員不可作為推薦人")
+def cycle_error_on_code_field(guarded_page):
+    expect(
+        guarded_page.get_by_text("此推薦碼屬於您的推薦網絡成員，無法作為推薦人")
+    ).to_be_visible(timeout=15_000)
+    expect(guarded_page.get_by_test_id("new-referral-code-input")).to_have_attribute(
+        "aria-invalid", "true"
+    )
+
+
+@then(parsers.parse('"{node}" 沒有以 "{referrer}" 為新推薦人的待付款訂單【DB】'))
+def no_cycle_order(supabase_admin, run_state, node, referrer):
+    rows = _pending_fresh_orders(
+        supabase_admin, run_state.users[node].user_id, run_state.users[referrer].user_id
+    )
+    assert rows == [], f"{node} 成環的新約不該建單:{rows}"

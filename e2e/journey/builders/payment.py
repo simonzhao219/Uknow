@@ -132,18 +132,22 @@ def _drive_payment(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> 
         ) from exc
 
 
-def pay_fresh_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> None:
+def pay_fresh_via_gui(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser) -> str:
     """fresh 付款(已在 checkout、已選 fresh 並填妥碼):點付款 → A15 二次
-    確認對話框 → 確認 → 付款 → 斷言成功(fresh = 付款日 +1 年,直接 active)。"""
+    確認對話框 → 確認 → 付款 → 斷言成功(fresh = 付款日 +1 年,直接 active)。
+    回傳確認框文字(W5-7 起新約一律確認;呼叫端可斷言推薦人句)。"""
     checkout = PaymentCheckoutPage(page)
     expect(checkout.pay_button()).to_be_visible(timeout=30_000)
     if cfg.payment_mode == "webhook":
         _arm_webhook_gateway(page, cfg, admin, user)
     checkout.click_pay()  # fresh 模式:開二次確認,不直接送出
-    expect(page.get_by_test_id("fresh-confirm-dialog")).to_be_visible(timeout=15_000)
+    dialog = page.get_by_test_id("fresh-confirm-dialog")
+    expect(dialog).to_be_visible(timeout=15_000)
+    dialog_text = dialog.inner_text()
     page.get_by_test_id("fresh-confirm-action").click()
     _drive_payment(page, cfg, admin, user)
     assert_payment_success(page)
+    return dialog_text
 
 
 def pay_backfill_installment(page: Page, cfg, admin: SupabaseAdmin, user: JourneyUser,

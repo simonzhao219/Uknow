@@ -156,3 +156,59 @@ Deno.test('待開通時 lastTradeNo 指向已付款成功的那筆訂單，不�
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+// S6（pay P1-4）：續費者 effective_registration_step 恆為 3（已有 completed 單），舊版在 step 3
+// 一律把旗標蓋成 false、也不跑自癒 → 守衛判 renew → 送回結帳頁 → 可能再付一次。
+Deno.test('續費者卡單（金額不符收斂不了）：旗標為 true 並帶已付款那筆單號', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Renewer Stuck' });
+  try {
+    // 先完成一次付款（成為曾訂閱者），再讓會籍過期。
+    const first = await seedPendingOrder(client, user.id, success());
+    await buildProfileResponse(client, user.id, user.email);
+    const { data: o1 } = await client.from('payment_orders').select('status')
+      .eq('transaction_id', first).single();
+    assertEquals(o1?.status, 'completed');
+    const past = new Date(Date.now() - 30 * 86400_000).toISOString();
+    await client.from('subscriptions').update({ end_date: past, grace_period_end: past })
+      .eq('user_id', user.id);
+
+    const stuck = await seedPendingOrder(client, user.id, success('9999'));
+    const profile = await buildProfileResponse(client, user.id, user.email);
+
+    assertEquals(profile?.registrationStep, 3);
+    assertEquals(profile?.accountStatus, 'expired');
+    assertEquals(profile?.paidAwaitingActivation, true, '付了錢在開通中，不得送回結帳頁');
+    assertEquals(profile?.lastTradeNo, stuck);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('續費者卡單但金額相符：載入 profile 時自癒 → 同一回應已是 active', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Renewer Heal' });
+  try {
+    await seedPendingOrder(client, user.id, success());
+    await buildProfileResponse(client, user.id, user.email);
+    const past = new Date(Date.now() - 30 * 86400_000).toISOString();
+    await client.from('subscriptions').update({ end_date: past, grace_period_end: past })
+      .eq('user_id', user.id);
+
+    // 第二筆要用不同的 PayUni 交易編號（subscriptions.payment_transaction_id 唯一）。
+    const tradeNo = await seedPendingOrder(client, user.id, {
+      ...success(),
+      TradeNo: `PU-RENEW-${Date.now()}`,
+    });
+    await client.from('payment_orders').update({ renewal_mode: 'extend' })
+      .eq('transaction_id', tradeNo);
+    const profile = await buildProfileResponse(client, user.id, user.email);
+
+    const { data: order } = await client.from('payment_orders').select('status')
+      .eq('transaction_id', tradeNo).single();
+    assertEquals(order?.status, 'completed', 'step 3 也要先跑自癒');
+    assertEquals(profile?.paidAwaitingActivation, false);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
