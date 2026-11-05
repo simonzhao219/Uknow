@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
 import { getCachedListing, setLastViewedId } from '../utils/homeListingsCache';
 import { importWithRetry } from '../utils/lazyWithRetry';
+import { prefersReducedMotion } from '../utils/motionPreference';
 import { useBrowseNeighbors } from '../hooks/useBrowseNeighbors';
 import { BrowseNav, type BrowseVia } from './listing/BrowseNav';
 import { CategoryBadge } from './common/CategoryBadge';
@@ -127,11 +128,34 @@ export function ServiceProviderDetail({
   // 另記 dir／via 給新實例還原焦點用（鈕與鍵盤保留焦點在原鈕，手勢才移到標題）。
   const routeState = location.state as { dir?: 'prev' | 'next'; via?: BrowseVia } | null;
   const arrivedByBrowse = neighbors && navigationType === 'REPLACE' ? routeState?.via : undefined;
+  // 頭尾再換篇：只有內容區輕推 24px 再回原位（不動頁首與輪播以外的結構，不循環）。
+  // 偏好減少動態時不動，文字播報（「已是最後一篇」）仍照常。
+  const contentRef = useRef<HTMLDivElement>(null);
+  const bounceContent = (direction: 'prev' | 'next') => {
+    const el = contentRef.current;
+    if (!el || prefersReducedMotion() || typeof el.animate !== 'function') return;
+    const push = direction === 'next' ? -24 : 24;
+    el.animate(
+      [
+        { transform: 'translateX(0)' },
+        { transform: `translateX(${push}px)` },
+        { transform: 'translateX(0)' },
+      ],
+      { duration: 180, easing: 'ease-out' },
+    );
+  };
+  // 換篇後新內容從來的那一側滑入（200ms）；只有「換篇重掛」才有，第一次進來、重整都不動。
+  const enterClass =
+    arrivedByBrowse && !prefersReducedMotion()
+      ? `animate-in fade-in duration-200 ${routeState?.dir === 'prev' ? 'slide-in-from-left-6' : 'slide-in-from-right-6'}`
+      : '';
+
   const goBrowse = (direction: 'prev' | 'next', via: BrowseVia) => {
     if (!neighbors) return;
     const target = direction === 'next' ? neighbors.nextId : neighbors.prevId;
     if (!target) {
       onBrowseNotice?.(direction === 'next' ? '已是最後一篇' : '已是第一篇');
+      bounceContent(direction);
       return;
     }
     setLastViewedId(target);
@@ -277,7 +301,11 @@ export function ServiceProviderDetail({
       {topBar}
       {gestures}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div
+        ref={contentRef}
+        data-browse-content=""
+        className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${enterClass}`}
+      >
         {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
         <PhotoCarousel
           photos={serviceProvider.photos}
