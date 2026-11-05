@@ -97,6 +97,7 @@
 | W5-53 | 用語「下線」（業主重申，2026-11-05） | **維持 2026-10-23 裁決範圍＋加機械把關**：使用者看得到的文案（律師定案四份內容頁除外）一律「推薦人／您推薦的會員／一代二代三代」，不出現「下線／上線／傳銷商／直銷」；主 session 與各 session 給業主的回報同樣不用。新開 **S8** 加自動檢查讓 CI 擋下；規格書 §7 術語對照、程式註解、測試、已套用 migration 不改（被推翻：連內部文件一起改；律師文件也改） |
 | W5-54 | S6 E1：走本機快照進結帳頁、背景讀不到 /profile 時 | **首購者放行，後端兜底**（快照無 subscriptionEndDate 且 /profile 失敗 → 放行；後端回 RENEWAL_MODE_REQUIRED 走 R3 提示）（業主 2026-11-05） |
 | W5-55 | S6 E2：新約填的碼就是現任推薦人 | 確認框寫「您的推薦人維持 {姓名}」（業主 2026-11-05） |
+| W5-56 | S6 F1：新約建單後、付款前新推薦人被停權或碼被撤銷 | **付款當下重驗**：失敗就不換推薦人、帳本照清、error 告警（與 W5-49② 同形）；首購路徑不重驗（業主 2026-11-05） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -215,10 +216,10 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | #510 ✅ 54ac83f | 收工 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
-| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
+| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1、4、5、6 綠；2、3、8b 等 TGOS |
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（ready） | 審查退回：P0 Logs 擴充、P1 3、P2 5 |
-| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃修訂中（W5-49～52） |
-| S8 | — | Sonnet | `fix/terminology-guard` | — | 開工中 |
+| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃 v3.1 通過；等業主親打 `/tdd-implement` |
+| S8 | `session_01MQovbBQu7kxFjWhxHoGSZi` | Sonnet | `fix/terminology-guard` | #513 | 審過，等 CI |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -251,3 +252,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 09:50 | S2 修 #510 審查 P2-1～3（文件四處改「未送出草稿隨登出清除」、撞索引語意限三代獎勵、並行 repair 測試加 `repaired_count==0`），主 session 核實 delta、CI 全綠 → **#510 合進 develop（54ac83f）**。已通知 S1 rebase 並改 migration 號（W5-46）。照 W5-2 開 **S6**（Opus，規劃） | S1 修 #512；develop 部署後驗 #510 migration 已套 |
 | 11/05 14:00 | S1 修 #512（P1-1 client factory、P1-2 unknown 單不 expire、MerTradeNo、W5-45、可選 P2 也做、W5-46 改號 `20261112000001`；業主 13:25 於 S1 session 授權修 stub），主 session 核實 P1-2 守衛、CI 全綠 → **#512 合進 develop（3712737）**。develop 甲段交業主。S4 交 #511（CI 綠）→ 獨立 Opus 審查：**P0 posthog-js 預設載入 Logs 擴充，專案端開 console 擷取即繞過所有防線**、P1 3、P2 5 → 退回 S4；主 session 定 **W5-48**。S6 交規劃（P0 0、P1 16）；主 session 代跑正式站／develop 唯讀 SQL（環 0、自領 0、q7＝3／1 佐證閘門 bug、回填差集 0）；業主裁 **W5-49～51**，主 session 定 **W5-52** | 業主做 develop 甲段；S4 修 P0；S6 修 plan 重審；S7 等業主授權 |
 | 11/05 20:30 | 業主重申不得用「下線」；主 session 盤點 develop：使用者可見只剩律師定案的事業手冊（6）、參加契約（2），屬 10-23 裁決例外；內部 67 檔 197 行（規格書 §7 術語對照明定內部術語）；主 session 今日回覆與本檔 1 處違反 → 已更正。業主裁 **W5-53**（開 S8 機械把關）、**W5-54**、**W5-55**（S6 E1／E2）。S6 v2 主 session 親審：P1 3 收進 v3，只重審系統視角 | 開 S8；S6 v3 |
+| 11/05 21:00 | S8 交 **#513**（TS compiler API 掃 src 字串、白名單只列有命中的兩份律師檔），主 session 審過無 P0／P1，等 CI。S7 階段 4～6 綠（業主 12:43 UTC 於 S7 session 授權夾具修正；預算 raw 1002.7／gzip 311.8，在 W5-43 內）。S6 v3.1 系統第 3 輪 P0／P1 清零 → 主 session 核對通過；業主裁 **W5-56** | 業主到 S6 session 親打 `/tdd-implement`；#513 CI 綠 → 合 |
