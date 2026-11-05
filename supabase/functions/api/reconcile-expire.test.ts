@@ -472,3 +472,35 @@ Deno.test('reconcile：被標過 unknown 的單這輪只是查詢層失敗 → r
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+// 主 session 審查 P1-2：已標 unknown 的單（例如碼 8，可能已付款）只要某一輪碰上
+// 查詢層失敗，就會掉進「滿 4 天標 expired」——違反 W5-41 與欄位註解「非 null 時永不
+// 自動標 expired」。B 持續過久升級的單（W5-44）也帶同一個標記，受同一條保護。
+Deno.test('reconcile：已標 unknown、建單 5 天、本輪查詢層失敗 → 仍為 pending、不標 expired', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Unknown Then Expire' });
+  const payuniStatus = `KEEP5-${user.id}`;
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    await client.from('payment_orders').update({ reconcile_unknown_at: new Date().toISOString() })
+      .eq('transaction_id', tradeNo);
+    const s = await reconcilePendingOrders(
+      client,
+      () =>
+        Promise.resolve({
+          stillProcessing: true as const,
+          queryFailure: { status: payuniStatus, message: '暫時性錯誤' },
+        }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(s.expired, 0);
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.status, 'pending', '標過 unknown 的單不得因查詢層失敗被標 expired');
+    assertEquals(row.reconcile_unknown_at !== null, true);
+  } finally {
+    await deleteAlerts(client, 'payuniStatus', payuniStatus);
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
