@@ -257,6 +257,38 @@ async function readAccountStatus(
   );
 }
 
+// 新約未填碼時會套用的預設推薦人（§7.4 A10／A11）。prepare 的 default 分支與
+// /subscriptions/status 的 freshDefaultReferrerAvailable 共用（單一真相）：碼取自
+// reward_config.default_referrer_code，合法性唯一判準是 validate_referral_code
+// （停權／失效都在裡面），另有自我推薦護欄。讀取失敗回 read_failed，由呼叫端決定
+// fail-closed（status）或 A11 不阻斷金流（prepare）。
+type FreshDefaultReferrer =
+  | { ok: true; referrerUserId: string; code: string }
+  | {
+    ok: false;
+    reason: 'unset' | 'code_not_applicable' | 'self_referral' | 'read_failed';
+    code?: string;
+  };
+async function resolveFreshDefaultReferrer(
+  client: any,
+  userId: string,
+): Promise<FreshDefaultReferrer> {
+  const { data: cfgRow, error: cfgErr } = await client
+    .from('reward_config')
+    .select('default_referrer_code')
+    .eq('id', true)
+    .maybeSingle();
+  if (cfgErr) return { ok: false, reason: 'read_failed' };
+  const code = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
+  if (!code) return { ok: false, reason: 'unset' };
+  const { data: codeRows, error: codeErr } = await client
+    .rpc('validate_referral_code', { p_code: code });
+  if (codeErr) return { ok: false, reason: 'read_failed', code };
+  if (!codeRows || codeRows.length === 0) return { ok: false, reason: 'code_not_applicable', code };
+  if (codeRows[0].referrer_user_id === userId) return { ok: false, reason: 'self_referral', code };
+  return { ok: true, referrerUserId: codeRows[0].referrer_user_id, code };
+}
+
 // ============================================================
 // 工具：從 Authorization header 取得已驗證 user
 // ============================================================
@@ -619,14 +651,17 @@ export async function buildProfileResponse(
   // 見 migration 0007）。前端守衛靠這個旗標把「付了錢等開通」跟
   // 「還沒付錢」區分開，不會把已付款的人送回結帳頁造成重複付款。
   const paidOrder = (pendingOrders ?? []).find((o: any) => o.payuniStatus === 'SUCCESS');
-  let paidAwaitingActivation = !!paidOrder;
+  // S6（pay P1-4）：不依 step 決定——續費者 step 恆為 3，舊版在 step 3 一律蓋成 false，
+  // 守衛就把付了錢在開通中的續費者送回結帳頁、可能再付一次。active 者的 SUCCESS pending
+  // 是重複付款的殘單，守衛本來就先判 active，旗標為 false。
+  const paidAwaitingActivation = !!paidOrder && acct?.status !== 'active';
 
   // 自癒：PayUni 已說 SUCCESS 但訂單還卡在 pending → 立刻補完，並有界
   // 重入一次重算整份 profile——使用者這一次載入就直接拿到 step 3 +
   // active，不需要再重新整理。特意 await（isolate 終止問題，同下方
   // repair 的註解）；補不完（例如金額不符待人工）就維持旗標讓前端顯示
   // 「開通處理中」。
-  if (registrationStep === 2 && paidAwaitingActivation && !alreadyHealed && !retry) {
+  if (paidAwaitingActivation && !alreadyHealed && !retry) {
     const healed = await heal(userId);
     if (healed) {
       return buildProfileResponse(client, userId, email, { ...opts, alreadyHealed: true });
@@ -640,9 +675,8 @@ export async function buildProfileResponse(
   // response 回傳後就終止這個 isolate，沒 await 完成的背景工作不保證
   // 會真的跑完。對已經修復好的使用者，repair 內部的偵測查詢應該找不到
   // 任何候選、開銷很小。
-  if (registrationStep === 3) {
-    if (!retry) await repair(userId);
-    paidAwaitingActivation = false;
+  if (registrationStep === 3 && !retry) {
+    await repair(userId);
   }
 
   return {
@@ -657,8 +691,10 @@ export async function buildProfileResponse(
     registrationStep,
     // 待開通時優先指向「已付款成功」的那筆訂單，讓前端守衛導去的
     // 結果頁顯示正確的訂單；否則維持最新一筆 pending 的舊語意。
-    lastTradeNo: registrationStep === 2
-      ? (paidOrder?.transaction_id ?? pendingOrders?.[0]?.transaction_id ?? null)
+    lastTradeNo: paidAwaitingActivation
+      ? paidOrder.transaction_id
+      : registrationStep === 2
+      ? (pendingOrders?.[0]?.transaction_id ?? null)
       : null,
     paidAwaitingActivation,
     referralCode: code?.code ?? null,
@@ -2165,27 +2201,16 @@ app.post('/payuni/prepare', async (c) => {
         'default_referrer_unavailable_on_fresh',
       );
     intent = { userId: null, code: null, source: 'keep' };
-    const { data: cfgRow } = await client
-      .from('reward_config')
-      .select('default_referrer_code')
-      .eq('id', true)
-      .maybeSingle();
-    const defaultCode = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
-    if (!defaultCode) {
-      await alertDefaultUnavailable('unset');
+    const resolved = await resolveFreshDefaultReferrer(client, user.id);
+    if (resolved.ok) {
+      // 預設推薦人在本人樹內的情形由建單 RPC 改記 keep（同 A11）。
+      intent = { userId: resolved.referrerUserId, code: resolved.code, source: 'default' };
     } else {
-      const { data: codeRows, error: codeErr } = await client
-        .rpc('validate_referral_code', { p_code: defaultCode });
-      if (codeErr || !codeRows || codeRows.length === 0) {
-        // 不存在、已失效、推薦人停權都落在這裡（validate 的職責）。
-        await alertDefaultUnavailable('code_not_applicable', { code: defaultCode });
-      } else if (codeRows[0].referrer_user_id === user.id) {
-        // 預設碼主人就是本人（例如平台帳號自己續約）：自我推薦護欄。
-        await alertDefaultUnavailable('self_referral', { code: defaultCode });
-      } else {
-        // 預設推薦人在本人樹內的情形由建單 RPC 改記 keep（同 A11）。
-        intent = { userId: codeRows[0].referrer_user_id, code: defaultCode, source: 'default' };
-      }
+      // 未設、不存在／已失效／推薦人停權（validate 的職責）、本人（自我推薦護欄）、讀取失敗。
+      await alertDefaultUnavailable(
+        resolved.reason === 'read_failed' ? 'code_not_applicable' : resolved.reason,
+        resolved.code ? { code: resolved.code } : {},
+      );
     }
   }
 
@@ -2194,7 +2219,7 @@ app.post('/payuni/prepare', async (c) => {
   // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
   // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
   // 「組加密 payload 之前」重產一次再試，拿到最終 tradeNo 才往下走。
-  // 建單走 prepare_payment_order（20261111000002）：停權與 active 在 profiles 列鎖下重查
+  // 建單走 prepare_payment_order（20261111000002，S6 六參數版 20261113000002）：停權與 active 在 profiles 列鎖下重查
   // 後才 INSERT，與付款完成序列化（pay P1-2）。撞 tradeNo 唯一鍵時重產再試一次。
   let tradeNo = generateTradeNo();
   {
@@ -3367,6 +3392,11 @@ app.get('/subscriptions/status', async (c) => {
         sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle()
           .then((r) => must(r, 'task_progress')),
       ]);
+      // S6（W5-51）：新約留空時會不會綁預設推薦人——確認框依此分句；讀取失敗整支 500。
+      const freshDefault = await resolveFreshDefaultReferrer(sb(), user.id);
+      if (!freshDefault.ok && freshDefault.reason === 'read_failed') {
+        throw new Error('default referrer 查詢失敗');
+      }
 
       // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
       // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
@@ -3402,6 +3432,7 @@ app.get('/subscriptions/status', async (c) => {
         paidBackfillAmount: paidBackfillCount * 1200,
         freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
         freshForfeitReferrals: tp?.total_referrals ?? 0,
+        freshDefaultReferrerAvailable: freshDefault.ok,
       };
     }
 

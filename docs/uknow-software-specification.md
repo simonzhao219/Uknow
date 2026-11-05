@@ -115,7 +115,8 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 
 - `ProtectedRoute`：未登入導向 `/login`；可帶 `featureRequired` 檢查功能旗標。
 - `RequireMembershipRoute`：只放行 `active`；`expired` 導向 `/payment/checkout` 續約，
-  付款開通中導向 `/payment/result`。
+  付款開通中導向 `/payment/result`——「付款開通中」＝非 active 且有一張已收到 PayUni 成功
+  回應的待開通訂單，首購與續費者一視同仁（續費者付了款卻卡單，也不會被送回結帳頁重付）。
 - `AdminRoute`：非管理員擋下。
 - `FeatureContext`：功能旗標，**目前為前端全開啟 stub**，尚無後端來源。
 

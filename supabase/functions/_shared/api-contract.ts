@@ -159,6 +159,9 @@ export const RenewalInfoSchema = obj({
   paidBackfillAmount: num(), // paidBackfillCount × 年費
   freshForfeitPoints: num(), // 選 fresh 將作廢的可提領點數（A14 揭露）
   freshForfeitReferrals: num(), // 選 fresh 將歸零的累積推薦人數（A14）
+  // S6（W5-51）：新約留空時會不會綁預設推薦人（只給布林，§7.4 不揭露碼與姓名）。
+  // optional：前端先上、Edge 後上的空窗不得讓整個 renewal 解析失敗；缺值視為 false（keep）。
+  freshDefaultReferrerAvailable: optional(bool()),
 });
 export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
 
