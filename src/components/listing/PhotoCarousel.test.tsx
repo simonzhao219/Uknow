@@ -155,3 +155,116 @@ describe('PhotoCarousel', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 });
+
+// 輪播盡頭續滑（W5-21）：起手就在最後一張再往左＝下一篇，第一張再往右＝上一篇。
+// 判定看「起點」的張數，不看結束時：倒數第二張滑到最後一張的同一下手勢不連跳換篇。
+describe('PhotoCarousel 盡頭續滑', () => {
+  const touch = (x: number, y = 300) => ({ clientX: x, clientY: y });
+
+  function drag(
+    scroller: HTMLElement,
+    from: { x: number; y?: number },
+    to: { x: number; y?: number },
+  ) {
+    fireEvent.touchStart(scroller, { touches: [touch(from.x, from.y)] });
+    fireEvent.touchEnd(scroller, { changedTouches: [touch(to.x, to.y)] });
+  }
+
+  it('最後一張起手向左滑，觸發 next', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    swipeTo(scroller, 2);
+    drag(scroller, { x: 250 }, { x: 120 });
+    expect(onEdgeSwipe).toHaveBeenCalledWith('next');
+    expect(onEdgeSwipe).toHaveBeenCalledTimes(1);
+  });
+
+  it('第一張起手向右滑，觸發 prev', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    drag(getScroller(), { x: 120 }, { x: 250 });
+    expect(onEdgeSwipe).toHaveBeenCalledWith('prev');
+  });
+
+  it('第一張向左滑（是換下一張照片）不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    drag(getScroller(), { x: 250 }, { x: 120 });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('最後一張向右滑（是換回上一張照片）不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    swipeTo(scroller, 2);
+    drag(scroller, { x: 120 }, { x: 250 });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('倒數第二張滑到最後一張的同一下手勢不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    swipeTo(scroller, 1);
+    fireEvent.touchStart(scroller, { touches: [touch(250)] });
+    swipeTo(scroller, 2); // 手指還沒放開，輪播已吸附到最後一張
+    fireEvent.touchEnd(scroller, { changedTouches: [touch(120)] });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('只有一張照片時兩個方向都算盡頭', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS.slice(0, 1)} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    drag(scroller, { x: 250 }, { x: 120 });
+    drag(scroller, { x: 120 }, { x: 250 });
+    expect(onEdgeSwipe.mock.calls).toEqual([['next'], ['prev']]);
+  });
+
+  it('斜向或垂直為主的滑動不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    swipeTo(scroller, 2);
+    drag(scroller, { x: 250, y: 300 }, { x: 150, y: 420 });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('多指觸控不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    swipeTo(scroller, 2);
+    fireEvent.touchStart(scroller, { touches: [touch(250), touch(260)] });
+    fireEvent.touchEnd(scroller, { changedTouches: [touch(120)] });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('touchcancel 後不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    const scroller = getScroller();
+    swipeTo(scroller, 2);
+    fireEvent.touchStart(scroller, { touches: [touch(250)] });
+    fireEvent.touchCancel(scroller);
+    fireEvent.touchEnd(scroller, { changedTouches: [touch(120)] });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('起點在螢幕邊緣 24px 內（系統返回手勢區）不觸發', () => {
+    const onEdgeSwipe = vi.fn();
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" onEdgeSwipe={onEdgeSwipe} />);
+    drag(getScroller(), { x: 10 }, { x: 150 });
+    expect(onEdgeSwipe).not.toHaveBeenCalled();
+  });
+
+  it('沒傳 onEdgeSwipe 時盡頭滑動不出錯、輪播照舊', () => {
+    render(<PhotoCarousel photos={PHOTOS} name="Cara" />);
+    const scroller = getScroller();
+    swipeTo(scroller, 2);
+    expect(() => drag(scroller, { x: 250 }, { x: 120 })).not.toThrow();
+    expect(screen.getByText('3/3')).toBeTruthy();
+  });
+});

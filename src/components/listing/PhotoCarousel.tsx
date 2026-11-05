@@ -7,6 +7,8 @@ import { cn } from '../ui/utils';
 interface PhotoCarouselProps {
   photos: string[];
   name: string;
+  /** 起手就在最後一張再往左（next）／第一張再往右（prev）滑時觸發，給詳情頁換篇用。 */
+  onEdgeSwipe?: (direction: 'prev' | 'next') => void;
 }
 
 function prefersReducedMotion() {
@@ -27,7 +29,7 @@ function prefersReducedMotion() {
  * 根節點的子區塊順序是 [正方形, 圓點列]，`DetailSkeleton` 與 e2e
  * `test_public_skeleton_layout.py` 的結構探針都依這個順序比位置。
  */
-export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
+export function PhotoCarousel({ photos, name, onEdgeSwipe: _onEdgeSwipe }: PhotoCarouselProps) {
   const total = photos.length;
   // 0 張：沿用 ImageWithFallback 原本對空 src 的行為（舊版也是 src={undefined}），不另發明空狀態。
   const slides: (string | undefined)[] = total === 0 ? [undefined] : photos;
