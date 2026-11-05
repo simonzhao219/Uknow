@@ -142,6 +142,7 @@
 4. pay P1-4：續費者付款成功但卡單時，effective_registration_step 恆為 3 → 旗標被蓋掉 → 守衛送回結帳頁 → 可能再付一次。
 5. W5-7（pay P2-10）：fresh 無條件二次確認；確認框依資產列出後果，沒有資產時至少說明推薦人會變。PaymentCheckout 測試〈fresh 無資產且未付過補繳時，付款不需二次確認直接送單〉要改成反向斷言（W5-7 授權）。
 6. W5-8（ref P2-2、P2-3）：已發出的推薦王 credit（含未領）保留；fresh 後當月從 0 計門檻（處理 round_ordinal）；當月桶只清計數，配對名單另存，守住 §9.2「R 從未出現在 U 歷史」。規格書 §9.1、§9.2 同步。
+S2（#510）留下的已知限制：fresh 換線的 profiles 寫入發生在建單 RPC（prepare_payment_order）之前，RPC 回 active／suspended 時不會回復——與 ref P0-1 同一處，一併處理。
 規劃必答：每條先寫「具體輸入 → 錯誤結果」重現步驟，再給修法；migration 對正式站 15 筆既有訂閱與 21 列 reward_transactions 的影響（主 session 代跑唯讀查詢）；journey f70 續約劇本要補哪些章節。
 流程：`git checkout -B feature/renewal-path-hardening origin/develop`（S2 已合併）→ `/plan-feature renewal-path-hardening` → /review-plan → **停下** send_message 回報主 session → 業主在本 session 親打 `/tdd-implement renewal-path-hardening`。
 ```

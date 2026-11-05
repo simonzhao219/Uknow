@@ -87,6 +87,7 @@
 | W5-43 | S7 entry raw 預算（#509 build-bundle 紅：raw 1000.2 > 1000 kB） | raw 1000→1010 kB（與 gzip +3 kB 同比例）；S7 硬上限 gzip 315／raw 1010；S4 另有 gzip +1.0／raw 約 +3.2 kB，後合者在 PR 寫合計 |
 | W5-44 | S1 實作審查 P2 三條 | ①DataSource＝B 持續超過 4 天轉 unknown＋error 告警（本 PR 做）；②「SUCCESS 但缺 TradeStatus→missing_field」本 PR 不改，上線後第一輪看帳本 summary 的 unknownStatus／missing_field 計數（列晉升清單與 W4-26 現場查詢）；③unknown 單人工確認已付款後的手動開通入口 → 第 6 波候選 |
 | W5-45 | S1 看門狗只漏一輪 pg_cron 就必推「停擺」LINE（GitHub 啟動延遲必然越過 90 分） | 補跑門檻維持 90 分；LINE 停擺推播改連漏兩輪（約 150 分）才推 |
+| W5-46 | migration 撞號：S2 #510 的 `20261111000001_reward_idempotency_index.sql` 與 S1 #512 的 `20261111000001_scheduled_job_runs.sql` | #510 先合；S1 改號為 `20261112000001_scheduled_job_runs.sql`，rebase 後跑 `check-migration-versions.py` |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -198,7 +199,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | #512（draft） | 主 session 審查中；W5-44① 補做 |
-| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 實作中 |
+| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | #510（ready） | 主 session 審查中 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
@@ -231,3 +232,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 08:45 | S7 階段 4、5 綠並推上；階段 6 有 1 條紅燈是測試夾具錯（重驗回三張照片），需業主在 S7 session 親口授權改一行（tdd 逃生口 2）。#509 build-bundle 紅（entry raw 超 1000 kB）→ 主 session 定 **W5-43** | 業主到 S7 session 授權 |
 | 11/05 08:55 | S1 開 **#512**（33 檔、+3,443 行；實作審查 P0 0、P1 5 皆處置）。主 session 訂閱、親審 TradeStatus 對應（與 W5-41／42 一致），另派獨立 Opus 審查員審 diff。主 session 定 **W5-44** | 等審查與 CI |
 | 11/05 09:10 | #512 審查（主 session＋獨立 Opus 審查員）：P1-1 模組頂層建 Supabase client（unit-tests 紅，本 PR 造成）；**P1-2（主 session 讀碼核實）標過 unknown 的單遇查詢層失敗仍會在 4 天後被標 expired**，違反 W5-41；P1-3 即 W5-44①（313ca52 已做）。P2：MerTradeNo 收斂、看門狗推播門檻（主 session 定 **W5-45**）、清理看門狗用 lastCompletedAt（可選）。已全部轉 S1 | S1 修完 → 審 delta → CI 綠 → 合 |
+| 11/05 09:25 | S2 交 **#510**（ready，CI 綠；實作審查 P0 0、P1 6 處置；業主 08:25 於 S2 session 授權改 appShell.test.ts）。主 session 發現 #510／#512 migration 撞號 → **W5-46**。另派獨立 Opus 審查員審 #510。S2 待辦：後台刪帳號工具、停權期間付款鈕灰掉無說明 → 第 6 波候選；S6 須知：fresh 換線寫 profiles 在建單 RPC 之前，RPC 回 active／suspended 時不回復 | 等 #510 審查 |
