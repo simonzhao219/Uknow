@@ -172,6 +172,7 @@ fail-closed、只存在於部署空窗——接受並寫測試（架構 P2、系
   ```
   begin
     if fresh_referrer_user_id is null then 告警 fresh_referrer_missing，不換線
+    elsif 碼重驗失敗（W5-56：validate_referral_code 查無／停權／失效，或解析出的推薦人 ≠ 意圖）then 告警 fresh_referrer_invalid，不換線
     elsif referral_would_cycle(p_user_id, fresh_referrer_user_id) then 告警 fresh_referrer_cycle，不換線
     else
       perform set_config('uknow.referred_by_changed_at', v_paid_at::text, true);
@@ -292,7 +293,7 @@ heal 條件由 `registrationStep === 2` 改為 `paidAwaitingActivation`（有界
 | # | 階段 | 測試落點 | 驗證標準 | 規格書 |
 |---|---|---|---|---|
 | 1 | A1：環偵測＋自領停發（R2 SQL） | `api/referral-cycle.test.ts`（新，db） | `referral_would_cycle` 對一～四代下線、自己 true，對旁支與自己的上代 false；以 SQL 造 M↔D 環，M 付款無自領列＋告警；既有環不無窮迴圈 | §7.2、§8.2「禁止成環」（不引用 migration 檔名，實檔存在前 `check-spec-drift.py` 的路徑檢查會紅） |
-| 2 | A2：意圖欄＋六參數 RPC＋wrapper＋0d＋null 告警＋changed_at（R1、R2、R3、R4、R7 的 SQL 部分） | `api/renewal-referrer-intent.test.ts`（新，db，**全部以 SQL 直接呼叫 RPC 造單**）、`prepare-payment-order.test.ts`、`repair-retro-rewards.test.ts` | **紅燈主案例**（RPC 層）：fresh 意圖 X 的單不付 → extend 單付款 → 邊、gen1–3、任務仍歸 Y，profiles 仍 Y；fresh 單付款後才換線；`mode_required`、`paid_pending`（續費者與首購各一，含 alert）、`cycle`；付款當下成環／被選者已刪 → 不換線＋告警、帳本照清；0d 例外不回滾付款；duplicate fresh 不換線且告警帶意圖；首購 fresh 不換線；兩筆互選付款併發 → 不成環（兩連線測試）；首購預設推薦人付款後 changed_at＝completed_at、repair 補得到；register 改推薦人仍記 now()；wrapper 回傳新 outcome 字串；六參數無 default、兩個多載各自只給 service_role；paid_pending 告警失敗仍回 409、同單去重；0d 例外後 GUC 回復、changed_at 不受影響；0d 換線後 profiles 與 edge 一致；**併發三案**（§2.3 鎖序總表的確定性寫法：第三連線先持 advisory、確認等待方不持 profiles 鎖、放鎖後三代列齊全且無 system_alerts）；prepare 用 `for no key update`。**本階段不動** `renewal-modes.test.ts`、`fresh-default-referrer.test.ts`（Edge 層，歸階段 3） | §6.2 重複付款段（fresh 不換線）、§6.2 `:303`「模式由建單時寫入」補意圖三欄與「付款當下才寫 profiles」、§8.3 自癒閘門；`〔實作〕` 引用 A2 檔名在實檔建立的同一 commit 寫 |
+| 2 | A2：意圖欄＋六參數 RPC＋wrapper＋0d＋null 告警＋changed_at（R1、R2、R3、R4、R7 的 SQL 部分） | `api/renewal-referrer-intent.test.ts`（新，db，**全部以 SQL 直接呼叫 RPC 造單**）、`prepare-payment-order.test.ts`、`repair-retro-rewards.test.ts` | **紅燈主案例**（RPC 層）：fresh 意圖 X 的單不付 → extend 單付款 → 邊、gen1–3、任務仍歸 Y，profiles 仍 Y；fresh 單付款後才換線；`mode_required`、`paid_pending`（續費者與首購各一，含 alert）、`cycle`；付款當下成環／被選者已刪／碼重驗失敗（停權、失效，W5-56）→ 不換線＋告警、帳本照清；0d 例外不回滾付款；duplicate fresh 不換線且告警帶意圖；首購 fresh 不換線；兩筆互選付款併發 → 不成環（兩連線測試）；首購預設推薦人付款後 changed_at＝completed_at、repair 補得到；register 改推薦人仍記 now()；wrapper 回傳新 outcome 字串；六參數無 default、兩個多載各自只給 service_role；paid_pending 告警失敗仍回 409、同單去重；0d 例外後 GUC 回復、changed_at 不受影響；0d 換線後 profiles 與 edge 一致；**併發三案**（§2.3 鎖序總表的確定性寫法：第三連線先持 advisory、確認等待方不持 profiles 鎖、放鎖後三代列齊全且無 system_alerts）；prepare 用 `for no key update`。**本階段不動** `renewal-modes.test.ts`、`fresh-default-referrer.test.ts`（Edge 層，歸階段 3） | §6.2 重複付款段（fresh 不換線）、§6.2 `:303`「模式由建單時寫入」補意圖三欄與「付款當下才寫 profiles」、§8.3 自癒閘門；`〔實作〕` 引用 A2 檔名在實檔建立的同一 commit 寫 |
 | 3 | Edge prepare＋契約（R1、R2、R3、R4 Edge 部分） | `api/renewal-modes.test.ts`、`fresh-default-referrer.test.ts`（既有「prepare 寫 profiles」斷言改寫）、`api/payuni-prepare-errors.test.ts`（新）、`api-contract` 型別 | 紅燈主案例（Edge 層）：prepare(fresh,X) 不付 → prepare(extend) 付款 → profiles、邊不變；RPC 回 active／suspended 時 profiles 不變；曾訂閱者無 body → 400 `RENEWAL_MODE_REQUIRED`；填一代碼 → 400 `REFERRAL_CYCLE`；停權者先得 403；409 帶 `lastTradeNo`；錯誤形狀符合 `PrepareErrorBodySchema` | §4.1「推薦人在註冊完成後唯一的自助變更路徑是續費選新約」補「付款成功時生效」；§6.2 表格（`:287`）新約推薦人欄「換線」改「付款成功時換線」；§6.2 fresh 護欄（模式必選 400、成環 400、已付款待開通 409——首購者同樣適用）；§7.4 套用時點與 `referred_by_is_default` 重置時點 |
 | 4 | `/profile` 卡單旗標＋heal；`/subscriptions/status` 加 `freshDefaultReferrerAvailable`（R4、R5 後端） | `api/profile-self-heal.test.ts`、`api/subscriptions-status.test.ts` | 續費者（step 3、expired）pending＋SUCCESS → 旗標 true、帶 `lastTradeNo`、先 heal；active 者 false；default 可用／不可用／自己 三案 | §6.2（無條件確認的資料來源）|
 | 5 | B：pair-history＋回填＋king_round_base（R6；含連續兩次 fresh 中間 reconcile 失敗） | `api/fresh-ledger-forfeit.test.ts`、`king-multi-credit.test.ts`、`api/referral-pair-history.test.ts`（新：回填、RLS） | 同月已有 1 張 credit 再 fresh → 原 credit（含 unclaimed）保留、再滿門檻（讀 config）發第 2 張；當月加入的 R 於 fresh 後續約 → U 任務不 +1；回填含 gen1 推得配對、排除 claim 列；anon／authenticated 讀不到新表；既有表列數不變 | §9.1「張數＝floor(當月新人數／門檻)」改為「fresh 當下已發張數＋floor(fresh 後當月新人數／門檻)」；§9.2 不變式改指 `referral_pair_history`、`:595-599`「當月桶刪除」改為「當月計數歸零、配對名單保留」 |
@@ -324,9 +325,9 @@ heal 條件由 `registrationStep === 2` 改為 `paidAwaitingActivation`（有界
 | E1 快照首購者 `/profile` 讀不到 | **放行，後端兜底**（W5-54） |
 | E2 填的碼＝現任推薦人 | 確認框寫「您的推薦人維持 {姓名}」（W5-55） |
 | 使用者可見文案用語 | 不用「上線／下線」（W5-53） |
-| **F1（待裁決）** 建單到付款之間（PayUni 繳費期限 3 天內）被選的推薦人遭停權或碼被撤銷，付款當下要不要重驗 | 規劃者建議：**重驗**（0d 內用 `validate_referral_code` 的同一判準；失敗 → 不換線、帳本照清、error 告警 `fresh_referrer_invalid`，與 W5-49② 同形）。理由：新約會主動換掉原推薦人，換到一個已停權的人不合使用者意圖；首購路徑不重驗是既有行為，不在本工項改 |
+| F1 建單到付款之間被選的推薦人遭停權或碼失效 | **付款當下重驗**（W5-56）：0d 內用 `validate_referral_code` 的同一判準（code＝該碼、default＝當下的 `reward_config.default_referrer_code`）；失敗 → 不換推薦人、帳本照清、error 告警 `fresh_referrer_invalid`（與 W5-49② 同形）。首購路徑不重驗，維持既有行為 |
 
-待裁決：F1。
+尚無未決題。
 
 ## 7. 風險與回滾
 
@@ -337,7 +338,7 @@ heal 條件由 `registrationStep === 2` 改為 `paidAwaitingActivation`（有界
     回填前後 `reward_transactions`、`referral_king_rewards`、`task_progress` 列數相同。
   - 環 0、自領 0；profiles／edges 不一致 1 列為已註冊未首購（正常）。
 - **上線後對帳查詢**（續費潮開始後定期跑）：完成的 fresh 單 `fresh_referrer_source in ('code','default')` 且非 duplicate，
-  但 profiles 推薦人 ≠ 意圖 → 應恰等於 `fresh_rewire_failed`／`fresh_referrer_cycle`／`fresh_referrer_missing` 告警數；
+  但 profiles 推薦人 ≠ 意圖 → 應恰等於 `fresh_rewire_failed`／`fresh_referrer_cycle`／`fresh_referrer_missing`／`fresh_referrer_invalid` 告警數；
   另查 `profiles.referred_by_user_id` 與 `referral_edges.referrer_user_id` 不一致（排除尚無 completed 訂單者）應為 0。
 - **部署順序**：migration 由 Supabase 原生整合在 push 時套用，Edge 在 CI 綠後部署——migration 先。
   空窗內舊 Edge 經 wrapper 建單：一般情況照常；遇新 outcome → 500（fail-closed）；建出的 fresh 單 `source=null`、profiles 已由舊 Edge 寫過。
