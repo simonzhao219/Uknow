@@ -280,3 +280,44 @@ for (
     }
   });
 }
+
+// S6（W5-51）：結帳頁新約確認框的推薦人句依「留空時會不會綁預設推薦人」分句——只回布林，
+// 不回碼或姓名（§7.4 不揭露）。判準同 prepare 的 default 分支：validate_referral_code 通過
+// 且不是本人。
+Deno.test('status：freshDefaultReferrerAvailable 依預設推薦碼可用、未設、為本人而變', async () => {
+  const client = adminClient();
+  const { data: cfg } = await client.from('reward_config').select('default_referrer_code')
+    .eq('id', true).single();
+  const original = cfg?.default_referrer_code ?? null;
+  const platform = await createTestUser(client, { name: 'Status Default Platform' });
+  const user = await createTestUser(client, { name: 'Status Default User' });
+  const setCode = async (code: string | null) => {
+    const { error } = await client.from('reward_config').update({ default_referrer_code: code })
+      .eq('id', true);
+    assertEquals(error, null);
+  };
+  try {
+    assertEquals((await payForUser(client, platform.id)).error, null);
+    assertEquals((await payForUser(client, user.id)).error, null);
+    const codeOf = async (id: string) =>
+      (await client.from('referral_codes').select('code').eq('user_id', id).eq('status', 'active')
+        .single()).data!.code as string;
+    const token = await getUserAccessToken(client, user.email);
+
+    await setCode(await codeOf(platform.id));
+    assertEquals((await getStatus(token)).data.renewal.freshDefaultReferrerAvailable, true);
+
+    await setCode(null);
+    assertEquals((await getStatus(token)).data.renewal.freshDefaultReferrerAvailable, false);
+
+    await setCode(await codeOf(user.id));
+    assertEquals(
+      (await getStatus(token)).data.renewal.freshDefaultReferrerAvailable,
+      false,
+      '預設碼是本人 → 不會綁（自我推薦護欄）',
+    );
+  } finally {
+    await setCode(original);
+    await deleteTestUsers(client, [platform.id, user.id]);
+  }
+});
