@@ -301,12 +301,20 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 不退還、效期不保留」警語。
 
 模式由建單時寫入 `payment_orders.renewal_mode`，付款成功當下才據以決定效期
-——**不信任前端傳入的日期**。
+——**不信任前端傳入的日期**。新約的換線意圖（新推薦人、碼、來源：填碼／預設推薦人／
+預設不可用而維持原推薦人）同樣只寫在**該張訂單**上，建單不動會員的推薦人；只有
+續費者的那張新約單**付款成功**時才換線，棄單後改付續約不會換線。付款當下會重驗
+推薦碼（停權或失效）並檢查成環，任一不過或換線失敗 → 維持原推薦人、帳本照清，
+寫 error 告警（`fresh_referrer_invalid`／`fresh_referrer_cycle`／`fresh_referrer_missing`／
+`fresh_rewire_failed`）。曾訂閱者的付款若沒有續費模式（prepare 以外的路徑漏網），
+照常開通並寫 error 告警 `renewal_without_mode`。
+〔實作〕`20261113000002_renewal_referrer_intent.sql`
 
 **重複付款**：建單只擋「此刻已 active」，舊的待付款單不作廢——PayUni 付款頁在付款期限前
 仍可付，作廢擋不住付款，反而讓對帳不再追它。兩個分頁各建一張單、兩邊都付成功時，付款成功
 當下若此人已在效期內（某筆訂閱的到期時點晚於這筆的付款時點），這筆一律**接續**最後一筆
-訂閱的隔天（錢已收、給足效期），不從付款日重新起算、也不再執行一次新約清帳本；三代獎勵照發。
+訂閱的隔天（錢已收、給足效期），不從付款日重新起算、也不再執行一次新約清帳本、也不換線
+（告警 context 帶該單的換線意圖）；三代獎勵照發。
 新約與首購的重複寫 error 告警 `duplicate_payment`、續約的寫 warning，context 帶兩筆交易
 編號與該筆發出的獎勵列，由客服判斷是否退款並人工沖銷。
 〔實作〕`20261111000003_duplicate_payment_guard.sql`
@@ -521,7 +529,9 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 每一代各自包一層例外隔離（warning-only）：gen2/gen3 失敗不拖累 gen1，
 只留 `system_alerts` 紀錄。兩條路徑各有自癒補償
 （`repair_orphaned_payments` / `repair_orphaned_claim_rewards`）；自癒先鎖該會員的
-`profiles` 列再重查，並行的補發不會各插一份。
+`profiles` 列再重查，並行的補發不會各插一份。自癒只補「事件發生時推薦關係已存在」的
+付款（`referred_by_changed_at` ≤ 付款時點）；付款交易內寫推薦人時（首購套用預設推薦人、
+新約換線），`referred_by_changed_at` 記的是付款時點而非處理當下，這筆付款才補得到。
 
 冪等的最後一道在資料庫：`reward_transactions` 對上表兩組鍵、`ledger_reset` 的
 `subscription_id`、提領退件退款的 `withdrawal_id` 各有唯一索引，同一事件的第二列存不進去。
