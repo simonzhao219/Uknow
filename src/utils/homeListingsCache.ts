@@ -71,3 +71,10 @@ export function resetHomeListingsCache() {
   scrollY = 0;
   filters = DEFAULT_HOME_FILTERS;
 }
+
+// ── 階段 4 stub：只求型別過，行為留空（TDD 紅燈用）──
+export type BrowseContextSnapshot = { ids: string[]; entryId: string; version: string };
+export const freezeBrowseContext = (_ids: string[], _entryId: string): string => '';
+export const getBrowseContext = (): BrowseContextSnapshot | null => null;
+export const getLastViewedId = (): string | null => null;
+export const setLastViewedId = (_id: string | null) => {};
