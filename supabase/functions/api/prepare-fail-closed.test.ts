@@ -110,3 +110,16 @@ Deno.test('prepare：extend 讀 subscriptions 失敗 → 500，不得回 400 導
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+Deno.test('prepare：讀停權狀態失敗 → 500 且不建單（fail-closed）', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Prepare Suspend Read Fail' });
+  try {
+    const token = await getUserAccessToken(client, user.email);
+    const res = await withRestTableFailure(['profiles'], () => postPrepare(token));
+    assertEquals(res.status, 500, JSON.stringify(res.body));
+    assertEquals(await pendingOrderCount(client, user.id), 0);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
