@@ -127,15 +127,37 @@ export async function boot(url: string, html: string) {
     record(`BEACON ${u}`, b);
     return true;
   };
+  // 最壞情況的專案端遠端設定：業主若在 PostHog 後台把這些全開，前端明確寫死的選項與
+  // 擴充切分仍必須讓它們不生效（console／logs、conversations、network payload、canvas、
+  // 熱圖、dead click、exception 自動捕捉、關閉遮罩）。
   w._POSTHOG_REMOTE_CONFIG = {
     [KEY]: {
       config: {
         token: KEY,
         supportedCompression: ['gzip'],
         hasFeatureFlags: true,
-        sessionRecording: { endpoint: '/s/', recorderVersion: 'v2' },
-        captureDeadClicks: false,
-        autocapture_opt_out: true,
+        sessionRecording: {
+          endpoint: '/s/',
+          recorderVersion: 'v2',
+          consoleLogRecordingEnabled: true,
+          networkPayloadCapture: {
+            recordHeaders: true,
+            recordBody: true,
+            capturePerformance: true,
+          },
+          canvasRecording: { enabled: true, fps: '4', quality: '0.4' },
+          masking: { maskAllInputs: false, maskTextSelector: '.never-matches' },
+        },
+        capturePerformance: true,
+        logs: { captureConsoleLogs: true },
+        conversations: { enabled: true, token: 'conv_token', widgetEnabled: true },
+        heatmaps: true,
+        captureDeadClicks: true,
+        autocaptureExceptions: true,
+        errorTracking: { autocaptureExceptions: true },
+        productTours: true,
+        surveys: true,
+        autocapture_opt_out: false,
       },
       siteApps: [],
     },
