@@ -29,6 +29,8 @@
 #   子網域尚未盤點，includeSubDomains 待盤點後另案）。
 # - frame-ancestors 'none'：禁止被嵌進 iframe（點擊劫持）。只放這一條指令，
 #   完整 CSP 另案——現在加 script-src 等會連帶擋掉金流跳轉與第三方腳本。
+#   另案時別忘了監控（PostHog EU）需要：connect-src https://eu.i.posthog.com、
+#   script-src https://eu-assets.i.posthog.com（錄影元件外部載入，見規格書 §15）。
 /*
   Strict-Transport-Security: max-age=31536000
   X-Content-Type-Options: nosniff

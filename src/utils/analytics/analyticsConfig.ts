@@ -14,6 +14,7 @@ export const BLOCK_SELECTOR = [
   'input[type="password"]',
   'input[autocomplete^="bday"]',
   'input[autocomplete="tel"]',
+  'input[autocomplete^="tel-"]',
   'input[autocomplete^="cc-"]',
   '[data-sensitive]',
 ].join(', ');
@@ -115,7 +116,9 @@ const TRACKING_KEYS = new Set([
 function cleanBag(bag: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(bag)) {
-    if (TRACKING_KEYS.has(k) || k.startsWith('utm_')) continue;
+    // person property 的 $initial_utm_*／$initial_gclid 等同樣是追蹤參數。
+    const base = k.startsWith('$initial_') ? k.slice('$initial_'.length) : k;
+    if (TRACKING_KEYS.has(base) || base.startsWith('utm_')) continue;
     if (URL_KEYS.has(k) && typeof v === 'string') out[k] = stripUrl(v);
     else out[k] = v;
   }

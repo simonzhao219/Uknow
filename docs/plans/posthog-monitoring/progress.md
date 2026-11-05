@@ -12,8 +12,8 @@
 | 1 | 設定純函式與 key 目標 | ✅ | 6838c1c4 | f21c94f0 |
 | 2 | 懶載入 facade＋真實 SDK 外送驗證 | ✅ | 33f75ea3 | a90f41af |
 | 3 | 接線與預算 | ✅ | 798ec594 | b5583de4 |
-| 4 | 敏感欄位 block | ✅ | 6404d222 | (本 commit) |
-| 5 | 文件與收尾 | ⬜ 未開始 | | |
+| 4 | 敏感欄位 block | ✅ | 6404d222 | 6e1a7da1 |
+| 5 | 文件與收尾 | 🟡 進行中（文件已寫、/review-implementation 已跑並處置、待 check:full 與清理規劃檔） | | |
 
 ## 目前位置與下一步
 
@@ -25,6 +25,7 @@
   1. 「階段 2 紅燈的測試 helper 有一個錯…要授權嗎？」→ 業主選「授權解鎖並修正 helper（建議）」。範圍：只改 `analyticsPrivacy` 的解碼 helper。原因：SDK 的 `compress_events` 把 FullSnapshot 欄位 gzip 成 latin1 字串，原 helper 當 base64 解，「不得出現」斷言會空過（對照組 `home-probe` 抓到）。
   2. 「…要再授權嗎？」→ 業主選「授權拆成多個測試檔（建議）」。範圍：把單檔 4 案例拆成 4 檔＋共用 `analyticsPrivacyHarness.ts`，斷言逐字不變。原因：posthog-js 為外部套件，`vi.resetModules` 重置不了，同檔多案例互相污染（`__PosthogExtensions__` 不再建立）。
   兩次修改都只加嚴或重構，未放寬任何斷言。
-- **偏離 plan §2.2（記錄，未私改 plan）**：plan 寫「`advanced_disable_feature_flags: true` 少一支外送請求」不成立——它只是不評估 flag，`/flags` 請求仍會送（遠端設定仍載入，錄影才會啟動）。`advanced_disable_flags: true` 會連遠端設定一起跳過，錄影永遠不啟動，所以**不可用**。階段 2 測試已把 `/flags`／遠端設定請求納入「不得含 token」斷言範圍。收尾時在 PR 內文記載。
+- **偏離 plan §4（階段 4，實作期記錄）**：①plan 的 `PrivateField` 元件＋`privateProps()` 實作為 `privateClass(extra)` 函式（併進既有群組根容器，不新增節點）；②整頁 block 改在路由層用 `PrivateRegion`（`display:contents`，包在 ProtectedRoute／AdminRoute 外，連 loading／導向狀態都涵蓋），而非逐頁根容器加 class（PaymentResult 有 9 個 return 根，逐一加易漏）；已有真實 SDK 測試（`analyticsPrivacyBlock.test.ts`）證明 contents 容器底下的子樹不外送。③`/admin/verify` 現為 `<Navigate to="/dashboard/qr?tab=scan">`，落地頁不在禁錄路徑（QR 掃描頁是否含他人個資待主 session／業主裁決）。④手機欄位 `autoComplete` 用 `tel-national`（避免通訊錄 `+886…` 被 maxLength=10 截斷）；catch-all 同步加 `input[autocomplete^="tel-"]`。⑤`entryRawKB` 1000→1002（實測 raw +1.9 kB；plan 只授權 gzip +1.0，raw 為順帶，PR 內文說明）。
+- **偏離 plan §2.2（記錄，未私改 plan）**：plan 說 `advanced_disable_feature_flags: true`「少一支外送請求」。實測（jsdom、遠端設定預載）整輪只送出 `/e/`（事件）與 `/s/`（錄影），**沒有 `/flags`**，所以這個選項的效果是「不評估 flag」而非 plan 描述的理由；`advanced_disable_flags: true` 則會讓 SDK 跳過遠端設定載入，錄影永遠不啟動，**不可用**。**驗證缺口**：測試以 `window._POSTHOG_REMOTE_CONFIG` 預載設定，所以正式環境的 `/array/<key>/config(.js)` 載入請求與可能的 `/flags` 請求沒有被測試涵蓋（它們不經過 `before_send`）；列入 develop 上線後人工清單——用瀏覽器 Network 面板確認這些請求的網址與本文都不含 token。
 
 ## 框架摩擦

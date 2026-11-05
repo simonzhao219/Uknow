@@ -86,14 +86,24 @@ export function createAnalytics(deps: AnalyticsDeps): Analytics {
       if (!enabled) return;
       lastPath = pathname;
       if (!client) return;
-      // 先處理錄影閘門再送 pageview；呼叫端應在 layout effect 內呼叫以趕在 rrweb flush 前。
-      applyRecording(client, pathname);
-      sendPageview(client, pathname);
+      // 跑在 useLayoutEffect 內：SDK 任何呼叫拋錯都不能讓 App 掛掉，所以整段吞掉。
+      try {
+        // 先處理錄影閘門再送 pageview；呼叫端應在 layout effect 內呼叫以趕在 rrweb flush 前。
+        applyRecording(client, pathname);
+        sendPageview(client, pathname);
+      } catch {
+        // 監控壞了不能影響產品。
+      }
     },
     reset() {
       if (!enabled) return;
       if (client) {
-        client.reset(true);
+        // 跑在登出流程內：reset 拋錯不能讓登出中斷。
+        try {
+          client.reset(true);
+        } catch {
+          // 監控壞了不能影響產品。
+        }
         return;
       }
       // SDK 尚未載入：PostHog 的身分可能已在 localStorage，載入後會沿用舊 id。

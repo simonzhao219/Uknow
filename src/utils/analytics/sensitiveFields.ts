@@ -26,7 +26,7 @@ export const SENSITIVE_FIELDS: SensitiveField[] = [
     file: 'components/CompleteProfile.tsx',
     anchor: 'htmlFor="phone"',
     inputId: 'phone',
-    attrs: ['autoComplete="tel"', 'inputMode="tel"'],
+    attrs: ['autoComplete="tel-national"', 'inputMode="tel"'],
   },
   {
     file: 'components/reward/IdNumberInput.tsx',

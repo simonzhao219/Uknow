@@ -83,6 +83,7 @@
 - 補 `autocomplete`（`email` / `current-password` / `new-password`）。
 - 送出型表單用 `<form>` 包起來（Enter 送出、瀏覽器行為一致）。
 - 錯誤顯示用 `aria-invalid` + `FieldError`。
+- **敏感欄位（身分證、手機、生日、銀行帳號、證件照上傳區塊）**：把 `privateClass()` 併進該欄位群組的根容器（label＋input＋錯誤訊息整組），並設對 `autoComplete`／`inputMode`（身分證首碼是英文字母，不可設數字鍵盤）。監控錄影靠它整塊遮蔽；不要為此新增包裝節點（`space-y-*` 的間距會塌陷）。真正走 portal 的 Dialog，class 要加在 Dialog 內容裡面。整頁（付款、後台）只在路由層用 `PrivateRegion`（`display:contents`，不產生 box），其餘一律用 `privateClass()`。清單與漏網掃描見 `src/utils/analytics/sensitiveFields.ts`。
 
 **表單內的法遵連結一律用就地彈窗**（`LegalDialog` + `LegalMarkdown`），
 不換頁、不開新分頁：換頁會卸載整個表單、連同 `useState` 一起蒸發，回來只剩

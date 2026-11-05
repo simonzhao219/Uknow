@@ -882,7 +882,7 @@ export function CompleteProfile() {
               <Label htmlFor="phone">手機號碼 *</Label>
               <Input
                 id="phone"
-                autoComplete="tel"
+                autoComplete="tel-national"
                 inputMode="tel"
                 value={formData.phone}
                 onChange={(e) => {
