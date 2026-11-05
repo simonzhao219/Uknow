@@ -80,7 +80,7 @@ async function referralStateOf(client: ReturnType<typeof adminClient>, userId: s
   return data!;
 }
 
-Deno.test('prepare：fresh 未填碼 → 套用預設推薦碼且 referred_by_is_default=true', async () => {
+Deno.test('prepare：fresh 未填碼 → 付款成功後才套用預設推薦碼且 is_default=true', async () => {
   const client = adminClient();
   const original = await snapshotDefaultCode(client);
   const upline = await createTestUser(client, { name: 'A10 Upline' });
@@ -104,14 +104,12 @@ Deno.test('prepare：fresh 未填碼 → 套用預設推薦碼且 referred_by_is
     const res = await postPrepare(token, { renewalMode: 'fresh' });
     assertEquals(res.body.success, true, JSON.stringify(res.body));
 
-    // A10：選新約 = 離開原上代；未填碼 → 綁平台預設推薦人，且旗標為
-    // 自動來源（前端不得把這個碼顯示給使用者）。
-    const state = await referralStateOf(client, payer.id);
-    assertEquals(state.referred_by_user_id, platform.id);
-    assertEquals(state.referred_by_code, platformCode);
-    assertEquals(state.referred_by_is_default, true);
+    // S6（ref P0-1）：建單只把意圖記在訂單上，不動 profiles——棄單不換線。
+    const before = await referralStateOf(client, payer.id);
+    assertEquals(before.referred_by_user_id, upline.id, '建單不動推薦人');
 
-    // 完成付款 → 推薦邊 rewire 到預設推薦人。
+    // 完成付款 → 才換線（A10：選新約 = 離開原上代；未填碼 → 綁平台預設推薦人，
+    // 旗標為自動來源，前端不得把這個碼顯示給使用者），推薦邊同時 rewire。
     const { error: payErr } = await client.rpc('process_successful_payment', {
       p_user_id: payer.id,
       p_trade_no: res.body.data.tradeNo,
@@ -119,6 +117,10 @@ Deno.test('prepare：fresh 未填碼 → 套用預設推薦碼且 referred_by_is
       p_payuni_response: { Status: 'SUCCESS' },
     });
     assertEquals(payErr, null);
+    const state = await referralStateOf(client, payer.id);
+    assertEquals(state.referred_by_user_id, platform.id);
+    assertEquals(state.referred_by_code, platformCode);
+    assertEquals(state.referred_by_is_default, true);
     const { data: edge } = await client
       .from('referral_edges').select('referrer_user_id').eq('referee_user_id', payer.id).single();
     assertEquals(edge?.referrer_user_id, platform.id);
@@ -150,6 +152,13 @@ Deno.test('prepare：fresh 填現任上代的碼 → 上代仍是原人且 is_de
     const token = await getUserAccessToken(client, payer.email);
     const res = await postPrepare(token, { renewalMode: 'fresh', referredByCode: uplineCode });
     assertEquals(res.body.success, true, JSON.stringify(res.body));
+    const { error: payErr } = await client.rpc('process_successful_payment', {
+      p_user_id: payer.id,
+      p_trade_no: res.body.data.tradeNo,
+      p_transaction_id: `PU-${res.body.data.tradeNo}`,
+      p_payuni_response: { Status: 'SUCCESS' },
+    });
+    assertEquals(payErr, null);
 
     const state = await referralStateOf(client, payer.id);
     assertEquals(state.referred_by_user_id, upline.id);
@@ -222,7 +231,7 @@ Deno.test('prepare：預設碼四種失效 → 維持原上代、建單成功、
   }
 });
 
-Deno.test('prepare：原無上代者 fresh 未填碼 → 綁預設推薦人（S12）', async () => {
+Deno.test('prepare：原無上代者 fresh 未填碼 → 付款後綁預設推薦人（S12）', async () => {
   const client = adminClient();
   const original = await snapshotDefaultCode(client);
   const platform = await createTestUser(client, { name: 'S12 Platform' });
@@ -244,6 +253,18 @@ Deno.test('prepare：原無上代者 fresh 未填碼 → 綁預設推薦人（S1
     const token = await getUserAccessToken(client, payer.email);
     const res = await postPrepare(token, { renewalMode: 'fresh' });
     assertEquals(res.body.success, true, JSON.stringify(res.body));
+    assertEquals(
+      (await referralStateOf(client, payer.id)).referred_by_user_id,
+      null,
+      '建單不動推薦人',
+    );
+    const { error: payErr } = await client.rpc('process_successful_payment', {
+      p_user_id: payer.id,
+      p_trade_no: res.body.data.tradeNo,
+      p_transaction_id: `PU-${res.body.data.tradeNo}`,
+      p_payuni_response: { Status: 'SUCCESS' },
+    });
+    assertEquals(payErr, null);
 
     const state = await referralStateOf(client, payer.id);
     assertEquals(state.referred_by_user_id, platform.id);

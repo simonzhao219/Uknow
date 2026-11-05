@@ -860,6 +860,33 @@ export const REFERRAL_CODE_SELF_MESSAGE = '不能使用自己的推薦碼';
 // 前端據此把結帳頁切到停權說明（快照過時、頁面上沒看到停權時的最後一道）。
 export const ACCOUNT_SUSPENDED = 'ACCOUNT_SUSPENDED';
 
+// 第 5 波 S6：/payuni/prepare 的新拒絕，形狀同停權 403（`{ success: false, error: { code, message } }`）。
+// 409：已付款待開通（pay P1-4）——不再建單，前端導 `/payment/result?tradeNo=<lastTradeNo>`；
+//   lastTradeNo 必填，缺漏視為契約錯誤（前端顯示客服入口、不導向）。
+export const PAYMENT_PENDING_ACTIVATION = 'PAYMENT_PENDING_ACTIVATION';
+// 400：曾訂閱者沒選續約／新約（pay P1-1）——前端重抓 /profile、切成雙模式。
+export const RENEWAL_MODE_REQUIRED = 'RENEWAL_MODE_REQUIRED';
+// 400：新推薦碼屬於自己的推薦網絡成員（ref P0-2）——標在新推薦碼欄位。
+export const REFERRAL_CYCLE = 'REFERRAL_CYCLE';
+
+export const PrepareErrorBodySchema = obj({
+  success: schema<false>((
+    v,
+    p,
+  ) => (v === false ? [] : [`${p}: 預期 false，收到 ${JSON.stringify(v)}`])),
+  error: obj({
+    code: literals(
+      ACCOUNT_SUSPENDED,
+      PAYMENT_PENDING_ACTIVATION,
+      RENEWAL_MODE_REQUIRED,
+      REFERRAL_CYCLE,
+    ),
+    message: str(),
+  }),
+  lastTradeNo: optional(str()),
+});
+export type PrepareErrorBody = Infer<typeof PrepareErrorBodySchema>;
+
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',
   'self_invite',
