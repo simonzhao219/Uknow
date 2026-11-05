@@ -1,4 +1,5 @@
-// 動態 chunk：真正 import posthog-js 與 analyticsConfig 的唯一入口。
+// 動態 chunk：真正 import posthog-js 的唯一入口。
+import type { PostHogConfig } from 'posthog-js';
 import type { AnalyticsClient } from './analytics';
 
 /**
@@ -6,9 +7,18 @@ import type { AnalyticsClient } from './analytics';
  * 正式呼叫不帶參數。
  */
 export async function createPosthogClient(
-  _extraOptions: Record<string, unknown> = {},
+  extraOptions: Record<string, unknown> = {},
 ): Promise<AnalyticsClient> {
   const { default: posthog } = await import('posthog-js');
-  void posthog;
-  throw new Error('not implemented');
+  return {
+    init: (key, options) => {
+      posthog.init(key, { ...options, ...extraOptions } as Partial<PostHogConfig>);
+    },
+    capture: (event, properties) => {
+      posthog.capture(event, properties);
+    },
+    reset: (resetDeviceId) => posthog.reset(resetDeviceId),
+    startSessionRecording: () => posthog.startSessionRecording(),
+    stopSessionRecording: () => posthog.stopSessionRecording(),
+  };
 }
