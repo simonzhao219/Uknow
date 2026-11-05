@@ -1,6 +1,6 @@
 import type React from 'react';
-import { useState, useMemo, useEffect, useContext, useRef } from 'react';
-import { Link, useLocation, useNavigationType } from 'react-router-dom';
+import { useState, useMemo, useEffect, useContext, useRef, useCallback } from 'react';
+import { useLocation, useNavigationType } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -41,12 +41,16 @@ import {
 import { filterAndSortListings } from '../utils/homeListingOrder';
 import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
+import { ListingLink, OpenListingContext } from './home/ListingLink';
 import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
 import type { PublicListingRow } from '../types/listing';
 import {
   getCachedCoords,
   getCachedFilters,
+  freezeBrowseContext,
+  getBrowseContext,
   getCachedListings,
+  getLastViewedId,
   getSavedScrollY,
   resetHomeView,
   saveScrollY,
@@ -54,6 +58,19 @@ import {
   setCachedFilters,
   setCachedListings,
 } from '../utils/homeListingsCache';
+
+// 把某張刊登卡捲到畫面中央。手機與桌機兩套版面同時在 DOM 裡（CSS 切換顯示），所以挑
+// 「看得見」的那個；找不到任何一張時回 false，呼叫端退回既有的捲動位置。
+function scrollToListing(id: string): boolean {
+  const matches = Array.from(document.querySelectorAll<HTMLElement>(`[data-listing-id="${id}"]`));
+  const target = matches.find((el) => el.getClientRects().length > 0) ?? matches[0];
+  if (!target) return false;
+  const reduced =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+  return true;
+}
 
 // 依 districts 陣列組出可讀的地區字串：有「全區」只顯示全區，否則最多前 10 個。
 // 手機與桌面卡片共用，避免重複邏輯。
@@ -174,7 +191,13 @@ export function HomePage() {
   // 離開首頁時記下捲動位置，返回時還原（清單由快取即時渲染，版面高度已就位）。
   useEffect(() => {
     const restore = getSavedScrollY();
-    if (restore > 0 && getCachedListings() !== null) window.scrollTo(0, restore);
+    if (getCachedListings() !== null) {
+      // 換過篇才把最後看的那張卡捲到中央；沒換篇（lastViewedId 為空或就是點進去的那張）
+      // 或那張已不在清單內，都維持離開前的捲動位置（W2-10、W5-28）。
+      const last = getLastViewedId();
+      const moved = last !== null && last !== getBrowseContext()?.entryId;
+      if (!(moved && scrollToListing(last)) && restore > 0) window.scrollTo(0, restore);
+    }
     return () => saveScrollY(window.scrollY);
   }, []);
 
@@ -239,6 +262,16 @@ export function HomePage() {
         userCoords,
       ),
     [serviceProviders, searchQuery, selectedCategory, selectedGenders, districtsByCity, userCoords],
+  );
+
+  // 點卡片時凍結「此刻畫面上的順序」給詳情頁換篇用（W5-26）。
+  const openListing = useCallback(
+    (id: string) =>
+      freezeBrowseContext(
+        filteredServiceProviders.map((p) => p.id),
+        id,
+      ),
+    [filteredServiceProviders],
   );
 
   // 載入中與讀取失敗時沒有「結果數」可說：面板主鈕不寫「查看 0 位」（§6：失敗不寫找到 0 筆）
@@ -506,7 +539,7 @@ export function HomePage() {
 
         {/* ========== 正常顯示資料（僅在載入完成且有資料時） ========== */}
         {!loading && filteredServiceProviders.length > 0 && (
-          <>
+          <OpenListingContext.Provider value={openListing}>
             {/* 手機版：依檢視模式在「3 欄照片牆」與「2 欄詳細卡」間切換 */}
             <div className="block md:hidden">
               {viewMode === 'photo' ? (
@@ -536,7 +569,7 @@ export function HomePage() {
                 <ServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
               ))}
             </div>
-          </>
+          </OpenListingContext.Provider>
         )}
       </div>
 
@@ -962,7 +995,7 @@ function DesktopCardSkeleton() {
 function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   const displayDistrict = formatDistrict(serviceProvider);
   return (
-    <Link to={`/service-providers/${serviceProvider.id}`} className="block h-full">
+    <ListingLink id={serviceProvider.id} className="block h-full">
       <Card className="h-full overflow-hidden hover:shadow-md transition-shadow">
         <CardContent className="p-0">
           <div className="relative aspect-square overflow-hidden group">
@@ -990,7 +1023,7 @@ function MobileServiceProviderCard({ serviceProvider }: { serviceProvider: Publi
           </div>
         </CardContent>
       </Card>
-    </Link>
+    </ListingLink>
   );
 }
 
@@ -999,7 +1032,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
   const displayDistrict = formatDistrict(serviceProvider);
 
   return (
-    <Link to={`/service-providers/${serviceProvider.id}`}>
+    <ListingLink id={serviceProvider.id}>
       <Card className="hover:shadow-lg transition-shadow cursor-pointer">
         <CardContent className="p-0">
           <div className="aspect-video relative overflow-hidden rounded-t-lg">
@@ -1033,6 +1066,6 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
           </div>
         </CardContent>
       </Card>
-    </Link>
+    </ListingLink>
   );
 }
