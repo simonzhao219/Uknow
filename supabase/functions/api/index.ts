@@ -2711,7 +2711,7 @@ type QueryResult =
     queryFailure?: { status: string; message: string };
     unknownStatus?: {
       tradeStatus: string;
-      reason: 'unknown_code' | 'missing_field' | 'no_matching_trade';
+      reason: 'unknown_code' | 'missing_field' | 'no_matching_trade' | 'incomplete_too_long';
     };
     incomplete?: true;
   }
@@ -2722,6 +2722,7 @@ const UNKNOWN_STATUS_LABEL = {
   unknown_code: 'PayUni 回了待確認或碼表外的狀態',
   missing_field: 'PayUni 回應缺少交易狀態',
   no_matching_trade: 'PayUni 回應裡找不到這張單',
+  incomplete_too_long: 'PayUni 超過 4 天仍回「處理中未完整」',
 } as const;
 
 export async function reconcilePendingOrders(
@@ -2771,11 +2772,19 @@ export async function reconcilePendingOrders(
 
   for (const order of stuck ?? []) {
     try {
-      const result = await queryFn(order.transaction_id!);
+      let result = await queryFn(order.transaction_id!);
       if (result.stillProcessing && result.incomplete) {
-        // DataSource＝B：本輪不下結論，不標 expired、不告警，下一輪再查。
-        summary.incomplete++;
-        continue;
+        const tooLong = order.created_at && new Date(order.created_at).getTime() < expireCutoffMs;
+        if (!tooLong) {
+          // DataSource＝B（W5-42）：本輪不下結論，不標 expired、不告警，下一輪再查。
+          summary.incomplete++;
+          continue;
+        }
+        // W5-44：持續回 B 超過 expire 天數就轉 unknown 交人工，免得付了錢的單永遠沒人知道。
+        result = {
+          stillProcessing: true,
+          unknownStatus: { tradeStatus: '', reason: 'incomplete_too_long' },
+        };
       }
       if (result.stillProcessing && result.unknownStatus) {
         // pay P1-3：不確定的狀態不論天數都不標 expired，按訂單號告警交人工
