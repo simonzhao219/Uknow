@@ -50,7 +50,8 @@ async function withPayUni<T>(decrypted: Record<string, string>, fn: () => Promis
   const real = globalThis.fetch;
   globalThis.fetch = (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    if (url.includes('payuni')) {
+    // 用網域判斷：Supabase 的查詢網址也含 `payuni_response` 欄位名，只比對字串會攔錯。
+    if (new URL(url).hostname.endsWith('payuni.com.tw')) {
       return Promise.resolve(
         new Response(JSON.stringify({ Status: 'SUCCESS', EncryptInfo: encryptInfo }), {
           headers: { 'Content-Type': 'application/json' },
