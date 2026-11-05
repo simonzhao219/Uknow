@@ -180,6 +180,8 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；後台稽核軌跡 A1b-2/3；SEO 進階；框架修訂（friction-log）；`lazyWithRetry` 簡化＋表單草稿保存；
 #421 記債；#430 輪播 P2；成功頁發卡行評估；邀請體驗整體重調；A1a、A2、L1-1、S7b；寬限期失效破圖通知（W2-12）；首頁 `searchQuery` 計入 `totalFilters`；
 `setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；子網域盤點＋完整 CSP；#383、#384。
+**S2（#510）留下的**：後台刪帳號工具（W5-12「註冊中要刪找客服」目前沒有工具）；停權狀態確認期間付款鈕灰掉無說明（UIUX P2）；`/auth/register` 先驗推薦碼後查已完成註冊（已付款者舊分頁拿 400 而非 403）。
+**S1（#512）留下的**：unknown 單人工確認已付款後的手動開通入口（W5-44③）。
 **S6 實作**若 11/22 前沒合，列第 6 波第一優先（期限 2027-10-27）。
 
 ## 6. 業主待辦
@@ -200,12 +202,12 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | #512（draft） | 主 session 審查中；W5-44① 補做 |
-| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | #510（ready） | 主 session 審查中 |
+| S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | #510 ✅ 54ac83f | 收工 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（draft） | 實作中 |
-| S6 | — | Opus | `feature/renewal-path-hardening` | — | S2 合併後開 |
+| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃中 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -235,3 +237,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 09:10 | #512 審查（主 session＋獨立 Opus 審查員）：P1-1 模組頂層建 Supabase client（unit-tests 紅，本 PR 造成）；**P1-2（主 session 讀碼核實）標過 unknown 的單遇查詢層失敗仍會在 4 天後被標 expired**，違反 W5-41；P1-3 即 W5-44①（313ca52 已做）。P2：MerTradeNo 收斂、看門狗推播門檻（主 session 定 **W5-45**）、清理看門狗用 lastCompletedAt（可選）。已全部轉 S1 | S1 修完 → 審 delta → CI 綠 → 合 |
 | 11/05 09:25 | S2 交 **#510**（ready，CI 綠；實作審查 P0 0、P1 6 處置；業主 08:25 於 S2 session 授權改 appShell.test.ts）。主 session 發現 #510／#512 migration 撞號 → **W5-46**。另派獨立 Opus 審查員審 #510。S2 待辦：後台刪帳號工具、停權期間付款鈕灰掉無說明 → 第 6 波候選；S6 須知：fresh 換線寫 profiles 在建單 RPC 之前，RPC 回 active／suspended 時不回復 | 等 #510 審查 |
 | 11/05 09:40 | #510 獨立審查：**P0 0、P1 0**（process_successful_payment 與基準版逐行比對、告警隔離、v_paid_at、鎖序、索引、停權、register、cancel-signup 退場皆核實）。P2：文件兩處與程式不符（P2-1 → **W5-47**、P2-2 撞索引語意只限三代獎勵）、P2-3 並行 repair 測試分不出鎖或索引 → 本 PR 修；P2-4 register 檢查順序 → 第 6 波 | S2 修 P2-1～3 → CI 綠 → 合 |
+| 11/05 09:50 | S2 修 #510 審查 P2-1～3（文件四處改「未送出草稿隨登出清除」、撞索引語意限三代獎勵、並行 repair 測試加 `repaired_count==0`），主 session 核實 delta、CI 全綠 → **#510 合進 develop（54ac83f）**。已通知 S1 rebase 並改 migration 號（W5-46）。照 W5-2 開 **S6**（Opus，規劃） | S1 修 #512；develop 部署後驗 #510 migration 已套 |
