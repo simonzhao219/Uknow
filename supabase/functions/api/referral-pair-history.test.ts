@@ -189,11 +189,14 @@ Deno.test('backfill_referral_pair_history：由月桶與付款 gen1 獎金補回
         (user_id, type, amount, generation, referee_user_id, subscription_id, description)
       values (${u.id}, 'referral_reward', 100, 1, ${lost.id},
         (select id from public.subscriptions where user_id = ${u.id} limit 1), '測試')`;
-    // claimOnly：只有任務免費續約發的 gen1（source_claim_id 有值）。
+    // claimOnly：只有任務免費續約發的 gen1（source_claim_id 指向一張已領的 credit）。
+    const [claim] = await sql`
+      insert into public.referral_king_rewards (user_id, month_key, round_ordinal, status)
+      values (${claimOnly.id}, '2026-01', 1, 'claimed') returning id`;
     await sql`
       insert into public.reward_transactions
         (user_id, type, amount, generation, referee_user_id, source_claim_id, description)
-      values (${u.id}, 'referral_reward', 100, 1, ${claimOnly.id}, gen_random_uuid(), '測試')`;
+      values (${u.id}, 'referral_reward', 100, 1, ${claimOnly.id}, ${claim.id}, '測試')`;
     await sql`delete from public.referral_pair_history where referrer_user_id = ${u.id}`;
 
     await sql`select public.backfill_referral_pair_history()`;

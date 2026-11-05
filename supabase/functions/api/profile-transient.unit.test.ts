@@ -219,7 +219,9 @@ Deno.test('buildProfileResponse：非重試的 step 3 → 跑 repair', async () 
   assertEquals(s.calls.repair, 1);
 });
 
-Deno.test('buildProfileResponse：retry 的 step 3 → 不跑 repair，旗標仍重設為 false', async () => {
+// S6（pay P1-4）：step 3 不再把旗標蓋成 false——續費者（非 active）有已付款待開通的單時旗標為
+// true，守衛才不會把付了錢的人送回結帳頁。retry 不跑 repair 的契約不變。
+Deno.test('buildProfileResponse：retry 的 step 3 → 不跑 repair，非 active 有已付款單時旗標為 true', async () => {
   const s = spies();
   const paid = { data: [{ transaction_id: 'T1', payuniStatus: 'SUCCESS' }], error: null };
   const p = await buildProfileResponse(
@@ -229,7 +231,8 @@ Deno.test('buildProfileResponse：retry 的 step 3 → 不跑 repair，旗標仍
     { ...s, retry: true },
   );
   assertEquals(s.calls.repair, 0);
-  assertEquals(p?.paidAwaitingActivation, false);
+  assertEquals(p?.paidAwaitingActivation, true);
+  assertEquals(p?.lastTradeNo, 'T1');
 });
 
 Deno.test('buildProfileResponse：retry 的已付款待開通 → 不跑 heal，回未自癒的 step 2', async () => {

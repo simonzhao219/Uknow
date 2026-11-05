@@ -43,6 +43,12 @@
 
 ## Blockers（逃生口紀錄）
 
+- 推送 f9ec2e8 後 CI：6 支測試紅（3 支釘住被裁決改掉的舊行為：default-referrer〈prepare fresh：被預設綁定者換到真推薦人〉建單即換線（ref P0-1）、
+  profile-transient〈retry 的 step 3〉旗標恆 false（pay P1-4）、referral-king-month-key 只刪月桶模擬補跑（W5-8 名單另存）；
+  prepare-payment-order 的 RPC 替身回舊字串格式；本工項新測試兩處夾具錯：profile-self-heal 重複 TradeNo、referral-pair-history 假 claim id），
+  以及 bundle entry raw 1003.4 > 1002 kB。業主 2026-11-06 01:16（台北）互動選項：「授權修這 6 支」、「raw 預算 1002→1005 kB」。
+  6 支只改所述斷言／夾具，其餘不動。
+
 - 階段 2 的 2 支併發測試在 CI 綠不了：持鎖交易內輪詢 pg_stat_activity 只會看到第一次的快照。業主 2026-11-06 00:34（台北）於本 session 互動選項：「允許修輪詢寫法」。只在 `waitForAdvisoryWaiters` 每輪先呼叫 `pg_stat_clear_snapshot()`，斷言不動。
 
 - 階段 6 綠燈期：2 支既有測試釘住被裁決改掉的行為（〈fresh 選中展開清空揭露…〉的舊文案「不填則不會有推薦人」，W5-51；

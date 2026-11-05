@@ -129,7 +129,8 @@ Deno.test('payuni/prepare：RPC 回 duplicate_trade_no 時重產 tradeNo 再試�
       rpcCalls++;
       if (rpcCalls === 1) {
         return Promise.resolve(
-          new Response(JSON.stringify('duplicate_trade_no'), {
+          // S6 起 /payuni/prepare 呼叫六參數版，回 jsonb { outcome }。
+          new Response(JSON.stringify({ outcome: 'duplicate_trade_no' }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),

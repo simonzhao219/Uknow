@@ -195,7 +195,11 @@ Deno.test('續費者卡單但金額相符：載入 profile 時自癒 → 同一�
     await client.from('subscriptions').update({ end_date: past, grace_period_end: past })
       .eq('user_id', user.id);
 
-    const tradeNo = await seedPendingOrder(client, user.id, success());
+    // 第二筆要用不同的 PayUni 交易編號（subscriptions.payment_transaction_id 唯一）。
+    const tradeNo = await seedPendingOrder(client, user.id, {
+      ...success(),
+      TradeNo: `PU-RENEW-${Date.now()}`,
+    });
     await client.from('payment_orders').update({ renewal_mode: 'extend' })
       .eq('transaction_id', tradeNo);
     const profile = await buildProfileResponse(client, user.id, user.email);

@@ -412,7 +412,16 @@ Deno.test('prepare fresh：被預設綁定者換到真推薦人 → 旗標重置
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ renewalMode: 'fresh', referredByCode: realCode }),
     });
-    assertEquals(res.status, 200, `prepare fresh 應成功: ${await res.text()}`);
+    assertEquals(res.status, 200, `prepare fresh 應成功: ${await res.clone().text()}`);
+    // S6（ref P0-1）：換線只在這張新約單付款成功時生效（建單只記意圖）。
+    const { data: prepared } = await res.json();
+    const { error: payErr } = await client.rpc('process_successful_payment', {
+      p_user_id: user.id,
+      p_trade_no: prepared.tradeNo,
+      p_transaction_id: `PU-${prepared.tradeNo}`,
+      p_payuni_response: { Status: 'SUCCESS' },
+    });
+    assertEquals(payErr, null);
 
     const { data: prof } = await client
       .from('profiles')

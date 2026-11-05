@@ -42,6 +42,10 @@ Deno.test('apply_referral_side_effects：p_paid_at 決定 task_progress 的月�
 
     // 清掉 payForUser 當下已寫入的本月 task_progress，重新以指定付款月補跑
     await client.from('task_progress').delete().eq('user_id', referrer.id);
+    // S6（W5-8）：配對名單另存在 referral_pair_history；真實的「補跑」發生在第一次 3d 失敗
+    // （名單與月桶同一子交易一起回滾），這裡一併清掉才是同一個情境。
+    await client.from('referral_pair_history').delete()
+      .eq('referrer_user_id', referrer.id).eq('referee_user_id', newReferee.id);
     await client.from('reward_transactions')
       .delete().eq('referee_user_id', newReferee.id).eq('type', 'referral_reward');
 
