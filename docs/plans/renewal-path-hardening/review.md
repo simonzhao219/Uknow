@@ -63,6 +63,50 @@ reviewer 標記的（聚合者不改判，只列出）：
 - 需求 reviewer 註：其環境無 shell，未讀到 W5-1／7／8／9 原文，只依派工原文溯源；需主 session 對照 `launch-wave-5/plan.md` §0 逐條核。
 - plan §6 Q1–Q6 仍待裁決（需求 reviewer：Q5 偏文案，可由規劃者自定）。
 
+---
+
+# 第 2 輪（對象：plan v2，commit `22c9280`）
+
+## 審查結論
+
+| 視角 | P0 | P1 | P2 | v1 發現處置 |
+|---|---|---|---|---|
+| 系統 | 0 | 1 | 4 | v1 系統 P1×3、P2 全處置（P1-1 的處置引入下列 P1） |
+| 架構 | 0 | 0 | 3 | v1 架構 P1×3、P2×5 全處置 |
+| UI/UX | 0 | 1 | 5 | v1 P1×7、P2 全處置（P1-10 部分處置，見下） |
+| 需求 | 0 | 1 | 3 | v1 需求 P1×4、P2 全處置（P1-7 規格同步仍有漏項） |
+
+## 發現清單（依嚴重度排序）
+
+### P1
+
+1. [P1][系統]〔§2.3 0d、鎖序總表〕「持有 advisory 後不再等別的列鎖」不成立：0d 之後的發獎與寫邊（insert `reward_transactions`／`referral_edges`／`task_progress` 的 FK 檢查要 `profiles(U)` 的 `FOR KEY SHARE`，`reconcile_king_credits` 鎖 `task_progress(U)`）會等收獎者 U 的列鎖。若 U 同時付 fresh（持 `profiles(U)` FOR UPDATE、排隊等 advisory）→ **死鎖**；被殺的一方錯誤會被各段 `exception when others` 吞掉，變成靜默不換線或靜默漏發 → advisory 前移到「鎖訂單之後、0b 鎖 profiles 之前」，條件只看 `v_renewal_mode='fresh'`（`v_is_renewal` 尚未算，用 `exists(subscriptions)`）；鎖序改 `payment_orders → advisory(fresh) → profiles`；取鎖放在 0d 的 exception 區塊外（不吞 40P01）；階段 2 加雙連線測試「A 的上線 U 同時付 fresh」。
+2. [P1][UI/UX]〔§4／R5〕確認框依 source 分句了，但同畫面新約展開區的常駐說明沒改：`PaymentCheckout.tsx:1090`「不填則不會有推薦人」在 default、keep 下都不成立；`:1048-1052` placeholder「目前：{碼}」在 default 下暗示留空會保留 → 這兩處依 `freshDefaultReferrerAvailable` 分句，與確認框同文案來源（default＝「不填則推薦人將改變」；keep＝「不填則維持原推薦人」），placeholder 只在 keep 顯示「目前」；更新 `:1087-1088` 的「Q11 裁決文案逐字」註解；階段 6 斷言三處一致。
+3. [P1][需求]〔§5 規格書欄〕規格同步仍漏：§4.1「新約＝換線」措辭、§6.2 表格（`:287`）換線時點、§6.2「模式由建單時寫入 `payment_orders.renewal_mode`」（`:303`，要補意圖三欄與「付款當下才寫 profiles」）；規格書內引用的新 migration 檔名須等實檔存在才寫（`check-spec-drift.py` 的 path 檢查）→ 補進階段 2／3／5 的規格書欄。
+
+### P2
+
+1. [P2][系統]〔§2.3 0d〕exception 與 advisory 交互本身無缺口，但「3b 在鎖內」只對成功路徑成立（例外路徑子交易回滾會釋放鎖與 GUC）→ 措辭限定成功路徑；補測試「0d 例外後 GUC 回復、changed_at 不受影響」。
+2. [P2][系統＋架構]〔§2.3 wrapper〕六參數版**不得**給 `p_referrer_*` default（否則舊 Edge 三具名參數呼叫會 PGRST203 歧義）；兩個簽章各自 revoke／grant，`security-definer-grants.test.ts` 涵蓋兩個多載。
+3. [P2][系統]〔§2.7 king_round_base〕`base = max(round_ordinal)` 會吞掉「已達門檻但 reconcile 尚未補發」的 credit → `base = greatest(max(round_ordinal), floor(刪桶前長度/門檻))`，或明寫「寧少發」取捨。
+4. [P2][系統]〔§2.3 paid_pending 告警〕每次被擋都寫一筆會刷屏；告警失敗會讓 prepare 500 → 以 trade_no 去重或包 exception 隔離，409 不因告警失敗而失效。
+5. [P2][架構]〔§2.3 末段〕「`repair_orphaned_payments` 呼叫 apply 時傳 `po.completed_at`」——現況 `20260807000001:135-136` 傳 `v_candidate.paid_at`（＝`po.completed_at`）→ 改寫成「現況已成立，不改」，或補進 A2 函式清單。
+6. [P2][架構]〔§5 階段 2→3〕A2 一進 develop，舊 Edge 經 wrapper 會對曾訂閱者 null、paid_pending 回 500 → 寫明階段 2 與 3 同一 PR 合併（或 wrapper 對這兩個 outcome 保持舊行為）。另：0d 用到 `v_duplicate`，位置應寫「0c 之後」。
+7. [P2][UI/UX]〔§4 localStorage 分支〕「`/profile` 讀不到就停用」擴及走快照的**首購者**（現行為首購轉換留「不擋」，`:258-259`），未說明取捨；失敗態未沿用 `LoadErrorCallout`＋`useRetryFocus` → 明寫取捨或沿用既有元件。〔需人工裁決：首購者要不要放行〕
+8. [P2][UI/UX]〔§4 RENEWAL_MODE_REQUIRED〕重抓失敗、重抓後仍判不出續費（無出口、每按一次 400）未規定；聚焦目標與 live region 語意未定 → 重抓失敗給重試；仍判不出 → 「請聯絡客服」＋停用付款鈕；模式區 `tabIndex=-1`、提示 `role="status"`，進階段 6 測試。
+9. [P2][UI/UX]〔§4 REFERRAL_CYCLE、階段 6〕無前端測試；錯誤在畫面上方欄位、行動版看不到 → 捲動並聚焦碼欄位、`aria-invalid`＋`aria-describedby`；更佳：`/referrals/validate` 回成環、blur 時就攔。
+10. [P2][UI/UX]〔§4 確認框、§2.5〕`max-h` 捲動區：footer 留在捲動區外、捲動區 `tabIndex=0`＋`role="region"`＋標籤；`freshDefaultReferrerAvailable` 在 zod 設 optional，缺值視為 keep（前端先上、Edge 後上的空窗不會讓整個 renewal 解析失敗）。
+11. [P2][UI/UX]〔§4 409〕`lastTradeNo` 缺漏時導 `/dashboard` 會與 `registrationFlow.ts:331`（activating 無單號 → `/payment/checkout`）互彈 → 契約必填 `lastTradeNo`，缺漏視為契約錯誤、顯示客服入口不導向。
+12. [P2][需求]〔R5 推薦人句〕填的碼就是現任上代時「推薦人將改為 {姓名}」不成立 → 碼等於現上代時改句（例「您的推薦人維持 {姓名}」）。〔需人工裁決〕
+13. [P2][需求]〔§2.7、階段 5〕§9.1 公式「張數＝floor(當月新人數／門檻)」要改寫、§9.2 `:595-599`「當月桶刪除」兩處 → 階段 5 規格書欄明列。
+14. [P2][需求]〔R4〕首購者 pending＋SUCCESS 也 409 屬行為變更，規格書未列 → §4.1 或 §6.2 補一句。
+15. [P2][UI/UX]〔R5〕「有資產」的反向定義未明寫 → 寫成「點數>0 或 推薦>0 或 hasPaidAnyBackfill」。
+
+## 需人工裁決（第 2 輪）
+
+- **E1**（UI/UX P2-7）：走 localStorage 快照的首購者，背景 `/profile` 讀不到時要不要放行付款（現行放行；v2 改成停用）。
+- **E2**（需求 P2-12）：填的碼等於現任上代時，確認框推薦人句要不要改成「維持 {姓名}」。
+
 ## 處置（人審後填寫）
 
 <!-- P0 的處置規則：必須改 plan 並重跑 /review-plan，或由人在此明文豁免。
