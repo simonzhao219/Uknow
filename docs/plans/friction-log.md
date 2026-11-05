@@ -3440,3 +3440,12 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **單元測試經 index.ts 的 `sb()` 寫進本機 DB**（漏網）：`*.unit.test.ts` 呼叫真的 `reconcilePendingOrders` 時，迴圈內的 `logSystemAlertOnce` 在本機有 `SUPABASE_URL` 時真的寫了 `system_alerts`，把 `system-alerts-recent.test.ts` 的 20 筆時間窗擠爆。CI 的 db 軌不跑 unit 檔，所以只在本機全套才會出現。T4 只擋「import 了 DB helper」，擋不到「經 index.ts 間接連線」。候選：T4 擴充成「unit 檔 import index.ts 時，必須在呼叫期間拿掉 `SUPABASE_URL`」，或讓 `sb()` 在 unit 環境擲錯。
 
 處置：待下次框架整併。
+
+## 2026-11-05｜誤擋／漏網（流程、測試）｜第 5 波 S4（PR #511 PostHog 監控）
+
+- **紅燈測試的 helper 寫錯，鎖住後只能走業主授權**（漏網，測試寫錯）：階段 2 的「token 不得出現在外送內容」測試，解碼 helper 把 SDK 的 gzip（latin1 字串）當 base64 解，斷言會空過；是靠「對照組」（預期一定出現的 `home-probe`）才抓到。測試檔被 tdd-lock 鎖住，只能由業主在 session 內以互動選項授權解鎖（本次兩次：修 helper、拆檔）。教訓：「不得出現」類斷言一定要有「必定出現」的對照組，並在紅燈期先用 spike 看過真實 payload 的形狀再寫 helper。
+- **外部套件的 singleton 與 `vi.resetModules`**（漏網，測試寫錯）：posthog-js 初始化後狀態掛在 window，`vi.resetModules` 重置不了，同檔多案例互相污染；真實第三方 SDK 的整合驗證要一個案例一個測試檔。
+- **`biome check --write src` 會順手改到別人的檔**（誤動）：本次兩度改到 `src/utils/csv.test.ts`（S5 的範圍）。格式化只對自己改的路徑跑。
+- **登錄表錨點歧義**（漏網）：以字串當錨點找群組根容器，註解行含同一字串會先命中；錨點要用唯一的元素字串（如 `<Label>…`）。
+
+處置：均為測試寫法教訓，不另立規則。

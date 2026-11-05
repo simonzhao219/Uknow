@@ -919,6 +919,24 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 ---
 
+## 15. 監控與隱私（PostHog EU）
+
+前端以 PostHog（歐盟區）記錄頁面瀏覽與操作錄影，用於找出使用者卡關的位置（業主裁決 W4-35～37）。
+
+**預設關閉**：key 在 `config/posthogTarget.ts`（`phc_` 寫入 key 為公開值，commit 在 git；main 用正式 project、其餘分支用 develop project）。key 為佔位值、沒有 `CF_PAGES_BRANCH` 的本機建置、journey（外部指定 Supabase project）一律不注入，執行期不載入 SDK、不送任何請求。`VITE_ANALYTICS=off`（Pages 環境變數，重新部署即生效）可緊急關閉；`VITE_ANALYTICS_SAMPLE`（0～1，預設 1＝全錄）可降低錄影比例。
+
+**載入**：`window load` 後等瀏覽器 idle 才動態載入 SDK，不進 entry；SDK 用 `posthog-js/dist/module.slim` 只掛錄影擴充（`SessionReplayExtensions`）——預設入口的 logs、conversations 等擴充會依 PostHog 專案端的遠端設定自行啟動（攔截 console 外送、身分表單收姓名與 Email），前端沒有選項能關，所以不載入；`posthog-js` 釘精確版本，升版時由 `analyticsPrivacyWorstCase.test.ts`（最壞遠端設定）把關；錄影元件由 PostHog 資產網域 `eu-assets.i.posthog.com` 外部載入（第三方腳本不受 lockfile 控制、可讀 DOM，業主已接受，W5-37），且只載入釘版本的路徑（`strict_script_versioning: true`，載不到就不錄、不退回未釘版的最新檔）；PostHog 專案設定檔 `/array/<token>/config.js` 一定會被執行，這是對廠商信任的剩餘風險，日後補完整 CSP 時處理。
+
+**不錄的範圍**：`/payment/*` 與 `/admin*` 不啟動錄影（`recordingAllowed`），且路由層以 `PrivateRegion` 整塊 block；身分證、手機、生日、銀行代號與帳號、證件照欄位群組帶 `ph-no-capture` block class。其餘頁面全文字與輸入遮罩，DOM 屬性採白名單（僅保留 class、style、type、role、id 等非內容屬性，W5-38）。新增敏感欄位時，把 `privateClass()` 併進欄位群組根容器，或設對 `type`／`autocomplete`（`src/utils/analytics/sensitiveFields.ts` 與其測試掃描漏網）。
+
+**匿名**：不送 email、姓名，永不 identify，只有 PostHog 匿名 id（存於 localStorage 的 `ph_<key>_posthog`，與 §10.4 的提領資料是不同的鍵）；登出、換帳號、無效 session 時 `reset(true)` 連裝置 id 一併重置。事件網址一律去掉 query 與 hash（邀請 token、付款單號不外送）。不收 IP／地理位置的真正保證是 PostHog 專案設定「Discard client IP data」，前端只附 `$geoip_disable` 輔助。
+
+**前端明確寫死的選項**：`capture_exceptions`、`capture_heatmaps`、`capture_dead_clicks`、`enable_recording_console_log`、`recordHeaders`／`recordBody`、`captureCanvas` 皆為 false（PostHog 對未設定的選項會採專案端遠端設定，所以不依賴專案設定）。
+
+〔實作〕`src/utils/analytics/`（`analyticsGate.ts`、`analytics.ts`、`analyticsRuntime.ts` 在 entry；`analyticsConfig.ts`、`posthogClient.ts` 與 SDK 在動態 chunk）、`src/hooks/usePageview.ts`、`src/components/common/PrivateRegion.tsx`、`config/posthogTarget.ts`。
+
+---
+
 ## 附錄：關鍵實作索引
 
 | 主題 | 檔案 |
@@ -937,4 +955,5 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 補繳計畫（backfillPlan 雙副本＋共用案例表） | `supabase/functions/api/tw-dates.ts`、`src/utils/twDate.ts`、`_shared/backfill-cases.ts` |
 | 預設推薦人 | `20260726000101`～`20260726000102`、`/payuni/prepare` fresh 未填碼分支 |
 | 前端業務常數 | `src/utils/constants.ts` |
+| 監控與隱私（PostHog） | `config/posthogTarget.ts`、`src/utils/analytics/` |
 | 前後端共享契約 | `supabase/functions/_shared/api-contract.ts` |

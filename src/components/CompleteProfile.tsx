@@ -56,6 +56,7 @@ import {
 import { termsOfServiceContent } from '../content/termsOfService';
 import { LegalDialog } from './LegalDialog';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
+import { privateClass } from '../utils/analytics/privacy';
 
 // GET /referrals/validate/:code 的回應。後端刻意不回推薦人 id(推薦碼是流水號,
 // 回應又帶真名,id 只會擴大外洩面);姓名取 referrer.userName。
@@ -828,7 +829,7 @@ export function CompleteProfile() {
             </div>
 
             {/* 身分證字號 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label htmlFor="nationalId">身份證字號 *</Label>
               <Input
                 id="nationalId"
@@ -849,11 +850,12 @@ export function CompleteProfile() {
             </div>
 
             {/* 生日 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label htmlFor="birthDate">出生年月日 *</Label>
               <Input
                 id="birthDate"
                 type="date"
+                autoComplete="bday"
                 value={formData.birthDate}
                 max={(() => {
                   const today = new Date();
@@ -876,10 +878,12 @@ export function CompleteProfile() {
             </div>
 
             {/* 手機號碼 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label htmlFor="phone">手機號碼 *</Label>
               <Input
                 id="phone"
+                autoComplete="tel-national"
+                inputMode="tel"
                 value={formData.phone}
                 onChange={(e) => {
                   setFormData({ ...formData, phone: e.target.value });

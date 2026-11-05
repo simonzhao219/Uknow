@@ -407,3 +407,48 @@ describe('Cloudflare Pages 服務模式契約', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// PostHog 監控（S4）：SDK 與設定屬於動態 chunk，entry 只能靜態引用極小的 facade／gate。
+describe('analytics 載入契約', () => {
+  const nonTestSources = (): Array<{ rel: string; text: string }> => {
+    const out: Array<{ rel: string; text: string }> = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          out.push({ rel: full.slice(SRC.length + 1), text: readFileSync(full, 'utf8') });
+        }
+      }
+    };
+    walk(SRC);
+    return out;
+  };
+
+  it('posthog-js 只允許動態 import（型別 import 除外）', () => {
+    const offenders = nonTestSources()
+      .filter(
+        ({ text }) =>
+          /^import\s+(?!type\b)[^;]*?from\s+'posthog-js'/m.test(text) ||
+          /^import\s+'posthog-js'/m.test(text),
+      )
+      .map((s) => s.rel);
+    expect(offenders).toEqual([]);
+  });
+
+  it('analyticsConfig 不得被靜態 import（它跟 SDK 同屬動態 chunk）', () => {
+    const offenders = nonTestSources()
+      .filter(({ text }) => /from\s+'[^']*analyticsConfig'/.test(text))
+      .map((s) => s.rel);
+    expect(offenders).toEqual([]);
+  });
+
+  it('main.tsx 用 scheduleAnalytics 啟動，且 redirect 時不啟動', () => {
+    expect(main).toMatch(/scheduleAnalytics\(/);
+    expect(main).toMatch(/isRedirecting/);
+  });
+
+  it('App 掛 usePageview', () => {
+    expect(app).toMatch(/usePageview\(\)/);
+  });
+});

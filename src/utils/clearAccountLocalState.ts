@@ -1,8 +1,10 @@
 // 登出與換帳號時，清掉本機「屬於某個帳號」的狀態。
 //
-// 與模組層快取（clearCache、resetHomeListingsCache）分開：這裡只處理 storage 鍵。
+// 與模組層快取（clearCache、resetHomeListingsCache）分開：這裡處理 storage 鍵，
+// 並重置監控（PostHog）的匿名身分——它同樣屬於「上一位使用者」。
 // 不清邀請 token／待用推薦碼（訪客帶進來的，登出不該丟）、也不清與帳號無關的偏好
 // （首頁檢視模式、推薦網路排序、QR 分頁、公告已讀）。
+import { resetAnalytics } from './analytics/analyticsRuntime';
 import { clearProfileDraft } from './formDraft';
 
 /** 含個資或會被下一位使用者誤用的 localStorage 鍵。 */
@@ -28,6 +30,8 @@ export function clearAccountLocalState(storage: Storage | null = safeLocal()): v
   }
   // 完善資料頁的草稿（sessionStorage，含姓名電話生日）。
   clearProfileDraft();
+  // 監控的匿名身分（含 device id）同樣屬於「上一位使用者」，換人就重置。
+  resetAnalytics();
 }
 
 function safeLocal(): Storage | null {
