@@ -51,4 +51,11 @@ describe('IdNumberInput', () => {
     fireEvent.compositionEnd(input(), { target: { value: 'a123456789' } });
     expect(onChange).toHaveBeenLastCalledWith('A123456789');
   });
+
+  it('欄位群組根容器帶 block class（監控錄影整塊遮蔽身分證欄位）', () => {
+    const { container } = render(
+      <IdNumberInput value="" onChange={vi.fn()} onVerified={vi.fn()} />,
+    );
+    expect((container.firstElementChild as HTMLElement).className).toContain('ph-no-capture');
+  });
 });
