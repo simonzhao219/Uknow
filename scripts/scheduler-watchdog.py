@@ -26,13 +26,14 @@ scheduler-health.test.ts 讀同一份);self-test 逐份驗 `scenario-*.json` 的
 
 6 小時節流(無狀態):
   L = lastPgCronCompletedAt;P = 上一次成功的看門狗 run 的建立時間
-  bucket(m) = floor((m - 90) / 360),m < 90 為負(未逾期)
+  bucket(m) = floor((m - 150) / 360),m < 150 為負:補跑門檻 90 分,但停擺 LINE 要連漏兩輪
+  (≥150 分)才推(W5-45)
   m_prev = 0 if L > P else P - L;bucket(now - L) != bucket(m_prev) 才推
   L 為 null 時,以「P 與現在是否落在不同的 UTC 6 小時格」判斷
   查不到 P 就推(寧可多推)
 
 照片清理(每日 run):
-  P1 lastCompletedAt > 26 小時(或從未完成、health 非 200)→ 補跑;推 P2
+  P1 lastPgCronCompletedAt > 26 小時(或從未完成、health 非 200)→ 補跑;推 P2
   P2 lastPurgeDryRun 與 repo var PHOTO_PURGE_LIVE 不一致(兩個方向)→ 推 P2
 
 LINE body 前 200 字必須寫出結論與「下一步」(notify action 把 body 截在 200 字)。
@@ -57,6 +58,8 @@ from pathlib import Path
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "scheduler-health"
 STALE_MINUTES = 90
+# W5-45：補跑 90 分；停擺 LINE 要連漏兩輪（60＋90 分）才推，免得漏一輪就響。
+NOTIFY_STALE_MINUTES = 150
 THROTTLE_MINUTES = 360
 PURGE_STALE_MINUTES = 26 * 60
 PAUSED_PUSH_UTC_HOUR = 1
@@ -85,7 +88,7 @@ def _minutes(now: datetime, then: datetime) -> float:
 
 
 def _bucket(m: float) -> int:
-    return math.floor((m - STALE_MINUTES) / THROTTLE_MINUTES)
+    return math.floor((m - NOTIFY_STALE_MINUTES) / THROTTLE_MINUTES)
 
 
 def _grid_cell(t: datetime) -> int:
@@ -170,7 +173,9 @@ def decide_purge(status: int, health: dict | None, now: datetime, repo_live: str
         return _line(d, "P2", "正式站照片清理狀態查不到",
                      "【照片清理】看門狗查不到正式站排程狀態，GitHub 本輪補跑清理。下一步：確認 Edge Function 有部署、"
                      "RECONCILE_SECRET 一致。")
-    last = _ts(job.get("lastCompletedAt"))
+    # 只看 pg_cron 的完成列：GitHub 補跑或人工 dry-run 刷新的 lastCompletedAt 不能讓 pg_cron
+    # 停擺被看成正常，否則會變成每兩天才清一次。
+    last = _ts(job.get("lastPgCronCompletedAt"))
     if last is None or _minutes(now, last) > PURGE_STALE_MINUTES:
         stale = f"{round(_minutes(now, last) / 60)} 小時" if last else "從未完成"
         d = Decision(True, rule="P1", summary=[f"照片清理逾期（{stale}）：GitHub 補跑"])

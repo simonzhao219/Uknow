@@ -124,7 +124,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
   - 由 `scheduled-job-runs.test.ts` 釘住。
 - **GitHub 看門狗兼後備觸發**：`reconcile-payments.yml` 每小時一次，`purge-listing-photos.yml` 每日一次。
   - 判準在 `scripts/scheduler-watchdog.py`：
-    - pg_cron 對帳的完成列超過 90 分鐘、或照片清理的完成列超過 26 小時，就由 GitHub 補跑並推 LINE；
+    - pg_cron 對帳的完成列超過 90 分鐘就由 GitHub 補跑；超過 150 分鐘（連漏兩輪，W5-45）才推 LINE；
+    - 照片清理的 pg_cron 完成列超過 26 小時，就由 GitHub 補跑並推 LINE；
     - 停擺告警以 6 小時節流；
     - 人為停用每日推一則；
     - 照片清理的開關不一致推 LINE P2。
