@@ -95,7 +95,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
   （`payuni-merchant`：`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`，碼表在 `payuni-rejection.ts` 檔頭）與
   一小時內 ≥3 位不同使用者連續失敗（`payuni-failure-burst`）。
   排程類：對帳查詢**擲錯**全滅（`checked ≥ 2`，502）或過半（`checked ≥ 3`）——`query_all_failed`／`query_majority_failed`，
-  加 UTC 小時桶；pg_cron 觸發的照片清理失敗（斷路器、`sweep_failed`，加 UTC 日期桶）。
+  加 UTC 小時桶；PayUni 回了判讀不了的 TradeStatus（`unknown_trade_status`：8＝訂單待確認、碼表外、缺欄位、查不到同號交易；
+  按訂單號去重，該單永不自動標 expired，`payment_orders.reconcile_unknown_at` 記時間、掃描排到後段）；pg_cron 觸發的照片清理失敗（斷路器、`sweep_failed`，加 UTC 日期桶）。
 - **持卡人級拒絕**（帶 `ResCode` 的 `CREDIT*`）單筆不告警：使用者自己看得到、可以重試。
 - **warning**：對帳的單筆例外（標 expired 失敗、單筆查詢例外）——下一輪排程會自行重試，沒有持久後果。
   pg_cron 觸發的照片清理有物件刪不掉（`not_removed`）也是 warning。

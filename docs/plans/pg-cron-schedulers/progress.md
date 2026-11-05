@@ -7,9 +7,9 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 0 | spike：pg_net 安裝、Vault 讀取、cron.job 讀取、net／vault 權限、net.http_post 斷言法、TradeStatus 碼表 | 🟡 ①②③⑤ ✅；④ 依 W5-31 接受平台預設；⑥ 待業主放行 docs.payuni.com.tw（W5-32 (a)），階段 2 等它 | — | — |
+| 0 | spike：pg_net 安裝、Vault 讀取、cron.job 讀取、net／vault 權限、net.http_post 斷言法、TradeStatus 碼表 | ✅ ①②③⑤；④ W5-31；⑥ W5-32 官方碼表已取得（見下） | — | — |
 | 1 | 帳本表＋begin/finish_scheduled_run＋scheduled-runs.ts | ✅ 綠 | 29a5adec | （本 commit） |
-| 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ⬜ 未開始 | | |
+| 2 | pay P1-3：unknownStatus、移除 ?? list[0]、不標 expired、視窗排序 | ✅ 綠 | 7bab2633 | （本 commit） |
 | 3 | ops P1-3：計數拆分、全滅 502、過半告警 | ✅ 綠（先做，見偏離） | 9385e16c | 725b3c8c |
 | 4 | 對帳 handler 接 withScheduledRun | ✅ 綠 | e4b39c5f | （本 commit） |
 | 5 | 照片清理 trigger 分流＋帳本＋失敗告警 | ✅ 綠 | 840df1d4 | （本 commit） |
@@ -22,7 +22,7 @@
 
 ## 目前位置與下一步
 
-- 2026-11-05：階段 0（④ W5-31）、1、3～9 完成；**只剩階段 2**（pay P1-3，等 W5-32 官方碼表）。階段 2 完成後要補：`supabase/README.md`〈告警 severity〉的 `unknown_trade_status`、「全部 unknown → 不全滅」案例。之後收尾：check:full → /review-implementation → 清規劃檔 → PR。
+- 2026-11-05：全部階段完成。下一步收尾：check:full → /review-implementation → 清規劃檔 → PR。
 
 規劃第 2 版（處置第 1 輪審查、W5-15～19 裁決）已完成並重跑 /review-plan；等主 session 親審後，業主在本 session 親打 `/tdd-implement pg-cron-schedulers`。開工先做階段 0 spike。
 
@@ -70,6 +70,19 @@
 
 - 看門狗 R2（health 查詢失敗）與 R3（排程不存在）的 6 小時節流沒有 L 可算，改用「上次 run 與現在是否落在不同的 UTC 6 小時格」。plan §2.5 寫的是「以 lastCompletedAt 代替或以距上次 run 計算」，這裡取後者，免得 L 很新時永遠不推。
 - 階段 6 的綠燈 commit 80f79edb 是在鎖仍存在時提交的：tdd-unlock 第一次撞到已知偶發的 `PhotoPicker.test.tsx`〈取消與 Esc 都只取消當張〉（plan §3），我沒看清輸出就 commit。內容不受影響，重跑 unlock 就綠了。
+
+## 階段 0 ⑥ 官方碼表（2026-11-05 取得，W5-32 (a)）
+
+來源：docs.payuni.com.tw「API → 交易查詢 → 單筆交易查詢 Ver 2.0」（ShowDoc page 164）。
+
+- `TradeStatus` 官方碼表：0＝取號成功、9＝未付款、1＝已付款、2＝付款失敗、3＝付款取消、4＝交易逾期、8＝訂單待確認。
+- 另有 `DataSource`：A＝完整資料、B＝處理中未完整（官方建議 10 分鐘後再查）。
+- 與 plan §2.5 暫定表的差異：
+  - 官方沒有 6（落到 unknown，和暫定處理相同）。
+  - 4、9 照 plan「官方若另有未付款／逾期碼，併入 0 的路徑」處理。
+  - 8 與 DataSource 是 plan 沒料到的兩點，業主當場裁決：
+    - 業主 2026-11-05 互動選項（碼 8）：「當未知交人工 (Recommended)」→ 8 走 unknownStatus。
+    - 業主 2026-11-05 互動選項（DataSource B）：「B 一律本輪不下結論 (Recommended)」→ 不論 TradeStatus 都回 `incomplete`：不收斂、不標 failed／expired、不告警。
 
 ## Blockers（逃生口紀錄）
 

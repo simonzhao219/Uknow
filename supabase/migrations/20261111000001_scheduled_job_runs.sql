@@ -40,6 +40,14 @@ alter table public.scheduled_job_runs enable row level security;
 revoke all on table public.scheduled_job_runs from anon, authenticated, public;
 grant all on table public.scheduled_job_runs to service_role;
 
+-- pay P1-3：PayUni 回了判讀不了的狀態（8＝待確認、碼表外、缺欄位、查不到同號交易）
+-- 時，對帳不標 expired、改告警交人工，並記下時間。對帳的掃描視窗以
+-- `reconcile_unknown_at nulls first, created_at` 排序：被標過的單排到後段輪流，
+-- 不會塞滿每輪 50 張而餓死真卡單。查到可判讀的結果時清回 null。
+alter table public.payment_orders add column if not exists reconcile_unknown_at timestamptz;
+comment on column public.payment_orders.reconcile_unknown_at is
+  '對帳最近一次判讀不了 PayUni 狀態的時間；非 null 時該單永不自動標 expired，掃描排到後段';
+
 -- 取租約。回 {id, acquired}：acquired=false 時 id 指向本次寫下的 skipped 列。
 create or replace function public.begin_scheduled_run(p_job text, p_trigger text)
 returns jsonb
