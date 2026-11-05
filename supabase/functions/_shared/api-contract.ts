@@ -856,6 +856,10 @@ export const REFERRAL_CHECK_UNAVAILABLE = 'REFERRAL_CHECK_UNAVAILABLE';
 export const REFERRAL_CODE_NOT_APPLICABLE_MESSAGE = '推薦碼不存在或已失效';
 export const REFERRAL_CODE_SELF_MESSAGE = '不能使用自己的推薦碼';
 
+// 第 5 波 S2（W5-5）：停權者打 /payuni/prepare 的 403 錯誤碼（`{ success: false, error: { code, message } }`）。
+// 前端據此把結帳頁切到停權說明（快照過時、頁面上沒看到停權時的最後一道）。
+export const ACCOUNT_SUSPENDED = 'ACCOUNT_SUSPENDED';
+
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',
   'self_invite',

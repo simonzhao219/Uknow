@@ -27,6 +27,7 @@ import {
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
+  ACCOUNT_SUSPENDED,
   DEFAULT_NETWORK_SORT,
   PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
@@ -2000,6 +2001,14 @@ app.post('/admin-setup/set-self-admin', async (c) => {
   return c.json({ success: true, message: '您已成為平台管理員' });
 });
 
+/** 停權者付款的 403 回應（W5-5）。前端依 code 切到停權說明，不當一般錯誤。 */
+function accountSuspendedBody() {
+  return {
+    success: false,
+    error: { code: ACCOUNT_SUSPENDED, message: '帳號已停權，請聯絡客服' },
+  };
+}
+
 // ============================================================
 // POST /payuni/prepare
 // 建立付款訂單，回傳加密表單資料供前端送出給 PayUni
@@ -2026,6 +2035,16 @@ app.post('/payuni/prepare', async (c) => {
   // 可再付一次；extend 讀失敗回 400「請選擇新約」，把故障說成業務拒絕，還把人
   // 導向會清空帳本的新約。
   try {
+    // W5-5（pay P2-9＝auth P2-1）：停權者不得付款，擋在任何寫入之前（含下方 fresh
+    // 換線的 profiles 寫入）。建單 RPC 在鎖內會再查一次（防讀完才被停權）。
+    const me = must(
+      await client.from('profiles').select('suspended_at').eq('id', user.id).maybeSingle(),
+      'profiles',
+    ) as { suspended_at: string | null } | null;
+    if (me?.suspended_at) {
+      return c.json(accountSuspendedBody(), 403);
+    }
+
     // 防重複：只擋「目前仍在效期內」的會員（active）。已失效（expired）
     // 才可以付款——這正是續訂（到期後接續）或重新訂閱的唯一入口
     // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
@@ -2152,23 +2171,32 @@ app.post('/payuni/prepare', async (c) => {
   // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
   // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
   // 「組加密 payload 之前」重產一次再試，拿到最終 tradeNo 才往下走。
+  // 建單走 prepare_payment_order（20261111000002）：停權與 active 在 profiles 列鎖下重查
+  // 後才 INSERT，與付款完成序列化（pay P1-2）。撞 tradeNo 唯一鍵時重產再試一次。
   let tradeNo = generateTradeNo();
   {
-    const orderRow = () => ({
-      user_id: user.id,
-      amount: 1200,
-      status: 'pending',
-      payment_method: 'payuni',
-      transaction_id: tradeNo,
-      renewal_mode: renewalMode,
-    });
-    let { error: insertErr } = await client.from('payment_orders').insert(orderRow());
-    if (insertErr && insertErr.code === '23505') {
+    const createOrder = () =>
+      client.rpc('prepare_payment_order', {
+        p_user_id: user.id,
+        p_trade_no: tradeNo,
+        p_renewal_mode: renewalMode,
+      });
+    let { data: outcome, error: orderErr } = await createOrder();
+    if (!orderErr && outcome === 'duplicate_trade_no') {
       tradeNo = generateTradeNo();
-      ({ error: insertErr } = await client.from('payment_orders').insert(orderRow()));
+      ({ data: outcome, error: orderErr } = await createOrder());
     }
-    if (insertErr) {
-      console.error('[prepare] insert payment_orders 失敗:', insertErr);
+    if (orderErr) {
+      console.error('[prepare] prepare_payment_order 失敗:', orderErr);
+      return c.json({ success: false, error: '建立訂單失敗' }, 500);
+    }
+    if (outcome === 'suspended') return c.json(accountSuspendedBody(), 403);
+    if (outcome === 'active') {
+      return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
+    }
+    if (outcome === 'not_found') return c.json({ success: false, error: '用戶不存在' }, 404);
+    if (outcome !== 'ok') {
+      console.error('[prepare] prepare_payment_order 回傳未預期的值:', outcome);
       return c.json({ success: false, error: '建立訂單失敗' }, 500);
     }
   }
