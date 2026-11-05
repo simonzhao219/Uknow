@@ -25,7 +25,19 @@
 
 ## 正式站唯讀查詢結果
 
-（待主 session 代跑）
+主 session 2026-11-05 代跑（plan §7 編號）：
+
+| # | 查詢 | 正式站 | develop |
+|---|---|---|---|
+| 1 | profiles 與 edges 不一致 | 1（已註冊未首購，edge 付款時才建，正常；查詢應排除無 completed 訂單者） | 0 |
+| 2 | 環 | 0 | 0 |
+| 3 | 自領列 | 0 | 0 |
+| 4 | ledger_reset／referral_king_rewards | 0／1 | 0／1 |
+| 5 | 回填預覽：月桶（`task_progress.monthly_referrals`）／gen1（`source_claim_id is null`）配對、差集 | 15／15，差集 0／0，聯集 15 | 10／10，差集 0／0 |
+| 6 | pending 的 fresh 單 | 0 | 0 |
+| 7 | changed_at > completed_at | **3**（延遲 2～38 秒；三人獎金與 edge 都已正常發放，潛伏、無損失） | 1 |
+
+結論：migration B 回填正式站新增 15 列 pair、不改既有 21 列 reward_transactions；king_round_base 無 fresh 歷史可補（ledger_reset 0）；1 張既有 credit 不受影響；q7 佐證 changed_at 閘門 bug 成立。
 
 ## Blockers（逃生口紀錄）
 

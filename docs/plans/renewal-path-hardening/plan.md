@@ -210,7 +210,7 @@ heal 條件由 `registrationStep === 2` 改為 `paidAwaitingActivation`；`lastT
 
 - **正式站資料影響**（15 筆訂閱、21 列 reward_transactions；所有人 active 至 2027-10-27）：
   migration A 只加 nullable 欄與換函式，既有列不變；migration B 建表回填、加 `king_round_base` 預設 `{}`。
-  施工前請主 session 代跑唯讀查詢（結果記進 progress.md）：
+  主 session 已於 11/05 代跑以下唯讀查詢，結果見 progress.md〈正式站唯讀查詢結果〉（第 1 條須排除尚無 completed 訂單者：edge 付款時才建）：
   1. `select count(*) from profiles p left join referral_edges e on e.referee_user_id=p.id where p.referred_by_user_id is distinct from e.referrer_user_id and p.referred_by_user_id is not null;`（預期 0）
   2. 環：`with recursive up(start, cur, depth) as (select referee_user_id, referrer_user_id, 1 from referral_edges union all select u.start, e.referrer_user_id, u.depth+1 from up u join referral_edges e on e.referee_user_id=u.cur where u.depth<50 and u.cur<>u.start) select count(*) from up where cur=start;`（預期 0）
   3. `select count(*) from reward_transactions where type='referral_reward' and user_id=referee_user_id;`（預期 0）
