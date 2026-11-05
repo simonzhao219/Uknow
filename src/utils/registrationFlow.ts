@@ -409,7 +409,7 @@ export function isFunnelRoute(pathname: string): boolean {
  * 只看 `/profile` 的 `suspended`；localStorage 快照沒有這個欄位，由呼叫端以 API 覆蓋。
  */
 export function isCheckoutBlockedBySuspension(
-  _profile: { suspended?: boolean | null } | null,
+  profile: { suspended?: boolean | null } | null,
 ): boolean {
-  return false;
+  return profile?.suspended === true;
 }

@@ -7,11 +7,13 @@ import { Loader2, CreditCard, Edit } from 'lucide-react';
 import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
-import { buildApiUrl, extractApiErrorMessage } from '../utils/apiClient';
+import { buildApiUrl, extractApiErrorCode, extractApiErrorMessage } from '../utils/apiClient';
 import { readSession } from '../utils/authErrors';
 import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
 import { AuthDegradedNotice } from './AuthDegradedNotice';
+import { SuspendedNotice } from './SuspendedNotice';
+import { ACCOUNT_SUSPENDED } from '@contract';
 import { normalizeReferralCode } from '../utils/referralCode';
 import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
@@ -25,6 +27,7 @@ import {
   AlertDialogTitle,
 } from './ui/alert-dialog';
 import {
+  isCheckoutBlockedBySuspension,
   resolveCheckoutPageRedirect,
   isProfileComplete,
   isRegistrationLocked,
@@ -43,6 +46,10 @@ export function PaymentCheckout() {
   const [profileUnavailable, setProfileUnavailable] = useState(false);
   const [profileFailedAgain, setProfileFailedAgain] = useState(false);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
+  // W5-5：停權者不得付款。API 的 profile、localStorage 分支的背景 /profile、或送單的 403
+  // ACCOUNT_SUSPENDED 任一確認停權就切到停權說明；背景確認回來前付款鈕先停用。
+  const [suspended, setSuspended] = useState(false);
+  const [suspensionPending, setSuspensionPending] = useState(false);
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
@@ -194,6 +201,7 @@ export function PaymentCheckout() {
 
             console.log('PaymentCheckout: User can pay (first payment or renewal), using API data');
             setPendingUser(profile);
+            setSuspended(isCheckoutBlockedBySuspension(profile));
             setIsCheckingUser(false);
             return;
           } else {
@@ -247,6 +255,18 @@ export function PaymentCheckout() {
           }, 500);
           return;
         }
+        // 快照沒有停權欄位（W5-5）：背景以 /profile 確認，回來前付款鈕停用；
+        // 暫時讀不到就不擋（後端 prepare 的 403 兜底）。
+        setSuspensionPending(true);
+        // force：要的是「此刻」的停權狀態，不併進別處沒逾時的在飛請求（否則可能永不回來、鈕永遠停用）。
+        fetchProfileForSession(session, { force: true, timeoutMs: PROFILE_FETCH_TIMEOUT_MS })
+          .then((result) => {
+            if (result.kind === 'ok' && isCheckoutBlockedBySuspension(result.profile)) {
+              setSuspended(true);
+            }
+          })
+          .catch(() => {})
+          .finally(() => setSuspensionPending(false));
       } catch (error) {
         console.error('PaymentCheckout: Error parsing pendingUser:', error);
         localStorage.removeItem('pendingUser');
@@ -538,6 +558,12 @@ export function PaymentCheckout() {
 
       const result = await response.json();
 
+      // 快照過時、頁面上沒看到停權時的最後一道（W5-5）：切停權說明，不當一般錯誤。
+      if (response.status === 403 && extractApiErrorCode(result) === ACCOUNT_SUSPENDED) {
+        setSuspended(true);
+        return;
+      }
+
       if (result.success) {
         // ✅ 啟動15秒倒計時
         setIsButtonLocked(true);
@@ -650,6 +676,14 @@ export function PaymentCheckout() {
           isRetrying={isCheckingUser}
           failedAgain={profileFailedAgain}
         />
+      </div>
+    );
+  }
+
+  if (suspended) {
+    return (
+      <div className="max-w-md mx-auto mt-12">
+        <SuspendedNotice />
       </div>
     );
   }
@@ -1058,7 +1092,9 @@ export function PaymentCheckout() {
           <div className="space-y-3">
             <Button
               onClick={handlePayUniPayment}
-              disabled={isLoading || isButtonLocked || !isProfileComplete(pendingUser)}
+              disabled={
+                isLoading || isButtonLocked || suspensionPending || !isProfileComplete(pendingUser)
+              }
               className="w-full"
               size="lg"
               data-testid="payuni-pay-button"
