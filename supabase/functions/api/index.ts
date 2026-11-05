@@ -31,11 +31,14 @@ import { createReferralInviteHandlers, type ReferralInviteDeps } from './referra
 import {
   ACCOUNT_SUSPENDED,
   DEFAULT_NETWORK_SORT,
+  PAYMENT_PENDING_ACTIVATION,
   PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
   REFERRAL_CHECK_UNAVAILABLE,
   REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
   REFERRAL_CODE_SELF_MESSAGE,
+  REFERRAL_CYCLE,
+  RENEWAL_MODE_REQUIRED,
   RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
 import type {
@@ -2011,6 +2014,21 @@ function accountSuspendedBody() {
   };
 }
 
+// S6：prepare 的新拒絕，形狀同停權 403（PrepareErrorBodySchema）。
+const renewalModeRequiredBody = () => ({
+  success: false,
+  error: { code: RENEWAL_MODE_REQUIRED, message: '請選擇續約或新約' },
+});
+const referralCycleBody = () => ({
+  success: false,
+  error: { code: REFERRAL_CYCLE, message: '此推薦碼屬於您的推薦網絡成員，無法作為推薦人' },
+});
+const paymentPendingActivationBody = (lastTradeNo: string) => ({
+  success: false,
+  error: { code: PAYMENT_PENDING_ACTIVATION, message: '付款已完成，開通處理中' },
+  lastTradeNo,
+});
+
 // ============================================================
 // POST /payuni/prepare
 // 建立付款訂單，回傳加密表單資料供前端送出給 PayUni
@@ -2032,6 +2050,7 @@ app.post('/payuni/prepare', async (c) => {
   const renewalMode: 'extend' | 'fresh' | null =
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
+  let hasSubscription = false;
   // 建單前守衛：三道讀取全部在任何寫入之前，任一讀取失敗即回 500、不建單
   // （fail-closed，見 must()）。先前防重複讀失敗就當「非 active」放行，有效會員
   // 可再付一次；extend 讀失敗回 400「請選擇新約」，把故障說成業務拒絕，還把人
@@ -2055,22 +2074,30 @@ app.post('/payuni/prepare', async (c) => {
       return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
     }
 
+    const lastSub = must(
+      await client
+        .from('subscriptions')
+        .select('end_date')
+        .eq('user_id', user.id)
+        .order('end_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      'subscriptions',
+    ) as { end_date: string | null } | null;
+    hasSubscription = !!lastSub;
+
+    // S6（pay P1-1）：曾訂閱者必須選續約或新約——null 只對首購有意義，否則會變成
+    // 「付款日起算＋不清帳本＋不換線」的混合語意，繞過補繳與新約清帳。建單 RPC 鎖內再判一次。
+    if (renewalMode === null && hasSubscription) {
+      return c.json(renewalModeRequiredBody(), 400);
+    }
+
     if (renewalMode === 'extend') {
       // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
       // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
       // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
       // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
       // 沒有可接續的效期。
-      const lastSub = must(
-        await client
-          .from('subscriptions')
-          .select('end_date')
-          .eq('user_id', user.id)
-          .order('end_date', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        'subscriptions',
-      ) as { end_date: string | null } | null;
       if (!lastSub?.end_date) {
         return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
       }
@@ -2091,13 +2118,18 @@ app.post('/payuni/prepare', async (c) => {
     return c.json({ success: false, error: '暫時無法建立訂單，請稍後再試' }, 500);
   }
 
-  // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
-  // apply_referral_side_effects 會把推薦邊 rewire 到新推薦人（0008），
-  // 之後的推薦獎勵歸新推薦人；舊推薦人的歷史獎勵不受影響。
+  // 新約可換推薦人（S6，ref P0-1）：這裡只算出換線意圖（新推薦人、碼、source），交給建單
+  // RPC 存在**該張訂單**上；付款成功時 process_successful_payment 0d 才寫 profiles 並 rewire
+  // （付款當下重驗碼與成環，W5-56、W5-49②）。建單不動 profiles——棄單後改付續約不會換線，
+  // RPC 回 active／suspended 也不會留下半套換線（S2 已知限制）。首購者（沒有訂閱紀錄）
+  // 不帶意圖：推薦人來自註冊（§7.4 首購路徑）。
   const referredByCode: string = typeof body?.referredByCode === 'string'
     ? body.referredByCode.normalize('NFKC').toLowerCase().trim()
     : '';
-  if (renewalMode === 'fresh' && referredByCode) {
+  let intent:
+    | { userId: string | null; code: string | null; source: 'code' | 'default' | 'keep' }
+    | null = null;
+  if (renewalMode === 'fresh' && hasSubscription && referredByCode) {
     const { data: codeRows, error: codeErr } = await client
       .rpc('validate_referral_code', { p_code: referredByCode });
     if (codeErr || !codeRows || codeRows.length === 0) {
@@ -2107,26 +2139,23 @@ app.post('/payuni/prepare', async (c) => {
     if (referrerUserId === user.id) {
       return c.json({ success: false, error: REFERRAL_CODE_SELF_MESSAGE }, 400);
     }
-    // referred_by_is_default 一併重置：使用者親自填碼換線 = 非自動來源。
-    // 這裡是 referred_by_* 的第二個寫入點（不經 apply_referral_side_effects），
-    // 漏掉會讓旗標永久卡 true，前端把使用者自己選的推薦人也一起隱藏。
-    const { error: refErr } = await client
-      .from('profiles')
-      .update({
-        referred_by_code: referredByCode,
-        referred_by_user_id: referrerUserId,
-        referred_by_is_default: false,
-      })
-      .eq('id', user.id);
-    if (refErr) {
-      console.error('[prepare] 更新推薦人失敗:', refErr);
-      return c.json({ success: false, error: '更新推薦人失敗' }, 500);
+    // ref P0-2：新推薦人在自己的推薦樹內（任何深度，W5-49③）→ 成環。預檢只為提早失敗，
+    // 建單 RPC 鎖內再判一次（以 RPC 為準）。讀取失敗 fail-closed。
+    const { data: cycles, error: cycleErr } = await client.rpc('referral_would_cycle', {
+      p_referee: user.id,
+      p_new_referrer: referrerUserId,
+    });
+    if (cycleErr) {
+      console.error('[prepare] referral_would_cycle 失敗:', cycleErr);
+      return c.json({ success: false, error: '暫時無法建立訂單，請稍後再試' }, 500);
     }
-  } else if (renewalMode === 'fresh') {
+    if (cycles === true) return c.json(referralCycleBody(), 400);
+    intent = { userId: referrerUserId, code: referredByCode, source: 'code' };
+  } else if (renewalMode === 'fresh' && hasSubscription) {
     // A10：選新約 = 離開原本的樹；未填碼不等於「維持原狀」，而是比照
     // 首購未填碼的既有語意——套用平台預設推薦碼，referred_by_is_default
     // = true（前端據此隱藏這個碼，使用者視角就是「沒有上一代」）。
-    // A11：任一步失敗 → 維持原上代不變 + 告警，**絕不阻斷金流**。
+    // A11：任一步失敗 → 意圖記 keep（付款時維持原上代）＋告警，**絕不阻斷金流**。
     // 碼的合法性唯一判準仍是 validate_referral_code（停權/失效都在裡面），
     // 不複製 resolve_default_referrer 的分類。
     const alertDefaultUnavailable = (reason: string, extra: Record<string, unknown> = {}) =>
@@ -2135,6 +2164,7 @@ app.post('/payuni/prepare', async (c) => {
         { user_id: user.id, reason, ...extra },
         'default_referrer_unavailable_on_fresh',
       );
+    intent = { userId: null, code: null, source: 'keep' };
     const { data: cfgRow } = await client
       .from('reward_config')
       .select('default_referrer_code')
@@ -2153,17 +2183,8 @@ app.post('/payuni/prepare', async (c) => {
         // 預設碼主人就是本人（例如平台帳號自己續約）：自我推薦護欄。
         await alertDefaultUnavailable('self_referral', { code: defaultCode });
       } else {
-        const { error: refErr } = await client
-          .from('profiles')
-          .update({
-            referred_by_code: defaultCode,
-            referred_by_user_id: codeRows[0].referrer_user_id,
-            referred_by_is_default: true,
-          })
-          .eq('id', user.id);
-        if (refErr) {
-          await alertDefaultUnavailable('profile_update_failed', { error: refErr.message });
-        }
+        // 預設推薦人在本人樹內的情形由建單 RPC 改記 keep（同 A11）。
+        intent = { userId: codeRows[0].referrer_user_id, code: defaultCode, source: 'default' };
       }
     }
   }
@@ -2177,28 +2198,39 @@ app.post('/payuni/prepare', async (c) => {
   // 後才 INSERT，與付款完成序列化（pay P1-2）。撞 tradeNo 唯一鍵時重產再試一次。
   let tradeNo = generateTradeNo();
   {
+    // 六參數版（20261113000002）：換線意圖存在訂單上；回 jsonb { outcome, trade_no? }。
     const createOrder = () =>
       client.rpc('prepare_payment_order', {
         p_user_id: user.id,
         p_trade_no: tradeNo,
         p_renewal_mode: renewalMode,
+        p_referrer_user_id: intent?.userId ?? null,
+        p_referrer_code: intent?.code ?? null,
+        p_referrer_source: intent?.source ?? null,
       });
-    let { data: outcome, error: orderErr } = await createOrder();
-    if (!orderErr && outcome === 'duplicate_trade_no') {
+    let { data: result, error: orderErr } = await createOrder();
+    if (!orderErr && result?.outcome === 'duplicate_trade_no') {
       tradeNo = generateTradeNo();
-      ({ data: outcome, error: orderErr } = await createOrder());
+      ({ data: result, error: orderErr } = await createOrder());
     }
     if (orderErr) {
       console.error('[prepare] prepare_payment_order 失敗:', orderErr);
       return c.json({ success: false, error: '建立訂單失敗' }, 500);
     }
+    const outcome = result?.outcome;
     if (outcome === 'suspended') return c.json(accountSuspendedBody(), 403);
     if (outcome === 'active') {
       return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
     }
     if (outcome === 'not_found') return c.json({ success: false, error: '用戶不存在' }, 404);
+    // pay P1-4：已付款待開通——不建新單，交前端導結果頁（W5-50②：修不好的單客服人工開通）。
+    if (outcome === 'paid_pending' && typeof result?.trade_no === 'string') {
+      return c.json(paymentPendingActivationBody(result.trade_no), 409);
+    }
+    if (outcome === 'mode_required') return c.json(renewalModeRequiredBody(), 400);
+    if (outcome === 'cycle') return c.json(referralCycleBody(), 400);
     if (outcome !== 'ok') {
-      console.error('[prepare] prepare_payment_order 回傳未預期的值:', outcome);
+      console.error('[prepare] prepare_payment_order 回傳未預期的值:', result);
       return c.json({ success: false, error: '建立訂單失敗' }, 500);
     }
   }
