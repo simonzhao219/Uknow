@@ -4,6 +4,8 @@
 （renewal 契約）、每一步可重入、中斷後從任何入口回來都接得上進度。
 """
 
+import json
+
 from playwright.sync_api import expect
 from pytest_bdd import given, parsers, scenarios, then, when
 
@@ -66,3 +68,36 @@ def trade_completes_backfill(api_mock, trade_no):
 @then(parsers.parse('I should see the payment result "{state}"'))
 def should_see_payment_result(payment_result_page, state):
     expect(payment_result_page.state_container(state)).to_be_visible(timeout=6000)
+
+
+@given("I am logged in as an expired member with a stale first-purchase snapshot")
+def logged_in_with_stale_snapshot(context):
+    # S6（pay P1-1 前端）：首購時寫下的 pendingUser 沒有 subscriptionEndDate，之後從未登出；
+    # 一年後過期進結帳頁，伺服器的 /profile 才是續費身分的依據。
+    seed_authenticated_session(
+        context,
+        registration_step=3,
+        accountStatus="expired",
+        subscriptionEndDate=_iso_days_ago(90),  # noqa: F405
+    )
+    snapshot = {
+        "name": "測試會員",
+        "birthDate": "1990-01-01",
+        "nationalId": "A12****789",
+        "phone": "0912345678",
+        "email": "e2e@example.invalid",
+        "registrationStep": 2,
+    }
+    context.add_init_script(
+        f"window.localStorage.setItem('pendingUser', {json.dumps(json.dumps(snapshot))});"
+    )
+
+
+@when("I choose the fresh renewal mode")
+def choose_fresh_mode(page):
+    page.get_by_test_id("renewal-mode-fresh").click()
+
+
+@when("I click pay")
+def click_pay(page):
+    page.get_by_test_id("payuni-pay-button").click()
