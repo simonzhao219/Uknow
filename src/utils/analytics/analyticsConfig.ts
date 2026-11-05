@@ -184,6 +184,9 @@ export function buildPosthogOptions(opts: { sampleRate?: number } = {}): Posthog
     disable_product_tours: true,
     // 不自動收 campaign 參數（utm_*、gclid…）；sanitizeEvent 仍會清掉殘留的追蹤鍵。
     save_campaign_params: false,
+    // 錄影元件只載入釘版本的路徑（/static/<版本>/lazy-recorder.js），不退回未釘版的最新檔：
+    // 遮罩、console、network 的判斷邏輯都在 lazy-recorder 裡，寧可不錄也不要載到沒釘版的。
+    strict_script_versioning: true,
     advanced_disable_feature_flags: true,
     disable_capture_url_hashes: true,
     mask_personal_data_properties: true,

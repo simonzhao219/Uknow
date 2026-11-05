@@ -710,7 +710,7 @@ export function WithdrawalProcess({
                       : '請選擇銀行'}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={privateClass()}>
                   {TAIWAN_BANKS.map((bank) => (
                     <SelectItem key={bank.code} value={bank.code}>
                       {bank.code} - {bank.name}
