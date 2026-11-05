@@ -9,21 +9,21 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ✅ 綠 | f5537e9 | 033c641 |
+| 1 | 規格書先行＋抽 filterAndSortListings／distance.ts | ✅ 綠 | 見 PR 內文 | 見 PR 內文 |
 | 2 | 座標表＋區級排序＋動態載入接入＋預算決定 | ⬜ 未開始 | | |
 | 3 | 等待狀態機＋FLIP 重排＋orderMode | ⬜ 未開始 | | |
-| 4 | 凍結脈絡＋lastViewedId＋返回定位 | ✅ 綠 | 6673372 | 7565a3e |
-| 5 | PhotoCarousel onEdgeSwipe＋swipeIntent | ✅ 綠 | 5b01c9c | 095a500 |
-| 6 | 詳情頁換篇（key wrapper／控制列／鍵盤／焦點） | ✅ 綠（夾具一行經業主授權修正） | 48f41bd | 899cab4 |
-| 7 | 換篇滑入動畫與頭尾回彈 | ✅ 綠 | a225172 | 22a01b4 |
-| 8a | e2e mocked Gherkin（換篇、返回）＋版面位移探針 | ✅ 綠（一寫就綠，見 Blockers 逃生口 1） | — | (待填) |
+| 4 | 凍結脈絡＋lastViewedId＋返回定位 | ✅ 綠 | 見 PR 內文 | 見 PR 內文 |
+| 5 | PhotoCarousel onEdgeSwipe＋swipeIntent | ✅ 綠 | 見 PR 內文 | 見 PR 內文 |
+| 6 | 詳情頁換篇（key wrapper／控制列／鍵盤／焦點） | ✅ 綠（夾具一行經業主授權修正） | 見 PR 內文 | 見 PR 內文 |
+| 7 | 換篇滑入動畫與頭尾回彈 | ✅ 綠 | 見 PR 內文 | 見 PR 內文 |
+| 8a | e2e mocked Gherkin（換篇、返回）＋版面位移探針 | ✅ 綠（一寫就綠，見 Blockers 逃生口 1） | 見 PR 內文 | 見 PR 內文 |
 | 9 | 文件同步與收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
 **順序調整（W5-40，主 session 2026-11-05）**：TGOS 維護期間先做不依賴座標表的階段。依賴分析：階段 4（凍結脈絡等）只依賴階段 1 的 `filterAndSortListings`，與座標表無關；階段 3（等待＋FLIP）依賴階段 2 的表；階段 8 的 e2e 拆為 8a（換篇／返回，不依賴排序）與 8b（定位已授權時依距離排序，依賴 2、3）。
 新順序：**5 → 4 → 6 → 7 → 8a → 2 → 3 → 8b → 9**。TGOS 恢復後補階段 2（自動重試已排，11/08 台北仍下載不到就回報主 session，不改用其他來源）。
-hash 說明：2026-11-05 推送守衛把分支 rebase 到最新 origin/develop（3712737），下表為 rebase 後的 hash（舊 hash 已不在分支上）；階段 6 另有 wip commit 53c4987（非綠燈證據）。
+hash 說明：分支會被推送守衛反覆 rebase 到最新 origin/develop，commit hash 每次都變，所以**紅綠燈 hash 以 PR #509 內文的表為準**（派工規定），本表不再逐次手動追；階段 6 另有 wip commit（非綠燈證據）。
 目前位置：階段 1、5、4、6、7、8a 完成；其餘階段 2、3、8b、9 等 TGOS 恢復後依序做（階段 9 文件同步與收尾排最後，需 2、3 完成）。階段 2、3、8b 等 TGOS 恢復。預算硬上限（W5-43）：entry gzip ≤315 kB、raw ≤1010 kB，超過就停下回報；階段 6 實測 raw 1002.7／gzip 311.8；階段 7 實測 raw 1002.8／gzip 312.1（gzip 預算已依授權上限調到 315）。
 
 ## Blockers(逃生口紀錄)
