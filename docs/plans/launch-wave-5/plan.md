@@ -99,6 +99,9 @@
 | W5-55 | S6 E2：新約填的碼就是現任推薦人 | 確認框寫「您的推薦人維持 {姓名}」（業主 2026-11-05） |
 | W5-56 | S6 F1：新約建單後、付款前新推薦人被停權或碼被撤銷 | **付款當下重驗**：失敗就不換推薦人、帳本照清、error 告警（與 W5-49② 同形）；首購路徑不重驗（業主 2026-11-05） |
 | W5-57 | S4 加固：lazy-recorder 由 PostHog CDN 載入，預設 strict_script_versioning="fallback" 失敗時退回未釘版最新檔 | 設 `strict_script_versioning: true`（寧可不錄）；`/array/<token>/config.js` 必執行屬廠商信任剩餘風險，PR 記一行、補 CSP 時處理 |
+| W5-58 | S6：king_round_base 寫入失敗會讓整筆 fresh 付款回滾 | **子交易隔離＋error 告警，付款照常完成**（含 ledger_reset）；告警附 user_id／月份／應寫 base 供人工補（業主 2026-11-05） |
+| W5-59 | S6：預設推薦人在會員自己網絡內（會成環）時確認框仍寫「推薦人將改變」 | **本 PR 修**：先判成環，會成環視為 keep、不寫推薦人句（業主 2026-11-05） |
+| W5-60 | S6：journey f70 缺章（fresh 後三代獎金、任務、自領停發、ch7、ch9） | **留第 6 波**，已由 Deno 整合測試與 mock e2e 涵蓋（業主 2026-11-05） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -193,6 +196,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 `setup-node` 逾時；notify／return 的 `payuniConfig()` 擲錯告警；子網域盤點＋完整 CSP；#383、#384。
 **S2（#510）留下的**：後台刪帳號工具（W5-12「註冊中要刪找客服」目前沒有工具）；停權狀態確認期間付款鈕灰掉無說明（UIUX P2）；`/auth/register` 先驗推薦碼後查已完成註冊（已付款者舊分頁拿 400 而非 403）。
 **S1（#512）留下的**：unknown 單人工確認已付款後的手動開通入口（W5-44③）。
+**S6（#514）留下的**：journey f70 缺章（W5-60）。
 **S6 實作**若 11/22 前沒合，列第 6 波第一優先（期限 2027-10-27）。
 
 ## 6. 業主待辦
@@ -219,7 +223,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1、4、5、6 綠；2、3、8b 等 TGOS |
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511 ✅ cebc239 | 收工；晉升前填 key（W5-35） |
-| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃 v3.1 通過；等業主親打 `/tdd-implement` |
+| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | #514（draft） | 7 階段綠；補 W5-58／59；獨立審查中 |
 | S8 | `session_01MQovbBQu7kxFjWhxHoGSZi` | Sonnet | `fix/terminology-guard` | #513 ✅ 2957408 | 收工 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
@@ -256,3 +260,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 21:00 | S8 交 **#513**（TS compiler API 掃 src 字串、白名單只列有命中的兩份律師檔），主 session 審過無 P0／P1，等 CI。S7 階段 4～6 綠（業主 12:43 UTC 於 S7 session 授權夾具修正；預算 raw 1002.7／gzip 311.8，在 W5-43 內）。S6 v3.1 系統第 3 輪 P0／P1 清零 → 主 session 核對通過；業主裁 **W5-56** | 業主到 S6 session 親打 `/tdd-implement`；#513 CI 綠 → 合 |
 | 11/05 21:10 | #513 CI 綠 → **合進 develop（2957408）**，S8 收工。S4 修 #511（module.slim＋SessionReplayExtensions、最壞遠端設定測試、P1／P2 全修；業主授權解鎖一次）→ 獨立 Opus 複審（scratch worktree 跑 npm ci 對照原始碼）：**P0／P1 清零**；P2：銀行 SelectContent portal 未 block、worst-case 內容斷言在舊程式上不紅、harness 非字串本文假綠；主 session 定 **W5-57**。退回 S4 補完 | S4 補完 → CI 綠 → 合 #511 |
 | 11/05 21:30 | S4 補完複審四項（銀行 SelectContent 遮蔽、以 SDK 實例斷言擴充不存在並以舊 import 實測轉紅、harness 解碼 Blob／gzip 並新增壓縮路徑測試、`strict_script_versioning:true`）；主 session 核對 delta、CI 全綠 → **#511 合進 develop（cebc239）**。PostHog 維持關閉（佔位 key） | 晉升前業主給 key；S6 等業主親打；S7 施工 |
+| 11/06 01:40 | S6 交 **#514**（draft；7 階段綠、/review-implementation P0 0、3 條 P1 已修、2 條 P1 記偏離、journey dispatch 中）。業主裁 **W5-58～60**。主 session 另派獨立 Opus 審查員審 #514 | S6 補 W5-58／59；等審查、CI、journey |
