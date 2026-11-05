@@ -42,3 +42,11 @@
 ## Blockers（逃生口紀錄）
 
 ## 框架摩擦
+
+- **推送守衛 rebase 後要求 force-with-lease，分類器卻擋 force 推送**（誤擋，死循環；2026-11-05）：develop 前進後，每次推送前的
+  PreToolUse 守衛先把本地 `feature/*` rebase 到 origin/develop，再要求 `--force-with-lease`；auto mode 分類器把 force 推送判成
+  Git Destructive 擋下。develop 動到同一檔（friction-log.md）時守衛的 rebase 直接衝突、整個指令不執行；守衛以指令字串比對，
+  指令內任何位置出現推送字樣（含 heredoc 內文）都會觸發。S6 規劃期改走派工 prompt 備案：`read-tree origin/<分支>` →
+  `update-index --cacheinfo` 只放改動檔 → `commit-tree -p origin/<分支>` → 以 `<sha>:refs/heads/<分支>` 快轉推送（遠端歷史不改寫），
+  再 `checkout -B` 對回遠端。本條因此不直接寫 friction-log.md（避免分支與 develop 衝突），由第 5 波審查整併時搬過去。
+  候選：守衛在「本地只領先、未落後遠端分支」時不 rebase；rebase 要求只在開 PR／合併前檢查；比對指令時只看實際的 git 子命令。

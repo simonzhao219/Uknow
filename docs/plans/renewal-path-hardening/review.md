@@ -107,6 +107,32 @@ reviewer 標記的（聚合者不改判，只列出）：
 - **E1**（UI/UX P2-7）：走 localStorage 快照的首購者，背景 `/profile` 讀不到時要不要放行付款（現行放行；v2 改成停用）。
 - **E2**（需求 P2-12）：填的碼等於現任上代時，確認框推薦人句要不要改成「維持 {姓名}」。
 
+---
+
+# 第 3 輪（對象：plan v3；主 session 指示只由系統 reviewer 複審鎖序改動）
+
+## 審查結論
+
+| 視角 | P0 | P1 | P2 | 第 2 輪處置 |
+|---|---|---|---|---|
+| 系統 | 0 | 0 | 5 | 第 2 輪系統 P1（死鎖）已解：0a′ 逐條對過 notify／return 並發、同人兩單、FK KEY SHARE、`reconcile_king_credits`、`claim_referral_king_reward`、`register_profile`、repair 系列，advisory 不在任何等待環上；第 2 輪系統 P2 四條皆處置（其中兩條措辭／算式仍不完整，見下） |
+
+## 發現清單
+
+1. [P2]〔§2.3 0a′〕「取鎖不在任何 exception 區塊內，40P01 照常往上拋」不實：函式最外層 `exception when others then raise exception`（`20261111000003:241-243`）會改寫成 P0001。整筆仍回滾，行為是「整筆重試」→ 改措辭；測試不以 SQLSTATE 40P01 斷言。
+2. [P2]〔§2.3 鎖序總表／prepare〕新欄 FK 讓 prepare insert 對被選者 X 取 KEY SHARE；prepare 持本人 A `for update`、X 的付款交易持 profiles(X) 並換線到 A 子樹內、對 profiles(A) 取 KEY SHARE → 窄死鎖（付款方被殺時發獎段吞成 warning＝靜默漏發一代）→ prepare 改 `for no key update`（仍與付款 `for update` 互斥），加併發測試。
+3. [P2]〔§2.3 併發測試〕兩個雙連線測試靠碰運氣的時序，v2 的死鎖版本也可能通過 → 第三連線先持 advisory（鍵寫死 `hashtext('referral_rewire')`）、`pg_stat_activity` 確認兩筆都在等、`for update nowait` 證明等待方不持 profiles 鎖、放鎖後斷言三代列齊全且無 system_alerts。
+4. [P2]〔§2.7 king_round_base〕多次 fresh 丟前一次 base；讀桶長與清桶之間未鎖 `task_progress`；門檻取得方式未寫 → `greatest(max(round_ordinal), 舊 base + floor(桶長/門檻))`、`for update` 讀桶、函式內讀 `reward_config`；測試「連續兩次 fresh、中間 reconcile 失敗」。
+5. [P2]〔§2.3 0d／§2.2〕0d 寫 profiles、apply 3b 寫 edge 分屬兩個子交易，3b 自吞例外時兩者不一致，`referral_would_cycle` 只讀 edges 會漏看 → 0d 同一子交易內 upsert edge；§7 對帳查詢補 profiles／edges 一致性。
+
+## 需人工裁決（第 3 輪）
+
+- **F1**：建單到付款之間（繳費期限 3 天內）被選的推薦人（code）或預設推薦人（default）遭停權、碼被撤銷，0d 只檢查「被刪／成環」——付款當下要不要重驗 `validate_referral_code`？reviewer 不定性。規劃者建議見 plan §6。
+
+## v3.1 處置
+
+5 條 P2 全收進 plan（v3.1）；F1 列 plan §6 待裁決。P2 不重跑審查（主 session 指示只複審鎖序改動，鎖序結論 P1 已清零）。
+
 ## 處置（人審後填寫）
 
 <!-- P0 的處置規則：必須改 plan 並重跑 /review-plan，或由人在此明文豁免。
