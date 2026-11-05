@@ -218,7 +218,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1、4、5、6 綠；2、3、8b 等 TGOS |
-| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（ready） | 複審 P0／P1 清零；補 P2 三條＋W5-57 |
+| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511 ✅ cebc239 | 收工；晉升前填 key（W5-35） |
 | S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃 v3.1 通過；等業主親打 `/tdd-implement` |
 | S8 | `session_01MQovbBQu7kxFjWhxHoGSZi` | Sonnet | `fix/terminology-guard` | #513 ✅ 2957408 | 收工 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
@@ -255,3 +255,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 20:30 | 業主重申不得用「下線」；主 session 盤點 develop：使用者可見只剩律師定案的事業手冊（6）、參加契約（2），屬 10-23 裁決例外；內部 67 檔 197 行（規格書 §7 術語對照明定內部術語）；主 session 今日回覆與本檔 1 處違反 → 已更正。業主裁 **W5-53**（開 S8 機械把關）、**W5-54**、**W5-55**（S6 E1／E2）。S6 v2 主 session 親審：P1 3 收進 v3，只重審系統視角 | 開 S8；S6 v3 |
 | 11/05 21:00 | S8 交 **#513**（TS compiler API 掃 src 字串、白名單只列有命中的兩份律師檔），主 session 審過無 P0／P1，等 CI。S7 階段 4～6 綠（業主 12:43 UTC 於 S7 session 授權夾具修正；預算 raw 1002.7／gzip 311.8，在 W5-43 內）。S6 v3.1 系統第 3 輪 P0／P1 清零 → 主 session 核對通過；業主裁 **W5-56** | 業主到 S6 session 親打 `/tdd-implement`；#513 CI 綠 → 合 |
 | 11/05 21:10 | #513 CI 綠 → **合進 develop（2957408）**，S8 收工。S4 修 #511（module.slim＋SessionReplayExtensions、最壞遠端設定測試、P1／P2 全修；業主授權解鎖一次）→ 獨立 Opus 複審（scratch worktree 跑 npm ci 對照原始碼）：**P0／P1 清零**；P2：銀行 SelectContent portal 未 block、worst-case 內容斷言在舊程式上不紅、harness 非字串本文假綠；主 session 定 **W5-57**。退回 S4 補完 | S4 補完 → CI 綠 → 合 #511 |
+| 11/05 21:30 | S4 補完複審四項（銀行 SelectContent 遮蔽、以 SDK 實例斷言擴充不存在並以舊 import 實測轉紅、harness 解碼 Blob／gzip 並新增壓縮路徑測試、`strict_script_versioning:true`）；主 session 核對 delta、CI 全綠 → **#511 合進 develop（cebc239）**。PostHog 維持關閉（佔位 key） | 晉升前業主給 key；S6 等業主親打；S7 施工 |
