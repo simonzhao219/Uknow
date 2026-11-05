@@ -2717,6 +2717,13 @@ type QueryResult =
   }
   | { stillProcessing: false; data: Record<string, string> };
 
+/** unknown_trade_status 告警給人看的原因（reason 是給程式用的代碼，留在 context）。 */
+const UNKNOWN_STATUS_LABEL = {
+  unknown_code: 'PayUni 回了待確認或碼表外的狀態',
+  missing_field: 'PayUni 回應缺少交易狀態',
+  no_matching_trade: 'PayUni 回應裡找不到這張單',
+} as const;
+
 export async function reconcilePendingOrders(
   client: any,
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
@@ -2779,8 +2786,10 @@ export async function reconcilePendingOrders(
           'reconcile-pending-payments',
           { reason: 'unknown_trade_status', tradeNo: order.transaction_id! },
           { tradeStatus, statusReason: reason },
-          `【對帳】訂單 ${order.transaction_id} 的 PayUni 狀態無法判讀（${reason}：${
-            tradeStatus || '空'
+          `【對帳】訂單 ${order.transaction_id} 的 PayUni 狀態無法判讀（${
+            UNKNOWN_STATUS_LABEL[reason]
+          }${
+            tradeStatus ? ` ${tradeStatus}` : ''
           }），已停止自動處理、不會標過期。請到 PayUni 商店後台確認是否已付款，人工處理後標記已處理。`,
           'error',
         );

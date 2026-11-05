@@ -51,6 +51,22 @@
 - **階段 3 的 handler 層測試放在 `reconcile-outcome.unit.test.ts`**，用注入的假 deps；plan 原寫在 `reconcile-pending-payments.test.ts`（D）。迴圈計數也用假 client，才能做出「標 expired 的 update 失敗」。真 DB 的迴圈測試照舊全綠。
 - **紅燈 commit 9385e16c 的測試名有兩條超過 72 字**：commit 前的命名檢查被 `| tail` 吞掉 exit code，沒擋下來。紅燈期測試檔被鎖，所以綠燈後另開一個 commit 只改名稱、不改斷言。
 
+- **（實作審查補記）`handleReconcile` 的 deps 形狀與 plan §3 不同**：
+  - plan 列的是 `queryFn`、`resolveFn`、`scheduledRun`、`healRpc`。
+  - 實作是 `heal`、`reconcile`（閉包）、`alertOnce`、`now`、`logError`。
+  - 租約由另一支 `runScheduledReconcile` 包在外層；`classifyReconcileOutcome` 與 `ReconcileSummary` 放在 `reconcile-handler.ts`，不在 index.ts。
+  - 測試縫照樣成立：端點層測試注入假的 reconcile，迴圈層照舊注入 queryFn。
+- **（實作審查補記）`invoke_internal_endpoint`、`pause_scheduled_jobs`、`resume_scheduled_jobs` 只 revoke、不 grant 給 service_role**：plan §2.7 寫「只 grant service_role」。這三支只由 pg_cron 與 SQL Editor 以 postgres 執行，Edge 不需要呼叫，所以刻意不給 service_role，權限比 plan 更窄。
+- **（實作審查補記）告警與 LINE 文案和 plan §2.5 範本的差異**：
+  - 照片清理失敗寫「本輪中止」，不寫「一檔未刪」：中途失敗時 `removedSoFar` 可能大於 0。
+  - 看門狗寫「GitHub 本輪補跑（失敗會另行通知）」：推 LINE 時還不知道補跑結果。
+  - 診斷改放 step summary：LINE 會截在 200 字。
+  - 開關不一致依方向分成兩句，各給要改的那一邊。
+  - unknown 告警的原因改成白話，代碼留在 context。
+- **（實作審查補記）照片清理看門狗查不到 health（非 200、非 404）時也推 LINE P2**：plan 只定義了「逾期」與「開關不一致」兩種。查不到狀態等於看不見清理有沒有跑，所以每日推一則。
+- **（實作審查補記）看門狗腳本本身失敗時保底補跑**：workflow 寫 `backfill=true` 並讓 step 綠，避免後面的補跑被跳過。
+- **（實作審查補記）system_alerts 推 LINE 的預覽只帶 message 前 60 字**（既有行為，`reconcile-payments.yml`）：新告警的「下一步」在 60 字之後，LINE 上只看得到結論，動作要到後台看。接受現狀，不改 message 結構。
+
 ## 實作決定（plan 未明定，PR 內文要列）
 
 - `withScheduledRun`：帳本本身壞掉（begin 或 finish 擲錯）時只記 log，照樣執行 fn、照樣回應，不讓觀測故障停掉金流安全網。這種情況沒有完成列，看門狗會補跑並告警，所以不會靜默。

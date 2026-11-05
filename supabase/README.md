@@ -115,7 +115,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 - **為什麼對帳與照片清理不用 GitHub 排程觸發**：GitHub 會大量跳過整點排程，對帳 24 小時只跑 3 次。pg_cron 在同一個 DB 上 48/48 準時，啟動延遲最大 0.23 秒（2026-11-04 正式站實測）。
 - **pg_net 是非同步的**：`cron.job_run_details` 只記「請求排進佇列」，端點有沒有做完要看帳本 `scheduled_job_runs`。pg_net 的 `timeout_milliseconds` 設 150000，不會重試。
-- **憑證**：URL 與 `x-internal-secret` 放在 Vault 的 `uknow_api_base_url`、`uknow_internal_secret` 兩筆，各環境由人建立，不寫進 migration。設定順序見 `docs/supabase-setup-checklist.md`〈pg_cron 排程〉。
+- **憑證**：URL 與 `x-internal-secret` 放在 Vault 的 `uknow_api_base_url`、`uknow_internal_secret` 兩筆，各環境由人建立，不寫進 migration。設定順序見 `docs/supabase-setup-checklist.md`〈步驟 8：pg_cron 排程的 Vault 憑證〉。
 - **Vault 缺值**：寫一列 `skipped/vault_missing`，不送請求。拋棄式分支就是這樣空轉。
 - **pg_net 權限**（W5-31，接受平台預設）：
   - anon／authenticated 在 SQL 層有 `net` 的權限，postgres 角色收不回來。

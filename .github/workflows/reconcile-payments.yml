@@ -94,8 +94,13 @@ jobs:
           code="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 30 \
             "$API_BASE/internal/scheduler-health" -H "x-internal-secret: $RECONCILE_SECRET" || echo 000)"
           code="$(printf '%s' "$code" | tail -c 3)"
-          python3 scripts/scheduler-watchdog.py reconcile --status "$code" --health-file /tmp/health.json \
-            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ${prev:+--prev-run "$prev"} > /tmp/watchdog.json
+          # 腳本本身壞掉時保底補跑：這一步若紅，後面的補跑會被跳過，看門狗就成了靜默失效。
+          if ! python3 scripts/scheduler-watchdog.py reconcile --status "$code" --health-file /tmp/health.json \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ${prev:+--prev-run "$prev"} > /tmp/watchdog.json; then
+            echo "::error::看門狗腳本執行失敗，保底補跑對帳（見 run log）"
+            echo "backfill=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           python3 -c "import json; d=json.load(open('/tmp/watchdog.json')); print('看門狗：' + d['rule'] + '；' + '；'.join(d['summary']))" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 補跑或手動觸發對帳

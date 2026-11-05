@@ -646,17 +646,25 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 
 **乙段：Edge 部署後**
 
-4. 立即驗證：先執行 `select public.invoke_internal_endpoint('reconcile');`，應回傳 request id。1 分鐘後查：
+4. 確認 health 不再回 404：`reconcile-payments.yml` 下一次看門狗 run 的 step summary 會顯示判讀結果（`R5` 正常、`R6` 停擺）。
+   不想等，可以 dispatch 一次 `reconcile-payments.yml`，或直接做第 5 步。
+5. 立即驗證：先執行 `select public.invoke_internal_endpoint('reconcile');`，應回傳 request id。1 分鐘後查：
 
    ```sql
-   select status, error_code, trigger from public.scheduled_job_runs order by id desc limit 1;
+   select status, error_code, trigger, started_at from public.scheduled_job_runs
+    where job = 'reconcile' and started_at > now() - interval '5 minutes' order by id desc;
    ```
+
+   時間條件不能省：甲段期間每小時會留下 `skipped/vault_missing` 舊列，看最新一列會誤判。
 
    | 看到 | 代表 |
    |---|---|
    | `succeeded`（trigger 是 `pg_cron`） | 完成 |
+   | `running` | 還在跑（最多 150 秒），2 分鐘後再查 |
+   | `failed` | 端點有執行，結果是失敗。看 `error_code`（例如 `query_all_failed`＝PayUni 查詢全滅）與後台系統告警 |
+   | `skipped/concurrent` | 剛好撞到另一輪（例如整點第 7 分的排程），過幾分鐘再執行一次第 5 步 |
    | `skipped/vault_missing` | Vault 沒設好，回第 2 步 |
-   | 沒有新列 | 查 `select status_code, content from net._http_response order by id desc limit 1;`。401 是密鑰不一致；404 是 Edge 還沒部署；沒有列是 pg_net 沒裝（migration 沒套到） |
+   | 沒有任何列 | 查 `select status_code, content from net._http_response order by id desc limit 1;`。401 是密鑰不一致；404 是 Edge 還沒部署；連 `_http_response` 都沒有列，是 pg_net 沒裝（migration 沒套到） |
 
 **輪替 `RECONCILE_SECRET`**：依序改三處，然後照第 4 步驗證。
 
@@ -664,7 +672,11 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 2. Vault 的 `uknow_internal_secret`；
 3. GitHub 的 `secrets.RECONCILE_SECRET`。
 
-兩步之間的空檔是 401。超過 90 分鐘，看門狗會補跑並推 LINE。
+三步盡量在幾分鐘內做完。空檔內會有 401：
+- pg_cron 那輪會失敗；
+- GitHub 看門狗若剛好在這時執行，會推「查不到 pg_cron 狀態」，或開「付款對帳排程失敗」issue。
+
+這是輪替造成的預期假警報。做完第 5 步、確認 `succeeded` 之後，關掉 issue 即可。
 
 ## 快速檢查表（每個環境各一份）
 

@@ -129,7 +129,8 @@ def decide_reconcile(status: int, health: dict | None, now: datetime, prev_run: 
         d = Decision(True, rule="R3", summary=["cron.job 沒有 reconcile-pending-payments：GitHub 補跑對帳"])
         if _throttle_by_grid(now, prev_run):
             _line(d, "P1", "正式站 pg_cron 對帳排程不存在",
-                  "【排程】正式站 cron.job 沒有對帳排程，GitHub 已補跑。下一步：重跑 supabase/README.md 的 cron.schedule SQL。")
+                  "【排程】正式站 cron.job 沒有對帳排程，GitHub 本輪補跑。下一步：在 SQL Editor 重跑 migration "
+                  "20261111000001 檔尾的三段 cron.schedule。")
         return d
     if not job.get("cronJobActive"):
         d = Decision(True, rule="R4", summary=["對帳排程人為停用中（cron.job.active = false）：GitHub 代跑"])
@@ -145,16 +146,18 @@ def decide_reconcile(status: int, health: dict | None, now: datetime, prev_run: 
     stale = f"{round(_minutes(now, last))} 分鐘" if last else "從未完成"
     codes = (health or {}).get("pgNet6h", {}).get("lastStatusCodes") or []
     diag = [
-        f"最近 pg_cron 列的 error_code={job.get('lastPgCronErrorCode')}",
+        f"最近 pg_cron 列的 error_code={job.get('lastPgCronErrorCode') or '無'}",
         f"24h abandoned={job.get('counts24h', {}).get('abandoned', 0)}",
         f"pg_net 近 6 小時狀態碼={codes}",
     ]
     hint = "，pg_net 回 401（密鑰不一致）" if 401 in codes else ""
     d = Decision(True, rule="R6", summary=[f"pg_cron 對帳停擺（{stale}）：GitHub 補跑", *diag])
     if _throttle_stale(now, prev_run, last):
+        # 診斷細節只放 step summary（run 連結）：LINE body 會被截在 200 字。補跑的結果
+        # 這時還不知道——補跑失敗會另推一則「對帳失敗」。
         _line(d, "P1", "正式站 pg_cron 對帳停擺",
-              f"【排程】正式站 pg_cron 對帳停擺（{stale}{hint}），GitHub 已補跑。下一步：查 Supabase Vault 的 "
-              f"uknow_* 兩筆、Edge Secrets 的 RECONCILE_SECRET、cron.job。診斷：{'；'.join(diag)}")
+              f"【排程】正式站 pg_cron 對帳停擺（{stale}{hint}），GitHub 本輪補跑（失敗會另行通知）。下一步：查 "
+              "Supabase Vault 的 uknow_* 兩筆、Edge Secrets 的 RECONCILE_SECRET、cron.job；診斷見 run 連結。")
     return d
 
 
@@ -165,24 +168,28 @@ def decide_purge(status: int, health: dict | None, now: datetime, repo_live: str
     if not isinstance(job, dict):
         d = Decision(True, rule="P1", summary=[f"scheduler-health 查詢失敗（HTTP {status or '連線失敗'}）：GitHub 補跑清理"])
         return _line(d, "P2", "正式站照片清理狀態查不到",
-                     "【照片清理】看門狗查不到正式站排程狀態，GitHub 已補跑清理。下一步：確認 Edge Function 有部署、"
+                     "【照片清理】看門狗查不到正式站排程狀態，GitHub 本輪補跑清理。下一步：確認 Edge Function 有部署、"
                      "RECONCILE_SECRET 一致。")
     last = _ts(job.get("lastCompletedAt"))
     if last is None or _minutes(now, last) > PURGE_STALE_MINUTES:
         stale = f"{round(_minutes(now, last) / 60)} 小時" if last else "從未完成"
         d = Decision(True, rule="P1", summary=[f"照片清理逾期（{stale}）：GitHub 補跑"])
         return _line(d, "P2", "正式站照片清理逾期",
-                     f"【照片清理】正式站照片清理 {stale} 沒有完成，GitHub 已補跑。下一步：查 cron.job 的 "
+                     f"【照片清理】正式站照片清理 {stale} 沒有完成，GitHub 本輪補跑。下一步：查 cron.job 的 "
                      "purge-orphan-listing-photos 與後台系統告警；三十日下架期限扣掉寬限期約剩兩週。")
     dry = job.get("lastPurgeDryRun")
     live = repo_live == "true"
     if isinstance(dry, bool) and dry == live:
         # dryRun=True 而 repo var 開（或反過來）＝兩個開關不一致
-        mode = "不是" if dry else "是"
         d = Decision(False, rule="P2", summary=[f"開關不一致：排程清理 dryRun={dry}、repo var PHOTO_PURGE_LIVE={repo_live or '（未設）'}"])
-        return _line(d, "P2", "正式站照片清理開關不一致",
-                     f"【照片清理】正式站排程清理{mode}實刪，但 repo var PHOTO_PURGE_LIVE={repo_live or '（未設）'}。"
-                     "下一步：到 Supabase Edge Secrets 設 PHOTO_PURGE_LIVE，或改 GitHub repo variable，讓兩邊一致。")
+        if dry:
+            # Edge 沒開、repo var 開：pg_cron 每天只列候選，三十日下架不成立（法遵風險方向）。
+            body = ("【照片清理】正式站排程清理只列候選、沒有實刪，三十日下架不成立。下一步：到 Supabase Edge Secrets "
+                    "設 PHOTO_PURGE_LIVE=true（repo variable 已是 true）。")
+        else:
+            body = ("【照片清理】正式站排程清理已實刪，但 GitHub repo variable PHOTO_PURGE_LIVE 沒開，手動與補跑只會 "
+                    "dry-run。下一步：到 GitHub Settings → Variables 設 PHOTO_PURGE_LIVE=true。")
+        return _line(d, "P2", "正式站照片清理開關不一致", body)
     return Decision(False, rule="", summary=["照片清理正常"])
 
 
