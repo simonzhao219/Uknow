@@ -85,6 +85,7 @@
 | W5-30 | S7 Q5 座標資料授權、entry 預算 | 授權 S7 在階段 2 開頭於有網路處確認國土測繪中心資料來源與授權，不成立就停下；entry gzip 預算准於階段 2 實測後上調，上限比現行多 3 kB，超過就停下回報 |
 | W5-40 | S7 座標資料：TGOS（www.tgos.tw）整站維護中，zip 下載不到 | 先做不依賴座標表的階段（輪播邊界換篇、按鈕、鍵盤、焦點等），TGOS 恢復後補階段 2；到 11/08（台北）仍下載不到再與業主討論備案；不改用其他來源 |
 | W5-43 | S7 entry raw 預算（#509 build-bundle 紅：raw 1000.2 > 1000 kB） | raw 1000→1010 kB（與 gzip +3 kB 同比例）；S7 硬上限 gzip 315／raw 1010；S4 另有 gzip +1.0／raw 約 +3.2 kB，後合者在 PR 寫合計 |
+| W5-44 | S1 實作審查 P2 三條 | ①DataSource＝B 持續超過 4 天轉 unknown＋error 告警（本 PR 做）；②「SUCCESS 但缺 TradeStatus→missing_field」本 PR 不改，上線後第一輪看帳本 summary 的 unknownStatus／missing_field 計數（列晉升清單與 W4-26 現場查詢）；③unknown 單人工確認已付款後的手動開通入口 → 第 6 波候選 |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -154,7 +155,8 @@ W5-10 的兩條文件升級（本 PR）；上線後現場查詢（W4-26）。
    - 甲段（migration 套用後、Edge 核准部署前）：正式站 Edge Secrets 有 `RECONCILE_SECRET` 與 `PHOTO_PURGE_LIVE=true`；Vault 建 `uknow_api_base_url`、`uknow_internal_secret`；（若階段 0 結論如此）Dashboard 開 pg_net；`cron.job` 有 5 列。
    - 乙段（Edge 部署後）：`select public.invoke_internal_endpoint('reconcile')` 回 request id，1 分鐘後帳本最新列 `succeeded`；核准後第一個整點 +7 分，帳本出現 `pg_cron` 完成列。
    - develop 在 S1 合併、migration 套用後，同樣做甲段（不設 `PHOTO_PURGE_LIVE`）。
-5. 開 R5。
+5. S1 上線後第一輪：帳本 `scheduled_job_runs.summary` 的 `unknownStatus`、`missing_field` 計數（W5-44②），異常就開修。
+6. 開 R5。
 
 ## 5. 第 6 波候選（未納入本波，一行一項）
 
@@ -194,7 +196,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 階段 0～9 綠；收尾中 |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | #512（draft） | 主 session 審查中；W5-44① 補做 |
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 實作中 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
@@ -226,3 +228,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 08:30 | S7：tgos 白名單通，但 TGOS 整站維護中，資料 zip 404。主 session 定 **W5-40**：先做不依賴座標表的階段 | 11/08 前 TGOS 未恢復再議 |
 | 11/05 08:35 | S1：官方碼表取得（docs.payuni.com.tw 單筆交易查詢 Ver 2.0），業主在 S1 session 裁 **W5-41**、**W5-42**；階段 0～9 全綠，收尾後開 PR | 審 S1 PR |
 | 11/05 08:45 | S7 階段 4、5 綠並推上；階段 6 有 1 條紅燈是測試夾具錯（重驗回三張照片），需業主在 S7 session 親口授權改一行（tdd 逃生口 2）。#509 build-bundle 紅（entry raw 超 1000 kB）→ 主 session 定 **W5-43** | 業主到 S7 session 授權 |
+| 11/05 08:55 | S1 開 **#512**（33 檔、+3,443 行；實作審查 P0 0、P1 5 皆處置）。主 session 訂閱、親審 TradeStatus 對應（與 W5-41／42 一致），另派獨立 Opus 審查員審 diff。主 session 定 **W5-44** | 等審查與 CI |
