@@ -86,6 +86,8 @@
 | W5-40 | S7 座標資料：TGOS（www.tgos.tw）整站維護中，zip 下載不到 | 先做不依賴座標表的階段（輪播邊界換篇、按鈕、鍵盤、焦點等），TGOS 恢復後補階段 2；到 11/08（台北）仍下載不到再與業主討論備案；不改用其他來源 |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
+| W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
+| W5-42 | S1：DataSource＝B（處理中、資料未完整） | **一律本輪不下結論**：不收斂、不標 failed／expired、不告警，下輪再查（理由：資料不完整時收斂可能拿不到付款時間，會籍起算日會算錯）（業主同上） |
 | W5-33 | S7 界線資料實際下載點 `www.tgos.tw` 不在白名單 | **業主再放行 www.tgos.tw**（業主 2026-11-05 互動選項）；S7 下載並把 SHA-256、URL、取得日期記入腳本檔頭 |
 | W5-34 | 政府資料開放授權第 1 版的顯名義務放哪 | **只寫在程式檔頭與規格書**（業主 2026-11-05；被推翻：另加條款頁「資料來源」一行；頁尾）。業主已知「未盡顯名義務視為自始未取得授權」條文；PR 內文記這條風險 |
 | W5-35 | S4 PostHog EU project key | **先佔位、預設關閉開發，晉升前業主建兩個 project 提供 key**，主 session 轉交；合進 develop 時必須是關閉、不送任何請求 |
@@ -191,7 +193,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 實作中（階段 1 起；階段 2 等碼表） |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | — | 階段 0～9 綠；收尾中 |
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | — | 實作中 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
@@ -221,3 +223,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 07:40 | S4 交規劃 v2.1（第二輪 /review-plan P0 0；以 posthog-js 1.445.5 原始碼核實：compress_events 讓 before_send 看不到 DOM 屬性 → maskAttributeFn 白名單；未設選項會被專案端遠端開啟 → 全部明確 false）。業主裁 **W5-37～39**；主 session 親審通過 | 業主到 S4 session 親打 `/tdd-implement posthog-monitoring` |
 | 11/05 08:00 | 業主已在 S4 親打 `/tdd-implement`、放行 `www.tgos.tw` 並告知 S7（主 session 實測 200）。S1、S2、S4、S7 四項都在實作 | 等各 session 回報 PR |
 | 11/05 08:30 | S7：tgos 白名單通，但 TGOS 整站維護中，資料 zip 404。主 session 定 **W5-40**：先做不依賴座標表的階段 | 11/08 前 TGOS 未恢復再議 |
+| 11/05 08:35 | S1：官方碼表取得（docs.payuni.com.tw 單筆交易查詢 Ver 2.0），業主在 S1 session 裁 **W5-41**、**W5-42**；階段 0～9 全綠，收尾後開 PR | 審 S1 PR |
