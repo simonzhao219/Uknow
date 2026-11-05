@@ -16,6 +16,11 @@ const TEST_TRANSPORT = {
   request_batching: false,
   opt_out_useragent_filter: true,
 };
+// 正式環境預設用 XHR 傳輸（含請求壓縮）；這組不覆寫 api_transport、不關壓縮。
+const COMPRESSED_TRANSPORT = {
+  request_batching: false,
+  opt_out_useragent_filter: true,
+};
 export const URL_KEYS = [
   '$current_url',
   '$pathname',
@@ -27,9 +32,11 @@ export const URL_KEYS = [
   '$initial_referrer',
 ];
 
-interface Captured {
+export interface Captured {
   url: string;
   body: string;
+  /** 原始本文不是字串（位元組或 Blob，例如 gzip 壓縮後的請求） */
+  binary?: boolean;
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -78,6 +85,9 @@ function collectDecoded(value: unknown, out: string[]): void {
 
 /** 一個請求的完整文字（網址＋本文＋解壓後的 snapshot），給「不得出現」斷言用。 */
 export function fullText(r: Captured): string {
+  if (r.body.startsWith('[unreadable') || r.body === '[pending-blob]') {
+    throw new Error(`無法讀取請求本文，不能證明沒有外洩：${r.url} ${r.body}`);
+  }
   const parts = [r.url, r.body];
   try {
     collectDecoded(JSON.parse(r.body), parts);
@@ -99,7 +109,48 @@ export function eventPropsOf(r: Captured): Array<Record<string, unknown>> {
   return [];
 }
 
-export async function boot(url: string, html: string) {
+/** 把請求本文轉成可搜尋的文字：字串、位元組（含 gzip）直接處理；Blob 非同步讀完後回填。 */
+function bytesToText(bytes: Uint8Array): string {
+  const buf = Buffer.from(bytes);
+  for (const fn of [gunzipSync, inflateSync]) {
+    try {
+      return fn(buf).toString('utf8');
+    } catch {
+      // 不是該壓縮格式，試下一種
+    }
+  }
+  return buf.toString('utf8');
+}
+
+function recordBody(entry: Captured, b: unknown): void {
+  if (typeof b === 'string') {
+    entry.body = b;
+  } else if (b === null || b === undefined) {
+    entry.body = '';
+  } else if (b instanceof ArrayBuffer) {
+    entry.binary = true;
+    entry.body = bytesToText(new Uint8Array(b));
+  } else if (ArrayBuffer.isView(b)) {
+    entry.binary = true;
+    entry.body = bytesToText(new Uint8Array(b.buffer, b.byteOffset, b.byteLength));
+  } else if (typeof Blob !== 'undefined' && b instanceof Blob) {
+    entry.binary = true;
+    entry.body = '[pending-blob]';
+    const reader = new FileReader();
+    reader.onload = () => {
+      entry.body = bytesToText(new Uint8Array(reader.result as ArrayBuffer));
+    };
+    reader.onerror = () => {
+      entry.body = '[unreadable: blob]';
+    };
+    reader.readAsArrayBuffer(b);
+  } else {
+    // 讀不到內容就不能證明「沒有外洩」：標記起來，fullText 會讓測試直接失敗，不靜默假綠。
+    entry.body = `[unreadable: ${Object.prototype.toString.call(b)}]`;
+  }
+}
+
+export async function boot(url: string, html: string, opts: { compress?: boolean } = {}) {
   vi.resetModules();
   localStorage.clear();
   sessionStorage.clear();
@@ -109,8 +160,11 @@ export async function boot(url: string, html: string) {
   document.body.innerHTML = html;
 
   const reqs: Captured[] = [];
-  const record = (u: unknown, b: unknown) =>
-    reqs.push({ url: String(u), body: typeof b === 'string' ? b : '[non-string]' });
+  const record = (u: unknown, b: unknown) => {
+    const entry: Captured = { url: String(u), body: '' };
+    recordBody(entry, b);
+    reqs.push(entry);
+  };
   const stubFetch = async (u: unknown, init?: { body?: unknown }) => {
     record(u, init?.body);
     return new Response('{}', { status: 200 });
@@ -120,6 +174,8 @@ export async function boot(url: string, html: string) {
   XMLHttpRequest.prototype.open = function (this: { __u?: string }, _m: string, u: string) {
     this.__u = u;
   } as unknown as typeof XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.setRequestHeader =
+    (() => {}) as typeof XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.send = function (this: { __u?: string }, b: unknown) {
     record(`XHR ${this.__u}`, b);
   } as unknown as typeof XMLHttpRequest.prototype.send;
@@ -134,7 +190,7 @@ export async function boot(url: string, html: string) {
     [KEY]: {
       config: {
         token: KEY,
-        supportedCompression: ['gzip'],
+        supportedCompression: ['gzip', 'gzip-js'],
         hasFeatureFlags: true,
         sessionRecording: {
           endpoint: '/s/',
@@ -164,6 +220,7 @@ export async function boot(url: string, html: string) {
   };
 
   const requested: string[] = [];
+  let instance: unknown;
   const { createAnalytics } = await import('./analytics');
   const { createPosthogClient } = await import('./posthogClient');
   const analytics = createAnalytics({
@@ -172,7 +229,15 @@ export async function boot(url: string, html: string) {
     currentPathname: () => location.pathname,
     origin: () => location.origin,
     loadClient: async () => {
-      const client = await createPosthogClient(TEST_TRANSPORT);
+      // compress=true 走正式環境的請求壓縮（gzip），驗證壓縮路徑的內容同樣乾淨。
+      const transport = {
+        ...(opts.compress ? COMPRESSED_TRANSPORT : TEST_TRANSPORT),
+        // client 實際使用的 SDK 實例（init 完成後由 SDK 回呼），供測試檢查擴充是否存在。
+        loaded: (ph: unknown) => {
+          instance = ph;
+        },
+      };
+      const client = await createPosthogClient(transport);
       // posthog-js 載入後才有 __PosthogExtensions__；把外部腳本載入改成讀本機檔。
       const ext = w.__PosthogExtensions__ as {
         loadExternalDependency: (ph: unknown, name: string, cb: (e?: unknown) => void) => void;
@@ -195,5 +260,5 @@ export async function boot(url: string, html: string) {
     }
   };
   const snapshots = () => reqs.filter((r) => r.url.includes('/s/'));
-  return { analytics, reqs, requested, interact, snapshots };
+  return { analytics, reqs, requested, interact, snapshots, getInstance: () => instance };
 }

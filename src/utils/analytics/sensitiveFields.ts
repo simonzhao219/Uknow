@@ -57,3 +57,12 @@ export const SENSITIVE_FIELDS: SensitiveField[] = [
 
 /** 路由層必須包 PrivateRegion 的路徑（付款頁、後台）。 */
 export const PRIVATE_ROUTES = ['/payment/checkout', '/payment/result', '/admin'];
+
+/**
+ * 渲染在 portal 的敏感內容：外層欄位群組的 block class 涵蓋不到，要在 portal 內容自己帶。
+ * 銀行代號下拉：Radix 只在已選項底下渲染勾選圖示、點擊互動又會記下節點，選項順序固定，
+ * 從結構與點擊就推得出選了哪家銀行。anchor 那一行本身必須含 block class。
+ */
+export const SENSITIVE_PORTALS = [
+  { file: 'components/reward/WithdrawalProcess.tsx', anchor: '<SelectContent' },
+];

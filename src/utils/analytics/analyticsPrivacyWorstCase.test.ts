@@ -29,6 +29,26 @@ describe('真實 SDK 外送內容', () => {
     for (const s of ['CONSOLE-SECRET', 'EXC-SECRET', 'TOKEN-IN-URL']) {
       expect(all, s).not.toContain(s);
     }
+    // 直接斷言 SDK 實例：jsdom 不載外部腳本，光看請求／console 內容抓不到 logs 擴充；
+    // 擴充實例本身就不該存在（slim 入口只掛錄影）。換回預設入口時這裡會紅。
+    const instance = t.getInstance() as Record<string, unknown>;
+    expect(instance, '取不到 client 使用的 SDK 實例').toBeDefined();
+    for (const ext of [
+      'logs',
+      'conversations',
+      'surveys',
+      'productTours',
+      'exceptions',
+      'exceptionObserver',
+      'toolbar',
+      'siteApps',
+      'heatmaps',
+      'deadClicksAutocapture',
+      'autocapture',
+    ]) {
+      expect(instance[ext], `${ext} 擴充不得存在`).toBeUndefined();
+    }
+    expect(instance.sessionRecording, '錄影擴充必須存在').toBeDefined();
     expect(t.requested).not.toContain('logs');
     expect(t.requested).not.toContain('conversations');
     expect(
