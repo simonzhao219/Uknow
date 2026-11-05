@@ -415,3 +415,29 @@ Deno.test('reconcile：被標過 unknown 的單之後查到可判讀結果 → r
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+Deno.test('reconcile：被標過 unknown 的單這輪只是查詢層失敗 → reconcile_unknown_at 保留', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Unknown Then Query Fail' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
+    const flaggedAt = new Date(Date.now() - 3600_000).toISOString();
+    await client.from('payment_orders').update({ reconcile_unknown_at: flaggedAt })
+      .eq('transaction_id', tradeNo);
+    await reconcilePendingOrders(
+      client,
+      () =>
+        Promise.resolve({
+          stillProcessing: true as const,
+          queryFailure: { status: `KEEP-${user.id}`, message: '暫時性錯誤' },
+        }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.reconcile_unknown_at !== null, true, '查詢層一時失敗不是可判讀的結果');
+  } finally {
+    await deleteAlerts(client, 'payuniStatus', `KEEP-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
