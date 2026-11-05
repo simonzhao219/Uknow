@@ -3003,6 +3003,10 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
 
   const flat: Record<string, string> = {};
   for (const [k, v] of Object.entries(trade)) flat[k] = String(v ?? '');
+  // 同號比對已成立（或單筆缺 MerTradeNo 照舊接受）：交給 resolveOrderFromPayUni 的單號
+  // 一律用請求的值。沿用原值時，缺鍵會回 missing MerTradeNo、帶空白會對不到單，
+  // 兩者都會發出誤導的「錢已收、找不到訂單」告警（審查 P2）。
+  flat.MerTradeNo = merTradeNo;
   const tradeStatus = (flat.TradeStatus ?? '').trim();
 
   // PayUni 官方碼表（docs.payuni.com.tw「單筆交易查詢 Ver 2.0」，2026-11-05 查證）：
