@@ -925,7 +925,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 **預設關閉**：key 在 `config/posthogTarget.ts`（`phc_` 寫入 key 為公開值，commit 在 git；main 用正式 project、其餘分支用 develop project）。key 為佔位值、沒有 `CF_PAGES_BRANCH` 的本機建置、journey（外部指定 Supabase project）一律不注入，執行期不載入 SDK、不送任何請求。`VITE_ANALYTICS=off`（Pages 環境變數，重新部署即生效）可緊急關閉；`VITE_ANALYTICS_SAMPLE`（0～1，預設 1＝全錄）可降低錄影比例。
 
-**載入**：`window load` 後等瀏覽器 idle 才動態載入 SDK，不進 entry；錄影元件由 PostHog 資產網域 `eu-assets.i.posthog.com` 外部載入（第三方腳本不受 lockfile 控制、可讀 DOM，業主已接受，W5-37）。
+**載入**：`window load` 後等瀏覽器 idle 才動態載入 SDK，不進 entry；SDK 用 `posthog-js/dist/module.slim` 只掛錄影擴充（`SessionReplayExtensions`）——預設入口的 logs、conversations 等擴充會依 PostHog 專案端的遠端設定自行啟動（攔截 console 外送、身分表單收姓名與 Email），前端沒有選項能關，所以不載入；`posthog-js` 釘精確版本，升版時由 `analyticsPrivacyWorstCase.test.ts`（最壞遠端設定）把關；錄影元件由 PostHog 資產網域 `eu-assets.i.posthog.com` 外部載入（第三方腳本不受 lockfile 控制、可讀 DOM，業主已接受，W5-37）。
 
 **不錄的範圍**：`/payment/*` 與 `/admin*` 不啟動錄影（`recordingAllowed`），且路由層以 `PrivateRegion` 整塊 block；身分證、手機、生日、銀行代號與帳號、證件照欄位群組帶 `ph-no-capture` block class。其餘頁面全文字與輸入遮罩，DOM 屬性採白名單（僅保留 class、style、type、role、id 等非內容屬性，W5-38）。新增敏感欄位時，把 `privateClass()` 併進欄位群組根容器，或設對 `type`／`autocomplete`（`src/utils/analytics/sensitiveFields.ts` 與其測試掃描漏網）。
 
