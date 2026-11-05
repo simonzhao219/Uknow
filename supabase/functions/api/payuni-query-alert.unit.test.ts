@@ -81,3 +81,112 @@ Deno.test('queryPayUniTradeStatus：查詢成功但交易未付款 → 不帶 qu
   );
   assertEquals<unknown>(result, { stillProcessing: true });
 });
+
+// ============================================================
+// pay P1-3（pg-cron-schedulers 階段 2）：PayUni 官方 TradeStatus 碼表
+// （docs.payuni.com.tw「單筆交易查詢 Ver 2.0」，2026-11-05 查證）：
+//   0＝取號成功、9＝未付款、4＝交易逾期 → 確認未付款（照舊 4 天後標 expired）
+//   1＝已付款 → SUCCESS；2＝付款失敗、3＝付款取消 → FAILED_2／FAILED_3
+//   8＝訂單待確認、碼表外、缺欄位 → unknownStatus（業主 2026-11-05 互動選項
+//     「當未知交人工」）：永不自動標 expired，交人工確認
+//   DataSource＝B（處理中未完整）→ 不論 TradeStatus，本輪不下結論（業主
+//     2026-11-05 互動選項「B 一律本輪不下結論」）：資料不完整時收斂可能拿不到
+//     付款時間，會籍起算日會錯
+// 同號比對：Result 陣列只取 MerTradeNo 相同的那筆（舊行為 `?? list[0]` 會拿到
+// 別張單的狀態）；只有一筆且沒帶 MerTradeNo 時照舊接受，避免已付款單收斂不了。
+// ============================================================
+async function query(fields: Record<string, string | number>, tradeNo = 'P13-TRADE') {
+  const encryptInfo = await encryptPayUni(fields, KEY, IV);
+  return await withFetch(
+    { Status: 'SUCCESS', EncryptInfo: encryptInfo },
+    () => queryPayUniTradeStatus(tradeNo),
+  );
+}
+
+const queryResult = (list: unknown[], tradeNo = 'P13-TRADE') =>
+  query({ Result: JSON.stringify(list) }, tradeNo);
+
+Deno.test('queryPayUniTradeStatus：0／4／9（取號成功、逾期、未付款）→ 確認未付款', async () => {
+  for (const code of ['0', '4', '9']) {
+    assertEquals<unknown>(
+      await query({ MerTradeNo: 'P13-TRADE', TradeStatus: code }),
+      { stillProcessing: true },
+      code,
+    );
+  }
+});
+
+Deno.test('queryPayUniTradeStatus：8（訂單待確認）與碼表外的碼 → unknownStatus', async () => {
+  for (const code of ['8', '6', '99']) {
+    assertEquals<unknown>(
+      await query({ MerTradeNo: 'P13-TRADE', TradeStatus: code }),
+      { stillProcessing: true, unknownStatus: { tradeStatus: code, reason: 'unknown_code' } },
+      code,
+    );
+  }
+});
+
+Deno.test('queryPayUniTradeStatus：缺 TradeStatus → unknownStatus／missing_field', async () => {
+  assertEquals<unknown>(
+    await query({ MerTradeNo: 'P13-TRADE' }),
+    { stillProcessing: true, unknownStatus: { tradeStatus: '', reason: 'missing_field' } },
+  );
+});
+
+Deno.test('queryPayUniTradeStatus：DataSource＝B → 不論狀態本輪不下結論（incomplete）', async () => {
+  for (const code of ['1', '2', '8', '0']) {
+    assertEquals<unknown>(
+      await query({ MerTradeNo: 'P13-TRADE', TradeStatus: code, DataSource: 'B' }),
+      { stillProcessing: true, incomplete: true },
+      code,
+    );
+  }
+});
+
+Deno.test('queryPayUniTradeStatus：1＋DataSource A 或缺漏 → SUCCESS；2／3 → FAILED', async () => {
+  for (const extra of [{ DataSource: 'A' }, {}] as Array<Record<string, string>>) {
+    const r = await query({ MerTradeNo: 'P13-TRADE', TradeStatus: '1', ...extra });
+    assertEquals(r.stillProcessing, false);
+    assertEquals(!r.stillProcessing && r.data.Status, 'SUCCESS');
+  }
+  for (const code of ['2', '3']) {
+    const r = await query({ MerTradeNo: 'P13-TRADE', TradeStatus: code });
+    assertEquals(!r.stillProcessing && r.data.Status, `FAILED_${code}`);
+  }
+});
+
+Deno.test('queryPayUniTradeStatus：Result 多筆時取同號那筆，不拿第一筆的已付款', async () => {
+  const r = await queryResult([
+    { MerTradeNo: 'OTHER-TRADE', TradeStatus: '1' },
+    { MerTradeNo: 'P13-TRADE', TradeStatus: '0' },
+  ]);
+  assertEquals<unknown>(r, { stillProcessing: true });
+});
+
+Deno.test('queryPayUniTradeStatus：Result 沒有同號（或平鋪 MerTradeNo 不符）→ no_matching_trade', async () => {
+  const unknown = {
+    stillProcessing: true,
+    unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' },
+  };
+  assertEquals<unknown>(
+    await queryResult([{ MerTradeNo: 'OTHER-TRADE', TradeStatus: '1' }]),
+    unknown,
+  );
+  assertEquals<unknown>(
+    await queryResult([
+      { MerTradeNo: 'OTHER-A', TradeStatus: '1' },
+      { MerTradeNo: 'OTHER-B', TradeStatus: '1' },
+    ]),
+    unknown,
+  );
+  assertEquals<unknown>(await query({ MerTradeNo: 'OTHER-TRADE', TradeStatus: '1' }), unknown);
+});
+
+Deno.test('queryPayUniTradeStatus：單筆缺 MerTradeNo 或數字型 MerTradeNo → 照舊收斂已付款', async () => {
+  const noKey = await queryResult([{ TradeStatus: '1' }]);
+  assertEquals(!noKey.stillProcessing && noKey.data.Status, 'SUCCESS');
+  const numeric = await queryResult([{ MerTradeNo: 20261105, TradeStatus: '1' }], '20261105');
+  assertEquals(!numeric.stillProcessing && numeric.data.Status, 'SUCCESS');
+  const padded = await query({ MerTradeNo: ' P13-TRADE ', TradeStatus: '1' });
+  assertEquals(!padded.stillProcessing && padded.data.Status, 'SUCCESS');
+});

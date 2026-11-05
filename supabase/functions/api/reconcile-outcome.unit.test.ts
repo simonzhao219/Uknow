@@ -33,6 +33,8 @@ function summary(over: Partial<ReconcileSummary>): ReconcileSummary {
     queryErrors: 0,
     queryFailures: 0,
     expireErrors: 0,
+    unknownStatus: 0,
+    incomplete: 0,
     ...over,
   };
 }
@@ -51,6 +53,8 @@ Deno.test('classifyReconcileOutcome：只看擲錯數，全滅要 checked>=2、�
     [4, 2, 2, 'ok'], // 擲錯恰好一半
     [5, 3, 2, 'majority_failed'],
   ];
+  // 全部是碼表外狀態（unknownStatus）也不算全滅：每張單已有自己的 error 告警
+  assertEquals(classifyReconcileOutcome(summary({ checked: 3, unknownStatus: 3 })), 'ok');
   for (const [checked, queryErrors, queryFailures, want] of cases) {
     assertEquals(
       classifyReconcileOutcome(summary({ checked, queryErrors, queryFailures })),

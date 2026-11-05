@@ -2706,7 +2706,15 @@ async function resolveOrderFromPayUni(
 // 欄位時，「沒問到」與「問到了、交易未付款」同形，迴圈無從告警——滿天數
 // 的卡單會被靜默標 expired（issue #395）。
 type QueryResult =
-  | { stillProcessing: true; queryFailure?: { status: string; message: string } }
+  | {
+    stillProcessing: true;
+    queryFailure?: { status: string; message: string };
+    unknownStatus?: {
+      tradeStatus: string;
+      reason: 'unknown_code' | 'missing_field' | 'no_matching_trade';
+    };
+    incomplete?: true;
+  }
   | { stillProcessing: false; data: Record<string, string> };
 
 export async function reconcilePendingOrders(
@@ -2746,6 +2754,8 @@ export async function reconcilePendingOrders(
     queryErrors: 0,
     queryFailures: 0,
     expireErrors: 0,
+    unknownStatus: 0,
+    incomplete: 0,
   };
 
   for (const order of stuck ?? []) {

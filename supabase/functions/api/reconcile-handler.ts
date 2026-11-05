@@ -23,6 +23,8 @@ export type ReconcileSummary = {
   queryErrors: number;
   queryFailures: number;
   expireErrors: number;
+  unknownStatus: number;
+  incomplete: number;
 };
 
 export type ReconcileClassification = 'ok' | 'all_failed' | 'majority_failed';

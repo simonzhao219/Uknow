@@ -166,6 +166,8 @@ function fakeHandlerDeps(
         queryErrors: 0,
         queryFailures: 0,
         expireErrors: 0,
+        unknownStatus: 0,
+        incomplete: 0,
         ...summary,
       };
     },
