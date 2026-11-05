@@ -293,3 +293,214 @@ Deno.test('reconcile：查詢到 SUCCESS 而收斂 → 不寫任何告警', asyn
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+// ============================================================
+// pay P1-3（pg-cron-schedulers 階段 2）：碼表外狀態與 DataSource＝B。
+// 舊行為：TradeStatus 不是 1／2／3 → stillProcessing 且不帶 queryFailure →
+// 建單第 4 天被靜默標 expired（使用者被引導重付）。新行為：
+//   * unknownStatus（8＝待確認、碼表外、缺欄位、查不到同號交易）→ 永不自動標
+//     expired，按訂單號寫一筆 error 告警交人工；reconcile_unknown_at 記下時間，
+//     掃描視窗把它排到後段，免得塞滿 50 張而餓死真卡單
+//   * incomplete（DataSource＝B）→ 本輪不下結論：不標 expired、不告警
+// ============================================================
+const okResolve = () => Promise.resolve({ ok: true as const, status: 'SUCCESS' as const });
+
+async function orderRow(client: ReturnType<typeof adminClient>, tradeNo: string) {
+  const { data } = await client.from('payment_orders')
+    .select('status, reconcile_unknown_at').eq('transaction_id', tradeNo).single();
+  return data as { status: string; reconcile_unknown_at: string | null };
+}
+
+Deno.test('reconcile：碼表外狀態滿 5 天也不標 expired，按單號只告警一次並記 reconcile_unknown_at', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Unknown Status' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    const queryFn = () =>
+      Promise.resolve({
+        stillProcessing: true as const,
+        unknownStatus: { tradeStatus: '8', reason: 'unknown_code' as const },
+      });
+    let last;
+    for (let round = 0; round < 2; round++) {
+      last = await reconcilePendingOrders(client, queryFn, okResolve, {
+        thresholdMinutes: 20,
+        limit: 50,
+        expireAfterDays: 4,
+      });
+    }
+    assertEquals(last!.expired, 0);
+    assertEquals(last!.unknownStatus >= 1, true);
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.status, 'pending', '未知狀態不得自動標 expired');
+    assertEquals(row.reconcile_unknown_at !== null, true);
+    const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    assertEquals(alerts.length, 1, `兩輪只留一筆，實得 ${JSON.stringify(alerts)}`);
+    assertEquals(alerts[0].severity, 'error');
+    assertEquals((alerts[0].context as Record<string, unknown>).reason, 'unknown_trade_status');
+  } finally {
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('reconcile：DataSource＝B（incomplete）未滿 4 天 → 本輪不下結論、不告警', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Incomplete Data' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
+    const s = await reconcilePendingOrders(
+      client,
+      () => Promise.resolve({ stillProcessing: true as const, incomplete: true as const }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(s.expired, 0);
+    assertEquals(s.incomplete >= 1, true);
+    const row = await orderRow(client, tradeNo);
+    assertEquals([row.status, row.reconcile_unknown_at], ['pending', null]);
+    assertEquals(await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo), []);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// W5-44（主 session 2026-11-05）：持續回 B 超過 4 天（同 expire 天數）就轉 unknown 交人工，
+// 否則付了錢卻一直 B 的單永遠不收斂、也沒有人知道。
+Deno.test('reconcile：DataSource＝B 超過 4 天 → 轉 unknown：不標 expired、一筆 error、排到後段', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Incomplete Too Long' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    const s = await reconcilePendingOrders(
+      client,
+      () => Promise.resolve({ stillProcessing: true as const, incomplete: true as const }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(s.expired, 0);
+    assertEquals(s.unknownStatus >= 1, true);
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.status, 'pending');
+    assertEquals(row.reconcile_unknown_at !== null, true);
+    const alerts = await alertsWhere(client, 'reconcile-pending-payments', 'tradeNo', tradeNo);
+    assertEquals(alerts.length, 1);
+    assertEquals(alerts[0].severity, 'error');
+    assertEquals(
+      (alerts[0].context as Record<string, unknown>).statusReason,
+      'incomplete_too_long',
+    );
+  } finally {
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('reconcile：被標過 unknown 的單排在掃描視窗後段，沒標過的新卡單先查', async () => {
+  const client = adminClient();
+  const users = await Promise.all(
+    ['Flagged A', 'Flagged B', 'Fresh Stuck'].map((name) => createTestUser(client, { name })),
+  );
+  try {
+    const [flagA, flagB] = await Promise.all([
+      seedPendingOrder(client, users[0].id, FIVE_DAYS_MIN + 20),
+      seedPendingOrder(client, users[1].id, FIVE_DAYS_MIN + 10),
+    ]);
+    const fresh = await seedPendingOrder(client, users[2].id, 60);
+    await client.from('payment_orders').update({ reconcile_unknown_at: new Date().toISOString() })
+      .in('transaction_id', [flagA, flagB]);
+
+    const seen: string[] = [];
+    await reconcilePendingOrders(
+      client,
+      (tradeNo: string) => {
+        seen.push(tradeNo);
+        return Promise.resolve({ stillProcessing: true as const });
+      },
+      okResolve,
+      { thresholdMinutes: 20, limit: 2, expireAfterDays: 4 },
+    );
+    assertEquals(seen.includes(fresh), true, `新卡單應先查，實得 ${JSON.stringify(seen)}`);
+    assertEquals(seen.length, 2);
+  } finally {
+    await deleteTestUsers(client, users.map((u) => u.id));
+  }
+});
+
+Deno.test('reconcile：被標過 unknown 的單之後查到可判讀結果 → reconcile_unknown_at 清回 null', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Recovered Status' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
+    await client.from('payment_orders').update({ reconcile_unknown_at: new Date().toISOString() })
+      .eq('transaction_id', tradeNo);
+    await reconcilePendingOrders(
+      client,
+      () => Promise.resolve({ stillProcessing: true as const }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    const row = await orderRow(client, tradeNo);
+    assertEquals([row.status, row.reconcile_unknown_at], ['pending', null]);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('reconcile：被標過 unknown 的單這輪只是查詢層失敗 → reconcile_unknown_at 保留', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Unknown Then Query Fail' });
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, 60);
+    const flaggedAt = new Date(Date.now() - 3600_000).toISOString();
+    await client.from('payment_orders').update({ reconcile_unknown_at: flaggedAt })
+      .eq('transaction_id', tradeNo);
+    await reconcilePendingOrders(
+      client,
+      () =>
+        Promise.resolve({
+          stillProcessing: true as const,
+          queryFailure: { status: `KEEP-${user.id}`, message: '暫時性錯誤' },
+        }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.reconcile_unknown_at !== null, true, '查詢層一時失敗不是可判讀的結果');
+  } finally {
+    await deleteAlerts(client, 'payuniStatus', `KEEP-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+// 主 session 審查 P1-2：已標 unknown 的單（例如碼 8，可能已付款）只要某一輪碰上
+// 查詢層失敗，就會掉進「滿 4 天標 expired」——違反 W5-41 與欄位註解「非 null 時永不
+// 自動標 expired」。B 持續過久升級的單（W5-44）也帶同一個標記，受同一條保護。
+Deno.test('reconcile：已標 unknown、建單 5 天、本輪查詢層失敗 → 仍為 pending、不標 expired', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Unknown Then Expire' });
+  const payuniStatus = `KEEP5-${user.id}`;
+  try {
+    const tradeNo = await seedPendingOrder(client, user.id, FIVE_DAYS_MIN);
+    await client.from('payment_orders').update({ reconcile_unknown_at: new Date().toISOString() })
+      .eq('transaction_id', tradeNo);
+    const s = await reconcilePendingOrders(
+      client,
+      () =>
+        Promise.resolve({
+          stillProcessing: true as const,
+          queryFailure: { status: payuniStatus, message: '暫時性錯誤' },
+        }),
+      okResolve,
+      { thresholdMinutes: 20, limit: 50, expireAfterDays: 4 },
+    );
+    assertEquals(s.expired, 0);
+    const row = await orderRow(client, tradeNo);
+    assertEquals(row.status, 'pending', '標過 unknown 的單不得因查詢層失敗被標 expired');
+    assertEquals(row.reconcile_unknown_at !== null, true);
+  } finally {
+    await deleteAlerts(client, 'payuniStatus', payuniStatus);
+    await deleteAlerts(client, 'tradeNo', `EXPIRE-${user.id}`);
+    await deleteTestUsers(client, [user.id]);
+  }
+});

@@ -3424,3 +3424,19 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   S2 新增的重複付款告警讓它在 CI 紅。測試資料要放在不受其他測試影響的位置（本次改放窗口前緣），或查詢以 marker 過濾。
 
 處置：第 1 條列入下次框架整併（shim 腳本化）；第 2、3 條為測試寫法教訓，已在 S2 修正，不另立規則。
+
+## 2026-11-05｜誤擋／漏網（環境、流程）｜S1 pg-cron-schedulers 施工摩擦（從 progress.md 整併）
+
+- **雲端容器本機能起 `supabase start`，但要繞過 ECR**（誤擋／環境）：容器裡有 docker 與 sudo，但 daemon 沒啟動；`public.ecr.aws` 的 blob（CloudFront）被代理擋，Docker Hub 拉得到。可行做法：
+  1. `nohup dockerd &`；
+  2. `npm i -g supabase deno`；
+  3. 逐一 `docker pull supabase/<img>`（postgrest 要從 `postgrest/postgrest` 拉），再 `docker tag` 成 `public.ecr.aws/supabase/<img>`；
+  4. `supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector,supavisor,mailpit`；
+  5. 照 ci.yml 把 `supabase status -o env` 的 URL 與兩把 key export 成 `SUPABASE_URL`／`SUPABASE_ANON_KEY`／`SUPABASE_SERVICE_ROLE_KEY`。
+
+  排除 mailpit 後，邀請信類約 28 條測試必紅；CLI 3.0.0 的預設 GRANT 與 CI 不同，`rls-policies` 有兩條斷言會紅。worker 重啟後 dockerd 會死，要重起。候選：寫成 `scripts/local-supabase.sh`，或把做法寫進 `docs/README.md`〈慣例〉的雲端環境須知。
+- **`check-test-names.py` 不在 pre-commit，命令又接了 `| tail`**（漏網）：紅燈 commit 前跑的命名檢查失敗，exit code 被 pipe 吞掉，超長測試名進了紅燈 commit。紅燈期測試檔被鎖，只能等綠燈後另開 commit 改名。候選：pre-commit 的 static-gates 加跑 `check-test-names.py`（秒級）。
+- **`tdd-unlock.sh` 撞到已知偶發測試，我沒看清輸出就 commit**（流程）：`PhotoPicker.test.tsx`〈取消與 Esc 都只取消當張〉偶發紅，unlock 沒刪鎖，綠燈 commit 仍走紅燈通道進去了。候選：unlock 失敗時以非 0 結束並大字標出失敗的測試名；呼叫端別用 `tail -2 | head -1` 這種會吞訊號的寫法。
+- **單元測試經 index.ts 的 `sb()` 寫進本機 DB**（漏網）：`*.unit.test.ts` 呼叫真的 `reconcilePendingOrders` 時，迴圈內的 `logSystemAlertOnce` 在本機有 `SUPABASE_URL` 時真的寫了 `system_alerts`，把 `system-alerts-recent.test.ts` 的 20 筆時間窗擠爆。CI 的 db 軌不跑 unit 檔，所以只在本機全套才會出現。T4 只擋「import 了 DB helper」，擋不到「經 index.ts 間接連線」。候選：T4 擴充成「unit 檔 import index.ts 時，必須在呼叫期間拿掉 `SUPABASE_URL`」，或讓 `sb()` 在 unit 環境擲錯。
+
+處置：待下次框架整併。

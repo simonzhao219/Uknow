@@ -7,9 +7,15 @@
 // index.ts 目前還沒有匯出 reconcilePendingOrders，也沒有掛
 // POST /internal/reconcile-pending-payments，預期 FAIL。
 // ============================================================
-import { assertEquals } from 'jsr:@std/assert@1';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { adminClient, createTestUser, deleteTestUsers } from './test-helpers.ts';
 import { reconcilePendingOrders } from './index.ts';
+import {
+  type ReconcileHandlerDeps,
+  type ReconcileSummary,
+  runScheduledReconcile,
+} from './reconcile-handler.ts';
+import { scheduledRunDeps } from './scheduled-runs.ts';
 
 async function seedPendingOrder(
   client: ReturnType<typeof adminClient>,
@@ -125,4 +131,97 @@ Deno.test('reconcilePendingOrders 只掃「沒有存檔判決」的 pending 訂�
   } finally {
     await deleteTestUsers(client, [noVerdictUser.id, storedSuccessUser.id]);
   }
+});
+
+// ------------------------------------------------------------
+// 階段 4（pg-cron-schedulers）：對帳端點接上帳本與租約。
+// pg_cron、GitHub 補跑、人工 dispatch 可能同時打進來；租約讓只有一個真的
+// 做事，帳本記下每一輪的結局，看門狗據此判斷 pg_cron 是否存活。
+// 帳本用真 DB（begin／finish_scheduled_run），對帳迴圈用注入的假結果。
+// ------------------------------------------------------------
+async function resetLedger() {
+  await adminClient().from('scheduled_job_runs').delete().gte('id', 0);
+}
+
+async function ledgerRows() {
+  const { data } = await adminClient().from('scheduled_job_runs')
+    .select('trigger, status, error_code, summary').eq('job', 'reconcile').order('id');
+  return data ?? [];
+}
+
+function fakeHandlerDeps(
+  summary: Partial<ReconcileSummary>,
+  opts: { delayMs?: number; throws?: boolean } = {},
+): ReconcileHandlerDeps {
+  return {
+    heal: () => Promise.resolve({ data: null, error: null }),
+    reconcile: async () => {
+      if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
+      if (opts.throws) throw new Error('查詢 pending 訂單失敗');
+      return {
+        checked: 0,
+        resolved: 0,
+        stillPending: 0,
+        expired: 0,
+        queryErrors: 0,
+        queryFailures: 0,
+        expireErrors: 0,
+        unknownStatus: 0,
+        incomplete: 0,
+        ...summary,
+      };
+    },
+    alertOnce: () => Promise.resolve(),
+    now: () => new Date(),
+    logError: () => {},
+  };
+}
+
+Deno.test('對帳端點：兩個請求並行 → 只有一個真的對帳，另一個回 skipped:concurrent', async () => {
+  await resetLedger();
+  const run = scheduledRunDeps(adminClient);
+  const [a, b] = await Promise.all([
+    runScheduledReconcile(run, 'pg_cron', fakeHandlerDeps({ checked: 1 }, { delayMs: 400 })),
+    new Promise((r) => setTimeout(r, 100)).then(() =>
+      runScheduledReconcile(run, 'github', fakeHandlerDeps({ checked: 1 }))
+    ),
+  ]);
+  const bodies = [a.body, b.body] as Array<{ data: Record<string, unknown> }>;
+  assertEquals(bodies.filter((x) => x.data.checked === 1).length, 1);
+  assertEquals(bodies.filter((x) => x.data.skipped === 'concurrent').length, 1);
+  const rows = await ledgerRows();
+  assertEquals(
+    rows.map((r) => [r.trigger, r.status]).sort(),
+    [['github', 'skipped'], ['pg_cron', 'succeeded']],
+  );
+  await resetLedger();
+});
+
+Deno.test('對帳端點：全滅 502 → 帳本 failed／query_all_failed，summary 落帳', async () => {
+  await resetLedger();
+  const res = await runScheduledReconcile(
+    scheduledRunDeps(adminClient),
+    'pg_cron',
+    fakeHandlerDeps({ checked: 2, queryErrors: 2 }),
+  );
+  assertEquals(res.httpStatus, 502);
+  const [row] = await ledgerRows();
+  assertEquals(row.status, 'failed');
+  assertEquals(row.error_code, 'query_all_failed');
+  assertEquals((row.summary as Record<string, number>).queryErrors, 2);
+  await resetLedger();
+});
+
+Deno.test('對帳端點：對帳迴圈擲錯 → 帳本 failed／exception，錯誤照樣往上丟', async () => {
+  await resetLedger();
+  await assertRejects(() =>
+    runScheduledReconcile(
+      scheduledRunDeps(adminClient),
+      'manual',
+      fakeHandlerDeps({}, { throws: true }),
+    )
+  );
+  const [row] = await ledgerRows();
+  assertEquals([row.trigger, row.status, row.error_code], ['manual', 'failed', 'exception']);
+  await resetLedger();
 });

@@ -696,14 +696,14 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 - **照片上傳流程**〔實作〕`src/hooks/useListingPhotos.ts`、`src/utils/imagePipeline.ts`：選取後每一張都先進入 1:1 取景
   （拖曳定位、縮放）由使用者確認，確認後在瀏覽器內重新編碼成 JPEG（剝除 EXIF）再逐張上傳，單張上傳逾時 60 秒視同失敗；
   一張失敗不影響其他張，可單張重試。裁切工具載入失敗時顯示「請重新整理頁面」，失敗期間不能送出。前端一律把照片重編為 JPEG。恰好 3 張都完成才能送出刊登。
-- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`、`.github/workflows/purge-listing-photos.yml`：
+- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`、pg_cron 排程 `purge-orphan-listing-photos`（`supabase/README.md`〈排程〉）、`.github/workflows/purge-listing-photos.yml`（看門狗兼後備觸發）：
   服務條款十之一要求撤除內容或本服務終止後三十日內完成下架。刊登照片的 bucket 是公開的，「下架」＝刪除
   Storage 物件；CDN 快取殘留屬條款但書。
   - **即時清理**：編輯存檔成功後，被移除的照片由前端呼叫 `DELETE /listings/photos` 清掉；刪除刊登一律走
     `DELETE /listings/:id`，由後端刪列並清掉該刊登的照片（`listings` 的 RLS 不開放直刪）。兩者都只刪刊登者
     自己的檔，**本人刊登仍引用的檔不刪**，他人刊登引用你的 URL 不擋清理；引用檢查失敗時一檔不刪（fail-closed）。
     清理失敗不影響存檔或刪除本身，殘檔由排程清理兜底。
-  - **排程清理**：每日一次呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）。孤兒＝上傳
+  - **排程清理**：每日一次由 pg_cron 在 UTC 19:17（台北 03:17）呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）；26 小時沒有完成時，GitHub 看門狗補跑並推 LINE。孤兒＝上傳
     超過寬限期 168 小時（7 日，`ORPHAN_GRACE_HOURS`）、且檔案前綴本人的刊登沒有引用的檔，涵蓋帳號
     刪除（`profiles` cascade 刪 `listings`）、離頁、逾時重試、並發等所有來源。最長下架延遲＝
     寬限期＋1 輪；單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`），回應的 `orphanTotal` 是截斷前的總數。終止的範圍是帳號
@@ -713,8 +713,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
     - 寬限期以上傳時間起算：上傳後超過 7 日才存檔的照片，存檔前可能已被清掉，刊登會破圖（不做存檔前檢查的代價）。
     - 檔案前綴是上傳者的 uid；日後若做「管理者代他人上傳或改刊登」，代傳的檔前綴是管理者 uid，寬限期後會被清掉，
       屆時要改成以刊登者 uid 上傳。
-  - **安全閘**：預設 dry-run。正式站不論排程或 `workflow_dispatch`，都要 repo variable `PHOTO_PURGE_LIVE` 為 `true`
-    才實刪；dispatch 帶 `dry_run=false` 而開關未開時，會強制改為 dry-run 並在 step summary 警告。develop 的 dispatch
+  - **安全閘**：預設 dry-run。pg_cron 觸發的排程只看正式站 Edge secret `PHOTO_PURGE_LIVE`，為 `true` 才實刪（develop 不設，只列候選）；GitHub 補跑與 `workflow_dispatch` 看 repo variable `PHOTO_PURGE_LIVE`，正式站要為 `true` 才實刪；dispatch 帶 `dry_run=false` 而開關未開時，會強制改為 dry-run 並在 step summary 警告。develop 的 dispatch
     照輸入。開關未開時只列候選、不刪任何檔，三十日下架也就不成立。開啟前由業主以下方「查看候選清單」核對（抽查幾個 path，確認對應帳號已刪或刊登已改）。
     斷路器中止時一檔不刪，回應的 `reason` 標明是哪一道：錨點失效（`anchor`，有照片 URL 的刊登者中，對得到物件的
     不到一半）不可放行；比例閘（`ratio`，孤兒超過 bucket 物件數一半，不分 bucket 大小，develop 因此常需放行）可用
@@ -732,7 +731,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
     被比例閘擋下時，body 加 `"force_ratio": true` 才看得到清單；一次最多列最早的 500 個。
   - **終止／刪除請求 SOP**（條款六「隨時通知終止」、條款十二「請求刪除視同終止」）：期限自**業主收件日**起算。
     人工期限＝三十日－寬限期（7 日）－1 輪（1 日）－2 日緩衝＝**20 日**；寬限期改了，這個期限要跟著重算。
-    - 收件時先確認 `PHOTO_PURGE_LIVE` 為 `true`；沒開的話刪了刊登照片也不會消失，先處理開關。
+    - 收件時先確認正式站 Edge secret 與 repo variable 的 `PHOTO_PURGE_LIVE` 都為 `true`；沒開的話刪了刊登照片也不會消失，先處理開關。
     - 已付款會員：收件後 20 日內在 Supabase Dashboard SQL Editor 執行
       `delete from public.listings where user_id = '<uid>' returning id;`（回傳列可對照留痕），照片由排程清除。不停權：會員仍可登入、領取與提領
       獎勵，停權只用於違規處置；金流與推薦紀錄依條款十二保存。會員日後自行重新刊登，視為新的同意。
@@ -820,7 +819,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 | **會員管理** | `MemberManagement` | 會員列表（全站統計／搜尋；列上顯示**推薦碼**〔目前 active 碼，無則「—」〕與**推薦計畫**〔`referral_program_joined`：已加入／未加入〕；**列上唯一動作是「查看」**）、會員詳情（`MemberDetailSheet`：固定身分卡＝姓名＋狀態徽章＋會籍到期，下接帳號／點數／近期提領／推薦關係（推薦人、推薦碼、推薦計畫、直接推薦）／敏感資料分區，身分證與銀行帳號遮罩）＋面板底部的「管理」區：**停權/解除停權**（§5.2）與**管理員授予／撤銷**都只在這裡，共用同一條路徑，除「恢復」外一律走確認框；次分頁「證件審核」＝身分證照片的通過／退回流程 |
 | **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
 | **系統公告** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
-| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）；error 級另由對帳排程推 LINE，severity 準則見 `supabase/README.md` |
+| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）；error 級另由 GitHub 看門狗（`reconcile-payments.yml`，每小時）推 LINE，severity 準則見 `supabase/README.md` |
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
 

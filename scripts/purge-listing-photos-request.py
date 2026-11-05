@@ -18,6 +18,9 @@ framework-check 每次 CI 跑。
   B4 正式站的 dispatch 要求實刪(`dry_run=false`)時,`PHOTO_PURGE_LIVE` 也必須是
      `'true'`;否則強制送 `dry_run: true`,並印一行警告說明原因(W3-8)。develop 的
      dispatch 照輸入走;`force_ratio` 不受影響。
+  B5 排程觸發(現為看門狗補跑)多送 `trigger: "github"`,端點據此落帳;dispatch 不送
+     (端點記成 manual)。端點只在 `trigger: "pg_cron"` 時改看 Edge 的 PHOTO_PURGE_LIVE,
+     所以 github／manual 路徑的 B1～B4 語意不變。
   B3 workflow 永遠不送 `include_names`——repo 是 public,回應裡不能有含
      會員 uid 的 name。
 
@@ -29,6 +32,8 @@ framework-check 每次 CI 跑。
   J3 `notRemoved > 0` → 失敗(端點照常回 200,但有物件刪不掉、每輪霸佔額度)。
   J4 輸出只放 HTTP 狀態、`error.code`、斷路器 `reason`(anchor／ratio)與統計數字。**絕不印 `message`、
      `names` 或原始回應**:Storage 錯誤字串可能含 uid,Actions log 公開。
+  J5 200 且 `data.skipped == "concurrent"`(租約被另一輪拿著:pg_cron 或另一次 dispatch 正在跑)
+     → 中性通過,不判 bad_shape、不開 issue。判斷放在形狀檢查之前,因為 skipped 回應沒有統計欄位。
 
 決策邏輯放在純函式裡,好讓表格案例直接驗行為(同 check-migration-versions.py
 等的慣例)。不 import 第三方套件——framework-check 的契約是免依賴安裝。
@@ -66,7 +71,8 @@ def build_body(event: str, live: str, dry_input: str, force_input: str, target: 
     if event == "workflow_dispatch":
         dry = dry_input != "false" or _dispatch_live_blocked(event, live, dry_input, target)
         return {"dry_run": dry, "force_ratio": force_input == "true"}
-    return {"dry_run": live != "true", "force_ratio": False}
+    # 排程觸發＝看門狗補跑：帶 trigger github，帳本才分得出 pg_cron 與 GitHub 補跑（B5）。
+    return {"dry_run": live != "true", "force_ratio": False, "trigger": "github"}
 
 
 def body_warning(event: str, live: str, dry_input: str, target: str) -> str | None:
@@ -90,7 +96,7 @@ def _stats_line(data: dict) -> str:
 
 
 def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> Verdict:
-    """J1–J4。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
+    """J1–J5。lines 只含狀態、code、統計數字;原始回應一律不輸出。"""
     # curl 失敗時 -w 已印 000,呼叫端若再補一次會變兩行;只取最後一個三位數。
     codes = re.findall(r"\d{3}", status)
     status = codes[-1] if codes else "000"
@@ -116,6 +122,9 @@ def judge(status: str, body_text: str, live: str, sent_dry_run: bool = True) -> 
             stats += f" reason={reason}"
         return Verdict(False, code, [f"::error::清理失敗（HTTP {status}，code={code}，{stats}）"], stats)
     data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+    # J5 必須在 bad_shape 之前：skipped 回應本來就沒有 dryRun 與統計欄位。
+    if isinstance(data, dict) and data.get("skipped") == "concurrent":
+        return Verdict(True, "skipped", ["::notice::另一輪清理正在執行（skipped:concurrent），本輪不重複執行。"])
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("dryRun"), bool)
@@ -172,13 +181,13 @@ UID = "11111111-2222-3333-4444-555555555555"
 
 # (說明, (event, live, dry_input, force_input[, target]), 預期 body)
 BODY_CASES: list[tuple[str, tuple, dict]] = [
-    ("排程、LIVE 未設 → dry-run", ("schedule", "", "", ""), {"dry_run": True, "force_ratio": False}),
-    ("排程、LIVE=true → 實刪", ("schedule", "true", "", ""), {"dry_run": False, "force_ratio": False}),
-    ("排程、LIVE=TRUE（大小寫不同）→ dry-run", ("schedule", "TRUE", "", ""), {"dry_run": True, "force_ratio": False}),
+    ("排程、LIVE 未設 → dry-run", ("schedule", "", "", ""), {"dry_run": True, "force_ratio": False, "trigger": "github"}),
+    ("排程、LIVE=true → 實刪", ("schedule", "true", "", ""), {"dry_run": False, "force_ratio": False, "trigger": "github"}),
+    ("排程、LIVE=TRUE（大小寫不同）→ dry-run", ("schedule", "TRUE", "", ""), {"dry_run": True, "force_ratio": False, "trigger": "github"}),
     (
         "排程不吃 dispatch 輸入（即使殘留 false／true）",
         ("schedule", "", "false", "true"),
-        {"dry_run": True, "force_ratio": False},
+        {"dry_run": True, "force_ratio": False, "trigger": "github"},
     ),
     (
         "dispatch dry_run=true → dry-run（LIVE=true 也不影響）",
@@ -273,6 +282,18 @@ JUDGE_CASES: list[tuple[str, tuple, bool, str]] = [
     ("500 sweep_failed → 失敗並帶 code", ("500", _fail_body("sweep_failed"), "true"), False, "sweep_failed"),
     ("000 連線失敗 → 失敗", ("000", "", ""), False, "http_000"),
     ("502 非 JSON → 失敗", ("502", "Bad Gateway", ""), False, "http_502"),
+    (
+        "200 skipped:concurrent（另一輪正在跑）→ 中性通過，不判 bad_shape（J5）",
+        ("200", '{"success": true, "data": {"skipped": "concurrent"}}', "true"),
+        True,
+        "skipped",
+    ),
+    (
+        "200 skipped:concurrent 且本輪要求實刪 → 仍中性通過（J5）",
+        ("200", '{"success": true, "data": {"skipped": "concurrent"}}', "", False),
+        True,
+        "skipped",
+    ),
 ]
 
 

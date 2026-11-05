@@ -452,6 +452,15 @@ function harness(over: Partial<ListingPhotoHandlerDeps> = {}) {
     verifyInternalSecret: () => Promise.resolve(true),
     sweep: sweepHarness().deps,
     warn: (m) => log.warns.push(m),
+    // 排程帳本：預設永遠拿到租約、什麼都不記（舊案例不關心帳本）。
+    scheduledRun: {
+      begin: () => Promise.resolve({ id: 1, acquired: true }),
+      finish: () => Promise.resolve(true),
+      logError: () => {},
+    },
+    env: () => undefined,
+    alertOnce: () => Promise.resolve(),
+    now: () => new Date('2026-11-20T19:17:05Z'),
     ...over,
   };
   const h = createListingPhotoHandlers(deps);
@@ -776,4 +785,137 @@ Deno.test('ORPHAN_GRACE_HOURS 與 migration 刪前複查寫死的寬限期一致
   );
   const hours = [...sql.matchAll(/interval '(\d+) hours'/g)].map((m) => Number(m[1]));
   assertEquals(hours, [ORPHAN_GRACE_HOURS]);
+});
+
+// ---------- 階段 5（pg-cron-schedulers）：pg_cron 觸發的分流、帳本與告警 ----------
+// trigger 分流（plan §2.3）：
+//   pg_cron → 只看 Edge secret PHOTO_PURGE_LIVE，body 的 dry_run／force_ratio 一律忽略
+//   github  → 照現行：body dry_run === false 才實刪（B1／B4 由 workflow 組 body）
+//   其他    → 同 github，帳本記 manual
+type FinishCall = { status: string; summary: Record<string, unknown>; errorCode: string | null };
+type AlertCall = { dedupe: Record<string, string>; severity: string; message: string };
+
+function scheduledHarness(
+  opts: {
+    live?: string;
+    acquired?: boolean;
+    rep?: OrphanReport;
+    sweepOver?: Partial<OrphanSweepDeps>;
+  } = {},
+) {
+  const finishes: FinishCall[] = [];
+  const begins: string[] = [];
+  const alerts: AlertCall[] = [];
+  const { app, log } = purgeHarness(opts.sweepOver ?? {}, opts.rep ?? report(), {
+    scheduledRun: {
+      begin: (_job, trigger) => {
+        begins.push(trigger);
+        return Promise.resolve({ id: 7, acquired: opts.acquired ?? true });
+      },
+      finish: (_id, status, summary, errorCode) => {
+        finishes.push({ status, summary, errorCode });
+        return Promise.resolve(true);
+      },
+      logError: () => {},
+    },
+    env: (k) => (k === 'PHOTO_PURGE_LIVE' ? opts.live : undefined),
+    alertOnce: (_source, dedupe, _ctx, message, severity) => {
+      alerts.push({ dedupe, severity, message });
+      return Promise.resolve();
+    },
+  });
+  return { app, log, finishes, begins, alerts };
+}
+
+Deno.test('purge（pg_cron）：PHOTO_PURGE_LIVE 未設 → dry-run，body 帶 dry_run:false 也不刪', async () => {
+  const { app, log, begins } = scheduledHarness();
+  const res = await purge(app, { trigger: 'pg_cron', dry_run: false });
+  assertEquals(res.status, 200);
+  assertEquals((await res.json()).data.dryRun, true);
+  assertEquals(log.remove, []);
+  assertEquals(begins, ['pg_cron']);
+});
+
+Deno.test('purge（pg_cron）：PHOTO_PURGE_LIVE=true → 實刪，body 帶 dry_run:true 也照刪', async () => {
+  const rep = report();
+  const { app, log } = scheduledHarness({ live: 'true', rep });
+  const res = await purge(app, { trigger: 'pg_cron', dry_run: true });
+  assertEquals((await res.json()).data.dryRun, false);
+  assertEquals(log.remove, [rep.candidates]);
+});
+
+Deno.test('purge（pg_cron）：body 的 force_ratio 一律忽略，比例閘照擋', async () => {
+  const rep = report({ candidates: orphanNames(80), totalObjects: 100 });
+  const { app, log } = scheduledHarness({ live: 'true', rep });
+  const res = await purge(app, { trigger: 'pg_cron', force_ratio: true });
+  assertEquals(res.status, 500);
+  assertEquals((await res.json()).error.code, 'circuit_open');
+  assertEquals(log.remove, []);
+});
+
+Deno.test('purge（github／manual）：不看 PHOTO_PURGE_LIVE，照 body 的 dry_run', async () => {
+  const dry = scheduledHarness({ live: 'true' });
+  const r1 = await purge(dry.app, { trigger: 'github', dry_run: true });
+  assertEquals((await r1.json()).data.dryRun, true);
+  assertEquals(dry.log.remove, []);
+
+  const live = scheduledHarness();
+  const r2 = await purge(live.app, { trigger: 'github', dry_run: false });
+  assertEquals((await r2.json()).data.dryRun, false);
+  assertEquals(live.begins, ['github']);
+
+  const manual = scheduledHarness();
+  await (await purge(manual.app, { dry_run: false })).body?.cancel();
+  assertEquals(manual.begins, ['manual']);
+});
+
+Deno.test('purge：成功 → 帳本 succeeded，summary 有統計與 dryRun、不含 names', async () => {
+  const { app, finishes } = scheduledHarness({ live: 'true' });
+  await (await purge(app, { trigger: 'pg_cron', include_names: true })).body?.cancel();
+  assertEquals(finishes.length, 1);
+  assertEquals(finishes[0].status, 'succeeded');
+  assertEquals(finishes[0].errorCode, null);
+  assertEquals(finishes[0].summary.dryRun, false);
+  assertEquals(finishes[0].summary.removed, 3);
+  assertEquals('names' in finishes[0].summary, false);
+});
+
+Deno.test('purge：沒拿到租約 → 200 skipped:concurrent，不查候選', async () => {
+  const { app, log, finishes } = scheduledHarness({ acquired: false });
+  const res = await purge(app, { trigger: 'pg_cron' });
+  assertEquals(res.status, 200);
+  assertEquals(await res.json(), { success: true, data: { skipped: 'concurrent' } });
+  assertEquals(log.list, []);
+  assertEquals(finishes, []);
+});
+
+Deno.test('purge（pg_cron）：斷路器中止 → 帳本 failed／circuit_open，一筆日期桶 error', async () => {
+  const rep = report({ candidates: orphanNames(80), totalObjects: 100 });
+  const { app, finishes, alerts } = scheduledHarness({ live: 'true', rep });
+  await (await purge(app, { trigger: 'pg_cron' })).body?.cancel();
+  assertEquals(finishes.map((f) => [f.status, f.errorCode]), [['failed', 'circuit_open']]);
+  assertEquals(alerts.length, 1);
+  assertEquals(alerts[0].severity, 'error');
+  assertEquals(alerts[0].dedupe, { reason: 'circuit_open', day: '2026-11-20' });
+  assert(alerts[0].message.startsWith('【照片清理】'), alerts[0].message);
+});
+
+Deno.test('purge（github）：斷路器中止 → 帳本 failed，但不寫告警（由 workflow 開 issue）', async () => {
+  const rep = report({ candidates: orphanNames(80), totalObjects: 100 });
+  const { app, finishes, alerts } = scheduledHarness({ rep });
+  await (await purge(app, { trigger: 'github', dry_run: false })).body?.cancel();
+  assertEquals(finishes.map((f) => f.status), ['failed']);
+  assertEquals(alerts, []);
+});
+
+Deno.test('purge（pg_cron）：notRemoved > 0 → 帳本 succeeded，一筆 warning', async () => {
+  const rep = report();
+  const { app, finishes, alerts } = scheduledHarness({
+    live: 'true',
+    rep,
+    sweepOver: { removeObjects: (paths) => Promise.resolve(paths.slice(1)) },
+  });
+  await (await purge(app, { trigger: 'pg_cron' })).body?.cancel();
+  assertEquals(finishes.map((f) => f.status), ['succeeded']);
+  assertEquals(alerts.map((a) => [a.dedupe.reason, a.severity]), [['not_removed', 'warning']]);
 });
