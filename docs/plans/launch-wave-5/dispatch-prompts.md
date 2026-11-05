@@ -24,6 +24,7 @@
 - **裁決編號只由主 session 發**：你拿到的授權記成「業主 YYYY-MM-DD HH:MM 互動選項：原話」，不要自編 W5-x。**紅綠燈 hash 以 PR 內文為準**：rebase 後更新 PR 內文的表。
 - 不寫模型名進 commit／PR。行號一律現算。完成或卡住時用 Claude Code Remote 的 send_message 回報主 session（PR 號、紅燈 hash、偏離、未驗項、需要業主做的事）；需要裁決問主 session，不要停在 AskUserQuestion 等人。
 - 雲端 worker 會重啟：重啟後先讀 notifications，再看 git status 與 PR 狀態，不憑記憶。
+- 用語（W5-53）：寫給業主看的回報與使用者看得到的文案，不用「下線／上線／傳銷商／直銷」，一律「推薦人／您推薦的會員／一代二代三代」。
 - 新的 docs/plans/<slug>/ 若要隨 PR 先合併，開 PR 前就加 plans-keep 註解；/tdd-implement 收尾會刪規劃檔。
 - 每則 GitHub 留言結尾加：
 
@@ -120,6 +121,21 @@
 3. 業主會在本 session 親打 `/tdd-implement listing-swipe-nav`。
 4. 測試：vitest（純函式：鄰篇計算、手勢判定）＋元件測試（jsdom 模擬 touch／pointer）＋e2e mocked Gherkin（首頁篩選 → 進詳情 → 換篇 → 返回回原位置；英文場景名照 .claude/rules/test-naming.md）。
 5. 收尾照 /tdd-implement：刪規劃檔、規格書 §3 與 ui-ux-guidelines 同步、check-spec-drift.py；PR 內文附手機與桌機的操作說明。
+```
+
+## S8. 用語機械把關（Sonnet，`/fix-bug`，`fix/terminology-guard`）
+
+```text
+工項 S8（plan.md §2，裁決 W5-53）。本波必上，小 PR。
+背景：業主 2026-10-23 裁決「使用者看得到的文案一律『推薦人』，不出現傳銷商／直銷／下線」（docs/plans/platform-growth-and-trust/plan.md 搜「用語稽核」），只有刊登方案頁（listingPlans.test.ts）與邀請文案（supabase/functions/_shared/recruitment-copy.ts 的 RECRUITMENT_FORBIDDEN_WORDS）有測試把關。業主 2026-11-05 重申不得出現「下線」，要求加機械把關。
+要的結果：一道會讓 CI 紅的檢查——前端**使用者看得到的字串**（JSX 文字、字串字面值、toast／錯誤訊息、src/content 內容頁）出現「下線」「上線」「傳銷商」「直銷」即失敗。
+範圍與例外：
+- 律師定案四份內容頁（服務條款、參加契約、事業手冊、推廣獎勵規章；src/content/ 下對應檔）維持原文，列白名單並在檢查檔頭寫明出處（10-23 裁決）。
+- 程式註解、規格書、內部文件、測試檔、已套用 migration 不在範圍（規格書 §7 術語對照）。
+- 服務類別「傳銷」是職業類別名（10-23 裁決保留）——禁用詞用「傳銷商」不用「傳銷」，避免誤殺；先掃描確認。
+做法建議（自行比較後在 PR 寫取捨）：用 TypeScript compiler API 或 @babel/parser 解析 src/**/*.{ts,tsx}，只取 StringLiteral／TemplateLiteral／JSXText，排除註解與 *.test.*；或沿用既有 scripts/ 的 python 檢查風格接進 framework-check。禁用詞清單單一來源，與 RECRUITMENT_FORBIDDEN_WORDS 的關係在 PR 說明（可共用或明列為何分開）。
+先跑一次掃描，現有命中處（若有、且不在白名單）同一 PR 改成「推薦人／您推薦的會員／一代二代三代」。S4（PostHog）、S7（換篇）也在改前端，衝突時誰後合誰 rebase。
+用語提醒：你寫給主 session 與業主的回報也不用「下線／上線」。
 ```
 
 ## S4. PostHog EU 監控＋錄影（Sonnet，三段式，`feature/posthog-monitoring`）——S1、S2 進實作後才開

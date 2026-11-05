@@ -38,7 +38,7 @@
 | W5-5 | W4-34① 停權者能否續費（pay P2-9＝auth P2-1） | **不允許，前後端都擋**：結帳頁顯示「帳號已停權，請聯絡客服」，prepare 回 403；規格書 §5.2 把「付款」列為凍結項（被推翻：允許付款、維持現行） |
 | W5-6 | W4-34② 網絡搜尋比對真名（ref P1-4） | **二、三代只比對遮罩後看得到的字元，並加限流**：一代照舊比對真名；`name_*` 排序二、三代改用遮罩名；每人加限流；`network-endpoints.test.ts` 刻意釘住的舊行為改成反向斷言（被推翻：只接受完整全名；維持比對真名） |
 | W5-7 | W4-34③ 新約二次確認（pay P2-10） | **改程式，無條件確認**：fresh 一律跳二次確認，確認框依資產列出後果，沒有資產時至少說明推薦人會變（被推翻：改規格成有資產才確認） |
-| W5-8 | W4-34④ 新約清空對推薦王 credit 與當月下線（ref P2-2／P2-3） | **保留已發的、門檻重算、名單不刪**：已發出的 credit（含未領）保留；fresh 後當月從 0 計門檻；當月桶只清計數，配對名單另存，守住 §9.2「R 從未出現在 U 歷史」（被推翻：維持現行並寫進規格；全部清空） |
+| W5-8 | W4-34④ 新約清空對推薦王 credit 與當月推薦的會員（ref P2-2／P2-3） | **保留已發的、門檻重算、名單不刪**：已發出的 credit（含未領）保留；fresh 後當月從 0 計門檻；當月桶只清計數，配對名單另存，守住 §9.2「R 從未出現在 U 歷史」（被推翻：維持現行並寫進規格；全部清空） |
 
 **裁決（AskUserQuestion，業主 2026-11-04 23:00 台北；S2、S1 規劃審查後的題目）**
 
@@ -94,6 +94,9 @@
 | W5-50 | S6 異常付款（Q3、D4） | 曾訂閱者的 null 單仍付款 → 照開通＋error 告警；永遠修不好的 SUCCESS pending 單造成永久 409 → 接受，擋下時寫 system_alert 交客服（業主 2026-11-05） |
 | W5-51 | S6 新約確認框（Q6、D2、D3） | 依 source 分句（default 寫「推薦人將改變」、keep 不寫推薦人句）；有資產紅實心、無資產墨黑流程鈕（業主 2026-11-05） |
 | W5-52 | S6 D1：#167 閘門 changed_at 修正放哪 | 留在 S6（與 0d 同處；正式站 q7＝3 筆、獎金皆已發，屬潛伏） |
+| W5-53 | 用語「下線」（業主重申，2026-11-05） | **維持 2026-10-23 裁決範圍＋加機械把關**：使用者看得到的文案（律師定案四份內容頁除外）一律「推薦人／您推薦的會員／一代二代三代」，不出現「下線／上線／傳銷商／直銷」；主 session 與各 session 給業主的回報同樣不用。新開 **S8** 加自動檢查讓 CI 擋下；規格書 §7 術語對照、程式註解、測試、已套用 migration 不改（被推翻：連內部文件一起改；律師文件也改） |
+| W5-54 | S6 E1：走本機快照進結帳頁、背景讀不到 /profile 時 | **首購者放行，後端兜底**（快照無 subscriptionEndDate 且 /profile 失敗 → 放行；後端回 RENEWAL_MODE_REQUIRED 走 R3 提示）（業主 2026-11-05） |
+| W5-55 | S6 E2：新約填的碼就是現任推薦人 | 確認框寫「您的推薦人維持 {姓名}」（業主 2026-11-05） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -131,6 +134,7 @@
 | S4 | **PostHog EU 監控＋錄影**（W4-35～37）：照 W4-37 的遮罩清單施工，敏感欄位 block 要有測試釘住；不改條款 | 三段式，`feature/posthog-monitoring` | Sonnet | `src/main.tsx` 或新 `src/utils/analytics.ts`、CSP（`public/_headers`）、敏感表單元件加 block 屬性、`package.json` | S1、S2 進實作後才開 |
 | S5 | **後端小修組**：ops P1-1＝ref P1-9 提領 CSV 銀行代號與帳號前導 0、15 位以上截斷（第一筆提領前必修）；W5-6 網絡搜尋二、三代只比對可見字元＋限流（ref P1-4） | `/fix-bug`，`fix/csv-and-network-search` | Sonnet | `src/utils/csv.ts`、`WithdrawalManagement.tsx`、`index.ts`（`/referrals/network/search`）、`network-endpoints.test.ts`、規格書 §7.2／§7.3 | 無 |
 | S7 | **刊登詳情頁左右滑換篇＋首頁遠近排序**（W5-20～22、W5-24～28）：區級距離、等定位＋動畫重排；在篩選後的清單內換上／下一篇；照片輪播到盡頭接續換篇；桌機箭頭鈕＋鍵盤；返回回列表原位置；顯示位置「n / N」 | 三段式，`feature/listing-swipe-nav` | Sonnet | `ServiceProviderDetail.tsx`、`listing/PhotoCarousel.tsx`、`HomePage.tsx`、`utils/homeListingsCache.ts`（篩選後清單與捲動位置的來源）、e2e 首頁／詳情 feature、`docs/ui-ux-guidelines.md` | 純前端，與 S1／S2 不撞；與 S4（PostHog）同碰頁面元件，S4 後開 |
+| S8 | **用語機械把關**（W5-53）：前端使用者看得到的字串（JSX 文字、字串常數、toast／錯誤訊息、內容頁）出現「下線／上線／傳銷商／直銷」即 CI 紅；律師定案四份內容頁列白名單；沿用 `RECRUITMENT_FORBIDDEN_WORDS` 的單一來源思路 | `/fix-bug`，`fix/terminology-guard` | Sonnet | 新測試或 `scripts/` 檢查、`src/` 命中處（若有）、`.claude/rules` 或 ui-ux §12.13 指標 | 與 S7、S4 同碰前端文案：先掃描、只改命中處 |
 | S6 | **續約路徑潛伏組**（期限 2027-10-27）：ref P0-1＝pay P0-1（fresh 棄單後改付 extend 仍換線／發獎）；ref P0-2（推薦成環）；pay P1-1＝auth P1-1（續費者走首購路徑，prepare 應拒已有訂閱者 `renewalMode=null`）；pay P1-4（續費者卡單被送回結帳頁）；W5-7 新約無條件二次確認；W5-8 新約清空語意 | 三段式，`feature/renewal-path-hardening`；**本波必交規劃＋審查**，實作有完成才上 | Opus | `index.ts`（prepare fresh／extend、`/profile` 卡單旗標）、migration（成環檢查、`reconcile_king_credits`、配對名單）、`PaymentCheckout.tsx`、規格書 §6.2／§9 | S2 合併後才開 |
 | R5 | 第 5 波審查（晉升後）；兼做 `launch-wave-4/` 退場（依 R4 §6；四份 audit 一併） | 審查 session；報告 `docs/plans/launch-wave-5/review.md` | Opus | — | — |
 
@@ -214,6 +218,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（ready） | 審查退回：P0 Logs 擴充、P1 3、P2 5 |
 | S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃修訂中（W5-49～52） |
+| S8 | — | Sonnet | `fix/terminology-guard` | — | 開工中 |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -245,3 +250,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 09:40 | #510 獨立審查：**P0 0、P1 0**（process_successful_payment 與基準版逐行比對、告警隔離、v_paid_at、鎖序、索引、停權、register、cancel-signup 退場皆核實）。P2：文件兩處與程式不符（P2-1 → **W5-47**、P2-2 撞索引語意只限三代獎勵）、P2-3 並行 repair 測試分不出鎖或索引 → 本 PR 修；P2-4 register 檢查順序 → 第 6 波 | S2 修 P2-1～3 → CI 綠 → 合 |
 | 11/05 09:50 | S2 修 #510 審查 P2-1～3（文件四處改「未送出草稿隨登出清除」、撞索引語意限三代獎勵、並行 repair 測試加 `repaired_count==0`），主 session 核實 delta、CI 全綠 → **#510 合進 develop（54ac83f）**。已通知 S1 rebase 並改 migration 號（W5-46）。照 W5-2 開 **S6**（Opus，規劃） | S1 修 #512；develop 部署後驗 #510 migration 已套 |
 | 11/05 14:00 | S1 修 #512（P1-1 client factory、P1-2 unknown 單不 expire、MerTradeNo、W5-45、可選 P2 也做、W5-46 改號 `20261112000001`；業主 13:25 於 S1 session 授權修 stub），主 session 核實 P1-2 守衛、CI 全綠 → **#512 合進 develop（3712737）**。develop 甲段交業主。S4 交 #511（CI 綠）→ 獨立 Opus 審查：**P0 posthog-js 預設載入 Logs 擴充，專案端開 console 擷取即繞過所有防線**、P1 3、P2 5 → 退回 S4；主 session 定 **W5-48**。S6 交規劃（P0 0、P1 16）；主 session 代跑正式站／develop 唯讀 SQL（環 0、自領 0、q7＝3／1 佐證閘門 bug、回填差集 0）；業主裁 **W5-49～51**，主 session 定 **W5-52** | 業主做 develop 甲段；S4 修 P0；S6 修 plan 重審；S7 等業主授權 |
+| 11/05 20:30 | 業主重申不得用「下線」；主 session 盤點 develop：使用者可見只剩律師定案的事業手冊（6）、參加契約（2），屬 10-23 裁決例外；內部 67 檔 197 行（規格書 §7 術語對照明定內部術語）；主 session 今日回覆與本檔 1 處違反 → 已更正。業主裁 **W5-53**（開 S8 機械把關）、**W5-54**、**W5-55**（S6 E1／E2）。S6 v2 主 session 親審：P1 3 收進 v3，只重審系統視角 | 開 S8；S6 v3 |
