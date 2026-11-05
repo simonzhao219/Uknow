@@ -84,6 +84,7 @@
 | W5-28 | S7 其餘規劃題 | 照 S7 建議：凍結脈絡存模組層；未換篇返回維持原 scrollY、換過篇才置中最後那張；無首頁脈絡不顯示換篇；輪播聚焦時 ←→ 換照片；審查 P0（換 :id 時元件狀態未重設）必處置 |
 | W5-30 | S7 Q5 座標資料授權、entry 預算 | 授權 S7 在階段 2 開頭於有網路處確認國土測繪中心資料來源與授權，不成立就停下；entry gzip 預算准於階段 2 實測後上調，上限比現行多 3 kB，超過就停下回報 |
 | W5-40 | S7 座標資料：TGOS（www.tgos.tw）整站維護中，zip 下載不到 | 先做不依賴座標表的階段（輪播邊界換篇、按鈕、鍵盤、焦點等），TGOS 恢復後補階段 2；到 11/08（台北）仍下載不到再與業主討論備案；不改用其他來源 |
+| W5-43 | S7 entry raw 預算（#509 build-bundle 紅：raw 1000.2 > 1000 kB） | raw 1000→1010 kB（與 gzip +3 kB 同比例）；S7 硬上限 gzip 315／raw 1010；S4 另有 gzip +1.0／raw 約 +3.2 kB，後合者在 PR 寫合計 |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -224,3 +225,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 08:00 | 業主已在 S4 親打 `/tdd-implement`、放行 `www.tgos.tw` 並告知 S7（主 session 實測 200）。S1、S2、S4、S7 四項都在實作 | 等各 session 回報 PR |
 | 11/05 08:30 | S7：tgos 白名單通，但 TGOS 整站維護中，資料 zip 404。主 session 定 **W5-40**：先做不依賴座標表的階段 | 11/08 前 TGOS 未恢復再議 |
 | 11/05 08:35 | S1：官方碼表取得（docs.payuni.com.tw 單筆交易查詢 Ver 2.0），業主在 S1 session 裁 **W5-41**、**W5-42**；階段 0～9 全綠，收尾後開 PR | 審 S1 PR |
+| 11/05 08:45 | S7 階段 4、5 綠並推上；階段 6 有 1 條紅燈是測試夾具錯（重驗回三張照片），需業主在 S7 session 親口授權改一行（tdd 逃生口 2）。#509 build-bundle 紅（entry raw 超 1000 kB）→ 主 session 定 **W5-43** | 業主到 S7 session 授權 |
