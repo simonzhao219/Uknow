@@ -2846,7 +2846,13 @@ export async function reconcilePendingOrders(
             'error',
           );
         }
-        if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
+        // 標過 unknown 的單（W5-41／W5-44）只有查到可判讀的結果（上面已清回 null）才可能
+        // 走到 expire；這輪只是查詢層失敗時標記仍在，永不自動標 expired（審查 P1-2）。
+        const stillFlagged = Boolean(order.reconcile_unknown_at) && Boolean(failure);
+        if (
+          !stillFlagged && order.created_at &&
+          new Date(order.created_at).getTime() < expireCutoffMs
+        ) {
           // 查詢層失敗下標的是「沒驗證過」的終態，可能是實付但 webhook 漏接
           // 的單 → 標之前先告警（轉移條件不變）。查詢成功且確認未付款是常態
           // 的棄付收尾，不告警：status='expired' 本身就是可查紀錄，每張留一
