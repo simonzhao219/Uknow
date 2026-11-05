@@ -91,12 +91,16 @@ export async function withScheduledRun(
   return outcome.response;
 }
 
-/** 以 service_role client 呼叫 begin／finish_scheduled_run（migration 20261111000001）。 */
+/**
+ * 以 service_role client 呼叫 begin／finish_scheduled_run（migration 20261111000001）。
+ * 傳 factory 而不是 client：index.ts 在模組頂層組 deps，那時建 client 會讓沒有
+ * SUPABASE_URL 的單元測試在 import 時就炸掉。
+ */
 // deno-lint-ignore no-explicit-any
-export function scheduledRunDeps(client: any): ScheduledRunDeps {
+export function scheduledRunDeps(getClient: () => any): ScheduledRunDeps {
   return {
     begin: async (job, trigger) => {
-      const { data, error } = await client.rpc('begin_scheduled_run', {
+      const { data, error } = await getClient().rpc('begin_scheduled_run', {
         p_job: job,
         p_trigger: trigger,
       });
@@ -104,7 +108,7 @@ export function scheduledRunDeps(client: any): ScheduledRunDeps {
       return data as { id: number; acquired: boolean };
     },
     finish: async (id, status, summary, errorCode) => {
-      const { data, error } = await client.rpc('finish_scheduled_run', {
+      const { data, error } = await getClient().rpc('finish_scheduled_run', {
         p_id: id,
         p_status: status,
         p_summary: summary,

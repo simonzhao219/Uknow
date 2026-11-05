@@ -3042,7 +3042,7 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
   const body = await c.req.json().catch(() => null);
   try {
     const response = await runScheduledReconcile(
-      scheduledRunDeps(sb()),
+      scheduledRunDeps(sb),
       parseScheduledTrigger(body),
       {
         heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
@@ -4743,7 +4743,7 @@ export function listingPhotoDeps() {
       warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
     },
     warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
-    scheduledRun: scheduledRunDeps(sb()),
+    scheduledRun: scheduledRunDeps(sb),
     env: (key: string) => Deno.env.get(key),
     alertOnce: logSystemAlertOnce,
     now: () => new Date(),

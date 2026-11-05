@@ -179,7 +179,7 @@ function fakeHandlerDeps(
 
 Deno.test('對帳端點：兩個請求並行 → 只有一個真的對帳，另一個回 skipped:concurrent', async () => {
   await resetLedger();
-  const run = scheduledRunDeps(adminClient());
+  const run = scheduledRunDeps(adminClient);
   const [a, b] = await Promise.all([
     runScheduledReconcile(run, 'pg_cron', fakeHandlerDeps({ checked: 1 }, { delayMs: 400 })),
     new Promise((r) => setTimeout(r, 100)).then(() =>
@@ -200,7 +200,7 @@ Deno.test('對帳端點：兩個請求並行 → 只有一個真的對帳，另�
 Deno.test('對帳端點：全滅 502 → 帳本 failed／query_all_failed，summary 落帳', async () => {
   await resetLedger();
   const res = await runScheduledReconcile(
-    scheduledRunDeps(adminClient()),
+    scheduledRunDeps(adminClient),
     'pg_cron',
     fakeHandlerDeps({ checked: 2, queryErrors: 2 }),
   );
@@ -216,7 +216,7 @@ Deno.test('對帳端點：對帳迴圈擲錯 → 帳本 failed／exception，錯
   await resetLedger();
   await assertRejects(() =>
     runScheduledReconcile(
-      scheduledRunDeps(adminClient()),
+      scheduledRunDeps(adminClient),
       'manual',
       fakeHandlerDeps({}, { throws: true }),
     )
