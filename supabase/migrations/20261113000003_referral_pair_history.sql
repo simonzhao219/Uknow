@@ -22,6 +22,9 @@
 --   4. apply_referral_side_effects：基準 = 20261113000002，唯一差異 = 3d 的 pair 判準改為
 --      「插入 referral_pair_history 成功」。月桶仍是計數與「本月推薦詳情」清單的來源。
 --   5. reconcile_king_credits：基準 = 20260724000003，唯一差異 = 目標張數加上 king_round_base。
+--   6. complete_paid_pending_orders：基準 = 20260716000007，唯一差異 = 批次內 0a′ 換線鎖改 try，
+--      拿不到記為跳過（W5-61；與現有 skip locked 一致，下一輪補）。process_successful_payment
+--      的 0a′ 依交易層旗標分流：線上單筆付款仍等鎖。
 --   鎖：3-0 新增 task_progress(本人) for update，在已持有的 profiles(本人) 之後；他人付款
 --      對 task_progress(本人) 的鎖（reconcile）一定在其對 profiles(本人) 取 KEY SHARE 之後，
 --      而那一步會先被本交易的 profiles 鎖擋住 → 不成環。
@@ -165,9 +168,19 @@ begin
   --     收獎者若同時付 fresh（已持自己的 profiles、正在等這把鎖）就互等。放在這裡，
   --     等鎖的一方手上只有自己的訂單列鎖（沒有別人會等它）。不在 0d 的子交易內：
   --     錯誤不被局部吞掉，由最外層改寫後整筆回滾、notify／對帳重試。
+  --     W5-61：批次自癒（complete_paid_pending_orders 單一交易跑多筆）時改用 try——前幾筆的
+  --     profiles 列鎖留到整個批次結束，在這裡等鎖會與持鎖的線上付款（發獎要 KEY SHARE 該
+  --     profiles）成環。拿不到就以 SQLSTATE U6R01 退出，批次把該筆記為跳過、下一輪再補。
   if v_renewal_mode = 'fresh'
      and exists (select 1 from public.subscriptions where user_id = p_user_id) then
-    perform pg_advisory_xact_lock(hashtext('referral_rewire'));
+    if coalesce(current_setting('uknow.rewire_try_lock', true), '') = 'on' then
+      if not pg_try_advisory_xact_lock(hashtext('referral_rewire')) then
+        raise exception '換線鎖忙碌，批次自癒跳過（trade_no=%）', p_trade_no
+          using errcode = 'U6R01';
+      end if;
+    else
+      perform pg_advisory_xact_lock(hashtext('referral_rewire'));
+    end if;
   end if;
 
   -- 0b. user 層級鎖：序列化「同一使用者」的所有付款完成流程。上面的訂單
@@ -452,8 +465,11 @@ begin
     'referral_code_id', v_side_effects ->> 'referral_code_id'
   );
 
-exception when others then
-  raise exception 'process_successful_payment 失敗: %', sqlerrm;
+exception
+  when sqlstate 'U6R01' then
+    raise;  -- W5-61：保留 SQLSTATE，批次自癒據此判定「跳過」而非失敗。
+  when others then
+    raise exception 'process_successful_payment 失敗: %', sqlerrm;
 end;
 $$;
 
@@ -675,3 +691,137 @@ $$;
 
 revoke execute on function public.reconcile_king_credits(uuid, text, int)
   from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 7. complete_paid_pending_orders（基準 20260716000007，W5-61）
+--    唯一差異：開頭設交易層旗標 uknow.rewire_try_lock，讓 0a′ 改用 try 取換線鎖；
+--    SQLSTATE U6R01（換線鎖忙碌）記為 skipped_locked、不寫告警，結束前清旗標。
+-- ------------------------------------------------------------
+create or replace function public.complete_paid_pending_orders(
+  p_user_id uuid default null,  -- 限定單一使用者（即時自癒）；null = 全量（排程對帳）
+  p_limit   int  default 50
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_candidate_id uuid;
+  v_row          record;
+  v_trade_amt    numeric;
+  v_completed    uuid[] := '{}';
+  v_failed       jsonb  := '[]'::jsonb;
+  v_found        int := 0;
+  v_mismatch     int := 0;
+  v_skipped      int := 0;
+begin
+  -- W5-61：本交易內的付款完成改用 try 取換線鎖（見 process_successful_payment 0a′）。
+  perform set_config('uknow.rewire_try_lock', 'on', true);
+  -- 先掃出候選（不上鎖）。固定依 created_at 排序，讓「單人自癒」與
+  -- 「全量對帳」的鎖取得順序一致，避免互相死鎖。
+  for v_candidate_id in
+    select id
+    from public.payment_orders
+    where status = 'pending'
+      and payuni_response->>'Status' = 'SUCCESS'
+      and (p_user_id is null or user_id = p_user_id)
+    order by created_at
+    limit p_limit
+  loop
+    v_found := v_found + 1;
+    begin
+      -- 拿鎖後重讀重驗謂詞（TOCTOU 防禦）：
+      --   * 幾乎同時到達的 notify webhook / 另一次自癒已把它處理完
+      --     → 重讀時謂詞不成立，跳過；
+      --   * 對方還握著鎖在處理 → skip locked 直接跳過（工作已有人做）。
+      -- 失敗回應（Status != 'SUCCESS'）永遠過不了這個謂詞，
+      -- 不可能被誤補成 completed。
+      select id, user_id, transaction_id, payuni_response
+        into v_row
+      from public.payment_orders
+      where id = v_candidate_id
+        and status = 'pending'
+        and payuni_response->>'Status' = 'SUCCESS'
+      for update skip locked;
+
+      if v_row.id is null then
+        v_skipped := v_skipped + 1;
+        continue;
+      end if;
+
+      -- 金額重驗（鏡射 resolveOrderFromPayUni 的 TS 語意：TradeAmt 存在
+      -- 且 != 1200 才算不符；缺欄位時寬容）。必須重驗：edge function 在
+      -- 金額不符時也會把原始回應存進 payuni_response，不能因此補完訂單。
+      v_trade_amt := null;
+      begin
+        if coalesce(v_row.payuni_response->>'TradeAmt', '') <> '' then
+          v_trade_amt := (v_row.payuni_response->>'TradeAmt')::numeric;
+        end if;
+      exception when others then
+        v_trade_amt := -1;  -- 無法解析一律視同金額不符
+      end;
+
+      if v_trade_amt is not null and v_trade_amt <> 1200 then
+        -- 金額不符：錢可能已刷，絕不自動補完、也絕不自動標失敗——
+        -- 維持 pending 交人工裁決。告警去重：同一筆訂單已有未解決的
+        -- 告警就不重寫，避免使用者每次載入 profile 都洗一筆。
+        v_mismatch := v_mismatch + 1;
+        if not exists (
+          select 1 from public.system_alerts
+          where source = 'complete_paid_pending_orders'
+            and resolved_at is null
+            and context->>'order_id' = v_row.id::text
+        ) then
+          perform public.log_system_alert(
+            'complete_paid_pending_orders', 'error',
+            'PayUni 回應金額與方案價不符，訂單維持 pending 待人工裁決',
+            jsonb_build_object(
+              'order_id',  v_row.id,
+              'trade_no',  v_row.transaction_id,
+              'user_id',   v_row.user_id,
+              'trade_amt', v_row.payuni_response->>'TradeAmt'
+            )
+          );
+        end if;
+        continue;
+      end if;
+
+      -- 委派給既有的付款處理函數（同一交易內重複上鎖是 no-op）。
+      -- TradeNo 空值時退回 MerTradeNo，與 resolveOrderFromPayUni 一致。
+      perform public.process_successful_payment(
+        v_row.user_id,
+        v_row.transaction_id,
+        coalesce(nullif(v_row.payuni_response->>'TradeNo', ''), v_row.transaction_id),
+        v_row.payuni_response
+      );
+
+      v_completed := array_append(v_completed, v_row.id);
+
+    exception
+      when sqlstate 'U6R01' then
+        -- W5-61：換線鎖被線上付款持有 → 跳過，下一輪排程（或下次自癒）再補；不是錯誤。
+        v_skipped := v_skipped + 1;
+      when others then
+      -- 單筆失敗不影響其他候選（與 repair_orphaned_payments 相同策略）。
+      v_failed := v_failed || jsonb_build_object('order_id', v_candidate_id, 'error', sqlerrm);
+      perform public.log_system_alert('complete_paid_pending_orders', 'error', sqlerrm,
+        jsonb_build_object('order_id', v_candidate_id));
+      raise warning 'complete_paid_pending_orders：補完訂單 % 失敗: %', v_candidate_id, sqlerrm;
+    end;
+  end loop;
+
+  perform set_config('uknow.rewire_try_lock', '', true);
+  return jsonb_build_object(
+    'candidates_found',    v_found,
+    'completed_count',     coalesce(array_length(v_completed, 1), 0),
+    'completed_order_ids', to_jsonb(v_completed),
+    'amount_mismatch',     v_mismatch,
+    'skipped_locked',      v_skipped,
+    'failed',              v_failed
+  );
+end;
+$$;
+
+revoke execute on function public.complete_paid_pending_orders(uuid, int) from anon, authenticated, public;
+grant execute on function public.complete_paid_pending_orders(uuid, int) to service_role;
