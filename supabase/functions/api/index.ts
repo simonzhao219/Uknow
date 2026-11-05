@@ -27,9 +27,13 @@ import {
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
+  ACCOUNT_SUSPENDED,
   DEFAULT_NETWORK_SORT,
   PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
+  REFERRAL_CHECK_UNAVAILABLE,
+  REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
+  REFERRAL_CODE_SELF_MESSAGE,
   RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
 import type {
@@ -476,7 +480,7 @@ export async function authenticate(
 
 /**
  * 分類式驗證失敗的回應：Auth 回不來 → 503（帳號狀態未知，呼叫端不得當成「帳號已不存在」），
- * Auth 判無效 → 401。/profile 以外需要區分兩者的端點（cancel-signup）共用。
+ * Auth 判無效 → 401。需要區分兩者的端點共用。
  */
 export function authFailureResponse(c: any, error: 'unauthorized' | 'transient'): any {
   return error === 'transient'
@@ -874,19 +878,33 @@ app.post('/auth/register', async (c) => {
 
   const client = sb();
 
-  // 若有填推薦碼，先查出推薦人 user_id
+  // 推薦碼（auth P0-1、P1-2＝ref P1-1）：與 /referrals/validate、prepare fresh 走同一支
+  // validate_referral_code（排除停權推薦人與失效碼）。查詢失敗回 503 不寫入——吞成
+  // 「沒填碼」會在付款時被預設推薦人覆寫（錯綁、靜默）；查無／停權／失效一律 400 同形。
+  if (referralCode != null && typeof referralCode !== 'string') {
+    return c.json({ error: '推薦碼格式錯誤' }, 400);
+  }
   let referrerUserId: string | null = null;
   // NFKC 先摺全形再轉小寫——全形數字對 toLowerCase() 是 identity，
   // 少了它，全形碼在後端與「查無此碼」同形（前端已同步正規化）。
   const cleanCode = referralCode?.normalize('NFKC').toLowerCase().trim() || null;
   if (cleanCode) {
-    const { data: rc } = await client
-      .from('referral_codes')
-      .select('user_id')
-      .eq('code', cleanCode)
-      .eq('status', 'active')
-      .single();
-    referrerUserId = rc?.user_id ?? null;
+    const { data: codeRows, error: codeErr } = await client
+      .rpc('validate_referral_code', { p_code: cleanCode });
+    if (codeErr) {
+      console.error('[register] validate_referral_code 失敗:', codeErr);
+      return c.json(
+        { error: { code: REFERRAL_CHECK_UNAVAILABLE, message: '推薦碼暫時無法驗證，請稍後再試' } },
+        503,
+      );
+    }
+    if (!codeRows || codeRows.length === 0) {
+      return c.json({ error: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE }, 400);
+    }
+    referrerUserId = codeRows[0].referrer_user_id;
+    if (referrerUserId === user.id) {
+      return c.json({ error: REFERRAL_CODE_SELF_MESSAGE }, 400);
+    }
   }
 
   // 「註冊已完成就拒絕」與寫入在同一個交易、同一把 profiles 列鎖下進行
@@ -920,59 +938,6 @@ app.post('/auth/register', async (c) => {
 
   const r = await loadProfileOrError(() => buildProfileResponse(client, user.id, user.email));
   return r.ok ? c.json(r.data) : c.json(r.body, r.status);
-});
-
-// ============================================================
-// DELETE /auth/cancel-signup
-// CompleteProfile「我晚點再填」：刪除尚未完成的帳號。
-// 守衛：已完成付款、已付款待開通（pending 且 PayUni SUCCESS）或有提領紀錄
-// 的會員不得自助刪除——schema 全面 on delete cascade，刪 auth user 會連鎖
-// 抹除 payment_orders / withdrawals / referral_edges，金流稽核紀錄與推薦樹
-// 對帳從此消失（與 /auth/reset-registration 的「已完成付款無法重置」同一
-// 原則）。守衛讀取失敗一律 500、不刪（fail-closed）。
-// ============================================================
-app.delete('/auth/cancel-signup', async (c) => {
-  // 分類式驗證（R4 P2-1）：Auth 抖動回 503，前端不得當成「帳號已刪」而清本機、登出。
-  const auth = await authenticate(
-    sb().auth,
-    c.req.header('Authorization')?.replace('Bearer ', ''),
-  );
-  if ('error' in auth) return authFailureResponse(c, auth.error);
-  const user = auth.user;
-
-  const client = sb();
-  const [
-    { data: completedOrder, error: orderErr },
-    { data: paidPendingOrder, error: paidPendingErr },
-    { data: withdrawal, error: withdrawalErr },
-  ] = await Promise.all([
-    client.from('payment_orders').select('id')
-      .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
-    // 已付款待開通：PayUni 已回 SUCCESS、訂單還在 pending（金額不符時維持
-    // pending 交人工）。錢已收，刪帳號會連訂單與 PayUni 回應一起抹掉。
-    client.from('payment_orders').select('id')
-      .eq('user_id', user.id).eq('status', 'pending')
-      .eq('payuni_response->>Status', 'SUCCESS').limit(1).maybeSingle(),
-    client.from('withdrawals').select('id')
-      .eq('user_id', user.id).limit(1).maybeSingle(),
-  ]);
-  // 讀不到就不刪（fail-closed）：把讀取失敗當成「沒有付款紀錄」，會在資料庫
-  // 抖動時刪掉已付款會員、連鎖抹除金流稽核資料，且不可逆。
-  const guardErr = orderErr ?? paidPendingErr ?? withdrawalErr;
-  if (guardErr) {
-    console.error('[cancel-signup] 守衛讀取失敗:', guardErr);
-    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
-  }
-  if (completedOrder || paidPendingOrder || withdrawal) {
-    return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
-  }
-
-  const { error } = await client.auth.admin.deleteUser(user.id);
-  if (error) {
-    console.error('[cancel-signup] 刪除失敗:', error);
-    return c.json({ error: '刪除失敗' }, 500);
-  }
-  return c.json({ success: true });
 });
 
 // ============================================================
@@ -1101,7 +1066,7 @@ app.get('/referrals/validate/:code', async (c) => {
     return c.json({ valid: false, error: { message: '服務暫時無法使用' } }, 503);
   }
   if (!data || data.length === 0) {
-    return c.json({ valid: false, error: { message: '推薦碼不存在或已失效' } });
+    return c.json({ valid: false, error: { message: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE } });
   }
 
   const row = data[0];
@@ -2036,6 +2001,14 @@ app.post('/admin-setup/set-self-admin', async (c) => {
   return c.json({ success: true, message: '您已成為平台管理員' });
 });
 
+/** 停權者付款的 403 回應（W5-5）。前端依 code 切到停權說明，不當一般錯誤。 */
+function accountSuspendedBody() {
+  return {
+    success: false,
+    error: { code: ACCOUNT_SUSPENDED, message: '帳號已停權，請聯絡客服' },
+  };
+}
+
 // ============================================================
 // POST /payuni/prepare
 // 建立付款訂單，回傳加密表單資料供前端送出給 PayUni
@@ -2062,6 +2035,16 @@ app.post('/payuni/prepare', async (c) => {
   // 可再付一次；extend 讀失敗回 400「請選擇新約」，把故障說成業務拒絕，還把人
   // 導向會清空帳本的新約。
   try {
+    // W5-5（pay P2-9＝auth P2-1）：停權者不得付款，擋在任何寫入之前（含下方 fresh
+    // 換線的 profiles 寫入）。建單 RPC 在鎖內會再查一次（防讀完才被停權）。
+    const me = must(
+      await client.from('profiles').select('suspended_at').eq('id', user.id).maybeSingle(),
+      'profiles',
+    ) as { suspended_at: string | null } | null;
+    if (me?.suspended_at) {
+      return c.json(accountSuspendedBody(), 403);
+    }
+
     // 防重複：只擋「目前仍在效期內」的會員（active）。已失效（expired）
     // 才可以付款——這正是續訂（到期後接續）或重新訂閱的唯一入口
     // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
@@ -2116,11 +2099,11 @@ app.post('/payuni/prepare', async (c) => {
     const { data: codeRows, error: codeErr } = await client
       .rpc('validate_referral_code', { p_code: referredByCode });
     if (codeErr || !codeRows || codeRows.length === 0) {
-      return c.json({ success: false, error: '推薦碼不存在或已失效' }, 400);
+      return c.json({ success: false, error: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE }, 400);
     }
     const referrerUserId = codeRows[0].referrer_user_id;
     if (referrerUserId === user.id) {
-      return c.json({ success: false, error: '不能使用自己的推薦碼' }, 400);
+      return c.json({ success: false, error: REFERRAL_CODE_SELF_MESSAGE }, 400);
     }
     // referred_by_is_default 一併重置：使用者親自填碼換線 = 非自動來源。
     // 這裡是 referred_by_* 的第二個寫入點（不經 apply_referral_side_effects），
@@ -2188,23 +2171,32 @@ app.post('/payuni/prepare', async (c) => {
   // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
   // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
   // 「組加密 payload 之前」重產一次再試，拿到最終 tradeNo 才往下走。
+  // 建單走 prepare_payment_order（20261111000002）：停權與 active 在 profiles 列鎖下重查
+  // 後才 INSERT，與付款完成序列化（pay P1-2）。撞 tradeNo 唯一鍵時重產再試一次。
   let tradeNo = generateTradeNo();
   {
-    const orderRow = () => ({
-      user_id: user.id,
-      amount: 1200,
-      status: 'pending',
-      payment_method: 'payuni',
-      transaction_id: tradeNo,
-      renewal_mode: renewalMode,
-    });
-    let { error: insertErr } = await client.from('payment_orders').insert(orderRow());
-    if (insertErr && insertErr.code === '23505') {
+    const createOrder = () =>
+      client.rpc('prepare_payment_order', {
+        p_user_id: user.id,
+        p_trade_no: tradeNo,
+        p_renewal_mode: renewalMode,
+      });
+    let { data: outcome, error: orderErr } = await createOrder();
+    if (!orderErr && outcome === 'duplicate_trade_no') {
       tradeNo = generateTradeNo();
-      ({ error: insertErr } = await client.from('payment_orders').insert(orderRow()));
+      ({ data: outcome, error: orderErr } = await createOrder());
     }
-    if (insertErr) {
-      console.error('[prepare] insert payment_orders 失敗:', insertErr);
+    if (orderErr) {
+      console.error('[prepare] prepare_payment_order 失敗:', orderErr);
+      return c.json({ success: false, error: '建立訂單失敗' }, 500);
+    }
+    if (outcome === 'suspended') return c.json(accountSuspendedBody(), 403);
+    if (outcome === 'active') {
+      return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
+    }
+    if (outcome === 'not_found') return c.json({ success: false, error: '用戶不存在' }, 404);
+    if (outcome !== 'ok') {
+      console.error('[prepare] prepare_payment_order 回傳未預期的值:', outcome);
       return c.json({ success: false, error: '建立訂單失敗' }, 500);
     }
   }

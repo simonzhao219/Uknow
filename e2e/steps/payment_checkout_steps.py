@@ -104,3 +104,13 @@ def name_field_contains(page, value):
 @then(parsers.parse('the phone field should contain "{value}"'))
 def phone_field_contains(page, value):
     expect(page.locator("#phone")).to_have_value(value, timeout=5_000)
+
+
+@given("I am logged in with registration step 1 as a suspended member")
+def logged_in_suspended_step1(context):
+    seed_authenticated_session(context, registration_step=1, suspended=True)
+
+
+@then("the pay button is not shown")
+def pay_button_not_shown(page):
+    expect(page.get_by_test_id("payuni-pay-button")).to_have_count(0)

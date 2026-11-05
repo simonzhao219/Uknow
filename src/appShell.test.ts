@@ -199,13 +199,14 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
   // signOut 網路失敗時 SIGNED_OUT 不一定觸發；這兩處自清本機狀態時要一併清提示。
   // T1-B：無效 session 的清理收斂到 endInvalidSession（內含 clearAuthHint），呼叫它等價於
   // 直接清提示——守的行為不變（無效 session 一定清提示），只是多認一個收斂後的入口。
-  it('apiClient 的 session 過期、取消註冊與 AuthPage 清理無效 session 都會清提示', () => {
+  // W5-12：稍後註冊改走 useFunnelLogout（不再刪帳號），由它清提示；CompleteProfile 不再自清。
+  it('apiClient 的 session 過期、註冊中途登出與 AuthPage 清理無效 session 都會清提示', () => {
     expect(readFileSync(join(SRC, 'utils/endInvalidSession.ts'), 'utf8')).toMatch(
       /clearAuthHint\(/,
     );
     for (const rel of [
       'utils/apiClient.ts',
-      'components/CompleteProfile.tsx',
+      'hooks/useFunnelLogout.ts',
       'components/AuthPage.tsx',
     ]) {
       expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(

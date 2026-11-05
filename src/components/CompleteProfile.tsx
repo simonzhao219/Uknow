@@ -18,12 +18,15 @@ import {
   extractApiErrorCode,
   extractApiErrorMessage,
 } from '../utils/apiClient'; // ✅ 新增統一 API 請求工具
-import { PROFILE_UNAVAILABLE } from '@contract';
+import {
+  PROFILE_UNAVAILABLE,
+  REFERRAL_CHECK_UNAVAILABLE,
+  REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
+  REFERRAL_CODE_SELF_MESSAGE,
+} from '@contract';
 import { StatusCallout } from './ui/status-callout';
-import { clearAuthHint } from '../utils/authHint';
 import { readSession } from '../utils/authErrors';
 import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
-import { signOutWithFallback } from '../utils/signOutWithFallback';
 import { getPendingReferral, clearPendingReferral } from '../utils/referralInvite';
 import { normalizeReferralCode } from '../utils/referralCode';
 import {
@@ -52,16 +55,7 @@ import {
 } from '../utils/formDraft';
 import { termsOfServiceContent } from '../content/termsOfService';
 import { LegalDialog } from './LegalDialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
+import { useFunnelLogout } from '../hooks/useFunnelLogout';
 
 // GET /referrals/validate/:code 的回應。後端刻意不回推薦人 id(推薦碼是流水號,
 // 回應又帶真名,id 只會擴大外洩面);姓名取 referrer.userName。
@@ -144,10 +138,6 @@ export function CompleteProfile() {
   // 以 refreshUser 接續；拿不到時留本頁、持久提示＋重新載入、送出鈕停用（防重送遇 403）。
   const [savedUnconfirmed, setSavedUnconfirmed] = useState(false);
   const [isReloadingSaved, setIsReloadingSaved] = useState(false);
-  // 「稍後註冊」會刪帳號：先確認（業主裁決 W3-12）。
-  const [laterConfirmOpen, setLaterConfirmOpen] = useState(false);
-  // 刪除帳號請求進行中：停用「下一步」與「稍後註冊」，擋重複送出。
-  const [isCancelling, setIsCancelling] = useState(false);
   const [isVerifyingCode, setIsVerifyingCode] = useState(false);
   const [codeVerified, setCodeVerified] = useState(false);
   const [codeError, setCodeError] = useState('');
@@ -157,6 +147,8 @@ export function CompleteProfile() {
 
   const { setUser, refreshUser } = useContext(UserContext);
   const navigate = useNavigate();
+  // 稍後註冊＝頁首登出（W5-12）。
+  const funnelLogout = useFunnelLogout();
   const location = useLocation();
   const { showToast, showNotification } = useNotification();
   const supabase = createClient();
@@ -411,7 +403,7 @@ export function CompleteProfile() {
     if (!first) return;
     const el = document.getElementById(FIELD_FOCUS_ID[first]);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
       // 用 requestAnimationFrame 等捲動後再 focus，避免焦點把畫面又拉走
       requestAnimationFrame(() => (el as HTMLElement).focus?.());
     }
@@ -631,6 +623,29 @@ export function CompleteProfile() {
           await continueAfterSaved();
           return;
         }
+        // 503＋REFERRAL_CHECK_UNAVAILABLE：查推薦碼暫時失敗、**未寫入**——停在原頁、草稿保留、可重送。
+        if (
+          response.status === 503 &&
+          extractApiErrorCode(errorData) === REFERRAL_CHECK_UNAVAILABLE
+        ) {
+          showToast(extractApiErrorMessage(errorData, '推薦碼暫時無法驗證，請稍後再試'), 'error');
+          return;
+        }
+        // 400 拒絕推薦碼（驗證後、送出前推薦人被停權或碼失效，或填了自己的碼）：比照即時驗證
+        // 失敗，標在欄位並撤銷「已驗證」——不能留著「推薦人：○○」又說碼無效。
+        const rejected = extractApiErrorMessage(errorData, '');
+        if (
+          response.status === 400 &&
+          (rejected === REFERRAL_CODE_NOT_APPLICABLE_MESSAGE ||
+            rejected === REFERRAL_CODE_SELF_MESSAGE)
+        ) {
+          setCodeError(rejected);
+          setCodeVerified(false);
+          setVerifiedReferralCode('');
+          setReferrerName('');
+          focusFirstError({ referralCode: rejected });
+          return;
+        }
         // 403 = 註冊已完成（例如停在本頁時另一個分頁付完款），資料已鎖定。
         // 只丟一則會自動消失的 toast 會讓人留在一張送不出去的表單前——帶回
         // 會員中心再說明。但要先確認最新狀態真的已鎖定才動手：閘道層的
@@ -649,7 +664,7 @@ export function CompleteProfile() {
             return;
           }
         }
-        throw new Error(errorData.error || '註冊失敗');
+        throw new Error(extractApiErrorMessage(errorData, '註冊失敗'));
       }
 
       const profile = await response.json();
@@ -660,66 +675,6 @@ export function CompleteProfile() {
       showToast(error.message || '註冊失敗，請稍後再試', 'error');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // 確認框按「確定刪除」後才進來（業主裁決 W3-12）。刪除沒成功就不清本機、不登出、停在
-  // 原頁並說原因——帳號還在卻讓人以為已刪，是最難察覺的不一致。
-  const handleLaterSignup = async () => {
-    if (isCancelling) return;
-    setIsCancelling(true);
-    const failed = (message: string) => showToast(message, 'error');
-    // 帳號資料已刪（或本來就不存在）：清本機（在登出前先清，避免競態），再登出。
-    const finishLocally = async (message: string) => {
-      setUser(null);
-      localStorage.removeItem('user');
-      // signOut 網路失敗時 SIGNED_OUT 不一定觸發；帳號已刪，殘留「註冊中」提示是最糟情形。
-      clearAuthHint();
-      clearPendingReferral();
-      clearProfileDraft();
-      await signOutWithFallback(supabase.auth);
-      showToast(message, 'info');
-      navigate('/', { replace: true });
-    };
-    try {
-      const { session, unavailable } = await readSession(supabase.auth);
-      if (!session && unavailable) {
-        failed('暫時無法確認登入狀態，請稍後再試');
-        return;
-      }
-      if (!session) {
-        failed('登入狀態已失效，請重新登入後再試');
-        return;
-      }
-
-      let response: Response;
-      try {
-        response = await fetch(buildApiUrl('/auth/cancel-signup'), {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-      } catch {
-        failed('暫時無法刪除帳號資料，請稍後再試');
-        return;
-      }
-      // 401：帳號已不存在（上一次刪除成功但回應遺失）。與刪除成功同樣收尾，不留在原頁重試。
-      if (response.status === 401) {
-        await finishLocally('帳號資料已不存在，之後可以用同一個 Email 重新註冊');
-        return;
-      }
-      if (!response.ok) {
-        // 後端兩種拒絕都有中文原因（已付款不可自助刪除、暫時無法處理）。
-        const body = await response.json().catch(() => null);
-        failed(extractApiErrorMessage(body, '暫時無法刪除帳號資料，請稍後再試'));
-        return;
-      }
-
-      await finishLocally('已刪除帳號資料，之後可以用同一個 Email 重新註冊');
-    } catch (error) {
-      console.error('CompleteProfile: Error during cancellation:', error);
-      failed('暫時無法刪除帳號資料，請稍後再試');
-    } finally {
-      setIsCancelling(false);
     }
   };
 
@@ -1024,7 +979,7 @@ export function CompleteProfile() {
             {/* 提交按鈕 */}
             <Button
               type="submit"
-              disabled={isLoading || isCancelling}
+              disabled={isLoading || funnelLogout.isLoggingOut}
               aria-disabled={savedUnconfirmed || undefined}
               className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
               onClick={handleSubmit}
@@ -1040,40 +995,18 @@ export function CompleteProfile() {
               )}
             </Button>
 
-            {/* 稍後註冊：會刪除帳號（cancel-signup），破壞性紅框字＋確認框（ui-ux §11.3、§12.11）。
-                頁首另有不刪帳號的「登出」，確認框把只想先離開的人指過去。 */}
+            {/* 稍後註冊＝登出（業主裁決 W5-12）：不刪帳號，已送出的資料保留、下次登入接回原步驟；
+                未送出的草稿隨登出清除（SIGNED_OUT → clearAccountLocalState）。
+                與頁首登出同一支 useFunnelLogout；可逆又無傷 → 次要按鈕、不收確認框（ui-ux §11.3、§12.11）。 */}
             <Button
               type="button"
-              tone="destructive"
+              tone="secondary"
               className="w-full mt-2"
-              disabled={isCancelling}
-              onClick={() => setLaterConfirmOpen(true)}
+              disabled={funnelLogout.isLoggingOut}
+              onClick={() => void funnelLogout.logout()}
             >
-              {isCancelling ? '處理中…' : '稍後註冊'}
+              稍後註冊
             </Button>
-            <AlertDialog open={laterConfirmOpen} onOpenChange={setLaterConfirmOpen}>
-              <AlertDialogContent data-testid="later-signup-confirm-dialog">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>刪除目前的帳號資料？</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    稍後註冊會刪除目前的帳號資料。只是想先離開，請用右上角『登出』，資料會保留。
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  {/* Radix AlertDialog 開啟時預設聚焦取消鈕：返回是預設焦點。 */}
-                  <AlertDialogCancel>返回</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    onClick={() => {
-                      setLaterConfirmOpen(false);
-                      void handleLaterSignup();
-                    }}
-                  >
-                    確定刪除
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
           </form>
         </CardContent>
       </Card>

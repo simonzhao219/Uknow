@@ -837,13 +837,28 @@ export const API_PATHS = {
 // ------------------------------------------------------------
 
 // T1-B（暫時性故障不登出）：/profile、/auth/register、/auth/complete-registration 讀不到帳號資料時的
-// 503 錯誤碼（`{ error: { code, message } }`）。**`/auth/register` 回 503＋此碼＝寫入已成功、讀回失敗**：
-// 前端不得重送，改 refreshUser 接續。（單向：500 的語意不保證未寫入。）
+// 503 錯誤碼（`{ error: { code, message } }`）。`/auth/register` 的 503 要看 code 判斷：**此碼＝寫入已成功、
+// 讀回失敗**，前端不得重送，改 refreshUser 接續；REFERRAL_CHECK_UNAVAILABLE＝未寫入（見下）。
+// （單向：500 的語意不保證未寫入。）
 export const PROFILE_UNAVAILABLE = 'PROFILE_UNAVAILABLE';
 
 // R4 P2-5：/profile 零列 404 的錯誤碼（`{ error: { code, message } }`）。前端只認帶此碼的 404 為
 // 「帳號資料異常」，其餘 404（閘道層、部署壞掉）歸暫時性。
 export const PROFILE_MISSING = 'PROFILE_MISSING';
+
+// 第 5 波 S2（auth P0-1）：/auth/register 查推薦碼（validate_referral_code）失敗時的 503 錯誤碼。
+// **未寫入**——與 PROFILE_UNAVAILABLE（已寫入、讀不回）相反：前端停在原頁、草稿保留，可重送。
+export const REFERRAL_CHECK_UNAVAILABLE = 'REFERRAL_CHECK_UNAVAILABLE';
+
+// /auth/register 拒絕推薦碼的 400 文案（`{ error: string }`，與 /payuni/prepare fresh 同字串）。前端據此
+// 把錯誤標在推薦碼欄位、撤銷「已驗證」狀態，而不是當成一般送出失敗。查無、停權推薦人、失效碼
+// 一律用 NOT_APPLICABLE（同形，不洩漏碼是否存在）。
+export const REFERRAL_CODE_NOT_APPLICABLE_MESSAGE = '推薦碼不存在或已失效';
+export const REFERRAL_CODE_SELF_MESSAGE = '不能使用自己的推薦碼';
+
+// 第 5 波 S2（W5-5）：停權者打 /payuni/prepare 的 403 錯誤碼（`{ success: false, error: { code, message } }`）。
+// 前端據此把結帳頁切到停權說明（快照過時、頁面上沒看到停權時的最後一道）。
+export const ACCOUNT_SUSPENDED = 'ACCOUNT_SUSPENDED';
 
 export const REFERRAL_INVITE_ERROR_CODES = [
   'invalid_email',

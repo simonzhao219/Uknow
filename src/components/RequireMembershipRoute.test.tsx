@@ -254,6 +254,15 @@ describe('RequireMembershipRoute 接線', () => {
       expect(screen.queryByTestId('landed')).toBeNull();
     });
 
+    // 與結帳頁共用 SuspendedNotice（W5-5）：文案只寫一份，凍結項含付款（規格書 §5.2）；
+    // 會員區沿用原本不放按鈕（登出在頁首）。
+    it('停權說明列出付款也已暫停，會員區不另放出口按鈕', async () => {
+      renderGuard(member({ suspended: true }));
+      expect(await screen.findByText(/會員功能、付款與刊登已暫停/)).toBeTruthy();
+      expect(screen.queryByRole('button')).toBeNull();
+      expect(screen.queryByRole('link', { name: '回首頁' })).toBeNull();
+    });
+
     it('停權的管理員不受阻擋', () => {
       renderGuard(member({ suspended: true, isAdmin: true }));
       expect(screen.getByTestId('landed').textContent).toBe('會員區');
