@@ -594,14 +594,19 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
   非點數。需使用者主動領取才延展會籍。
 - **可多張**：當月每滿 8 位發一張，張數 = `floor(當月新人數 / 門檻)`，
   以 `round_ordinal` 區分。〔實作〕`20260724000002_referral_king_multi_credit.sql`
+- **新約後**：已發的 credit（含未領）保留；當月從 0 計門檻——當月張數 = 新約當下該月
+  已應發的張數 + `floor(新約後當月新人數 / 門檻)`，`round_ordinal` 接續（新約當下已達門檻
+  但對帳尚未補發的那張也算已應發，之後照補）。〔實作〕`task_progress.king_round_base`、
+  `20261113000003_referral_pair_history.sql`
 - **月份 key** 錨定**付款時間**（非執行時間），時區 `Asia/Taipei`。
 - **計數自癒**：credit 發放獨立於計數 append，每次付款都重新對帳補足差額
   （`reconcile_king_credits`），漏發會被下一筆付款補上。
 
 ### 9.2 「新下線」的判準：pair-history
 
-> **`task +1 ⟺ 被推薦人 R 從未出現在上線 U 的 `task_progress.monthly_referrals`
-> 任一月份陣列中`**（＝對 U 而言第一次）。
+> **`task +1 ⟺ 被推薦人 R 從未出現在上線 U 的配對名單 `referral_pair_history` 中`**
+> （＝對 U 而言第一次）。名單獨立於月份計數（`task_progress.monthly_referrals`），
+> 新約清空計數不會刪到它。
 
 一條規則涵蓋全部情形，並天生具備重放冪等：
 
@@ -615,10 +620,10 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
 價值 1,200 的免費續約，經濟上不划算。
 
 **fresh 清空與 pair-history 的關係**：選 fresh 清空帳本時，
-`total_referrals` 歸 0、**當月**桶刪除（月份 key 沿用付款時點的同一運算
-式），但**歷史月份桶永久保留**——歷史桶就是 pair-history 本體，跨清空
-保留才能擋「換新約重刷推薦王」：清空後老下線再付款，上線照領 100 P
-（§8.2），任務**不 +1**。
+`total_referrals` 歸 0、**當月計數歸零**（月份 key 沿用付款時點的同一運算
+式），其餘月份桶保留；**配對名單不清**——名單跨清空保留才能擋「換新約重刷
+推薦王」：清空後老下線（含當月才加入的）再付款，上線照領 100 P（§8.2），
+任務**不 +1**。
 
 ### 9.3 領取（claim）
 
