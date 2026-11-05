@@ -479,7 +479,7 @@ export async function authenticate(
 
 /**
  * 分類式驗證失敗的回應：Auth 回不來 → 503（帳號狀態未知，呼叫端不得當成「帳號已不存在」），
- * Auth 判無效 → 401。/profile 以外需要區分兩者的端點（cancel-signup）共用。
+ * Auth 判無效 → 401。需要區分兩者的端點共用。
  */
 export function authFailureResponse(c: any, error: 'unauthorized' | 'transient'): any {
   return error === 'transient'
@@ -937,59 +937,6 @@ app.post('/auth/register', async (c) => {
 
   const r = await loadProfileOrError(() => buildProfileResponse(client, user.id, user.email));
   return r.ok ? c.json(r.data) : c.json(r.body, r.status);
-});
-
-// ============================================================
-// DELETE /auth/cancel-signup
-// CompleteProfile「我晚點再填」：刪除尚未完成的帳號。
-// 守衛：已完成付款、已付款待開通（pending 且 PayUni SUCCESS）或有提領紀錄
-// 的會員不得自助刪除——schema 全面 on delete cascade，刪 auth user 會連鎖
-// 抹除 payment_orders / withdrawals / referral_edges，金流稽核紀錄與推薦樹
-// 對帳從此消失（與 /auth/reset-registration 的「已完成付款無法重置」同一
-// 原則）。守衛讀取失敗一律 500、不刪（fail-closed）。
-// ============================================================
-app.delete('/auth/cancel-signup', async (c) => {
-  // 分類式驗證（R4 P2-1）：Auth 抖動回 503，前端不得當成「帳號已刪」而清本機、登出。
-  const auth = await authenticate(
-    sb().auth,
-    c.req.header('Authorization')?.replace('Bearer ', ''),
-  );
-  if ('error' in auth) return authFailureResponse(c, auth.error);
-  const user = auth.user;
-
-  const client = sb();
-  const [
-    { data: completedOrder, error: orderErr },
-    { data: paidPendingOrder, error: paidPendingErr },
-    { data: withdrawal, error: withdrawalErr },
-  ] = await Promise.all([
-    client.from('payment_orders').select('id')
-      .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
-    // 已付款待開通：PayUni 已回 SUCCESS、訂單還在 pending（金額不符時維持
-    // pending 交人工）。錢已收，刪帳號會連訂單與 PayUni 回應一起抹掉。
-    client.from('payment_orders').select('id')
-      .eq('user_id', user.id).eq('status', 'pending')
-      .eq('payuni_response->>Status', 'SUCCESS').limit(1).maybeSingle(),
-    client.from('withdrawals').select('id')
-      .eq('user_id', user.id).limit(1).maybeSingle(),
-  ]);
-  // 讀不到就不刪（fail-closed）：把讀取失敗當成「沒有付款紀錄」，會在資料庫
-  // 抖動時刪掉已付款會員、連鎖抹除金流稽核資料，且不可逆。
-  const guardErr = orderErr ?? paidPendingErr ?? withdrawalErr;
-  if (guardErr) {
-    console.error('[cancel-signup] 守衛讀取失敗:', guardErr);
-    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
-  }
-  if (completedOrder || paidPendingOrder || withdrawal) {
-    return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
-  }
-
-  const { error } = await client.auth.admin.deleteUser(user.id);
-  if (error) {
-    console.error('[cancel-signup] 刪除失敗:', error);
-    return c.json({ error: '刪除失敗' }, 500);
-  }
-  return c.json({ success: true });
 });
 
 // ============================================================
