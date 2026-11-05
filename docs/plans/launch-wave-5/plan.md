@@ -89,6 +89,11 @@
 | W5-45 | S1 看門狗只漏一輪 pg_cron 就必推「停擺」LINE（GitHub 啟動延遲必然越過 90 分） | 補跑門檻維持 90 分；LINE 停擺推播改連漏兩輪（約 150 分）才推 |
 | W5-46 | migration 撞號：S2 #510 的 `20261111000001_reward_idempotency_index.sql` 與 S1 #512 的 `20261111000001_scheduled_job_runs.sql` | #510 先合；S1 改號為 `20261112000001_scheduled_job_runs.sql`，rebase 後跑 `check-migration-versions.py` |
 | W5-47 | #510 審查 P2-1：「稍後註冊」改走登出後，SIGNED_OUT → clearAccountLocalState 會清完善資料草稿，與 W5-12「保留資料與草稿」措辭不符 | **維持程式行為**（等同登出、清草稿是隱私上正確的做法）；規格書、formDraft.ts、multi-step-flow-recovery.md 改成「不刪帳號；已送出資料保留，未送出草稿隨登出清除」 |
+| W5-48 | S4 兩問：/dashboard/qr?tab=scan 是否另行 block；手機欄位 `tel-national` | QR 由 canvas 畫（canvas 錄製已關）、相機不錄、對方姓名為文字已遮、無照片 → 不另 block；`tel-national` 接受，列晉升後業主真機驗收 |
+| W5-49 | S6 換線規則（Q1、Q2、Q4） | 全照 S6 建議（業主 2026-11-05）：重複付款的 fresh 單不換線；付款當下才成環 → 維持原上代、帳本照清、error 告警；環判定不限深度 |
+| W5-50 | S6 異常付款（Q3、D4） | 曾訂閱者的 null 單仍付款 → 照開通＋error 告警；永遠修不好的 SUCCESS pending 單造成永久 409 → 接受，擋下時寫 system_alert 交客服（業主 2026-11-05） |
+| W5-51 | S6 新約確認框（Q6、D2、D3） | 依 source 分句（default 寫「推薦人將改變」、keep 不寫推薦人句）；有資產紅實心、無資產墨黑流程鈕（業主 2026-11-05） |
+| W5-52 | S6 D1：#167 閘門 changed_at 修正放哪 | 留在 S6（與 0d 同處；正式站 q7＝3 筆、獎金皆已發，屬潛伏） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -194,6 +199,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 4 | GitHub 設定（補強，非必須）：Fork PR workflows 設「Require approval for all external contributors」；Environments → develop 加 required reviewer | 待回報 |
 | 5 | 晉升合進 main 後核准 `production` 部署 | 等晉升 |
 | 6 | 晉升前在 eu.posthog.com 建 develop、正式站兩個 project，把 `phc_` key 給主 session（W5-35）；專案端勾選：Discard client IP、開 Session replay，關 exception autocapture／dead clicks／console／network／canvas（S4 Q8） | S4 合併前 |
+| 9 | develop 甲段：S1（#512）已合，在 develop 的 SQL Editor 建 Vault 兩筆（`uknow_api_base_url`＝`https://ijcxnxhrziehdtkwausy.supabase.co/functions/v1/api`、`uknow_internal_secret`＝develop 的 RECONCILE_SECRET），不設 PHOTO_PURGE_LIVE；Edge 部署後做乙段驗證（checklist 步驟 8） | 待做 |
 | 8 | 晉升上線第一天在 PostHog 抽看 5～10 支錄影（註冊、付款、提領頁），確認無個資（W5-39） | 晉升後 |
 | 7 | 環境網路白名單再加 `www.tgos.tw`，並告知 S7（W5-33） | ✅ 11/05 |
 
@@ -201,13 +207,13 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | #512（draft） | 主 session 審查中；W5-44① 補做 |
+| S1 | `session_01MQovbF3C28ytruiwpCaQbE` | Opus | `feature/pg-cron-schedulers` | #512 ✅ 3712737 | 收工；develop 甲段待業主 |
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | #510 ✅ 54ac83f | 收工 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
 | S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1 綠；階段 2 等網域放行 |
-| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（draft） | 實作中 |
-| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃中 |
+| S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511（ready） | 審查退回：P0 Logs 擴充、P1 3、P2 5 |
+| S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | — | 規劃修訂中（W5-49～52） |
 | R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -238,3 +244,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/05 09:25 | S2 交 **#510**（ready，CI 綠；實作審查 P0 0、P1 6 處置；業主 08:25 於 S2 session 授權改 appShell.test.ts）。主 session 發現 #510／#512 migration 撞號 → **W5-46**。另派獨立 Opus 審查員審 #510。S2 待辦：後台刪帳號工具、停權期間付款鈕灰掉無說明 → 第 6 波候選；S6 須知：fresh 換線寫 profiles 在建單 RPC 之前，RPC 回 active／suspended 時不回復 | 等 #510 審查 |
 | 11/05 09:40 | #510 獨立審查：**P0 0、P1 0**（process_successful_payment 與基準版逐行比對、告警隔離、v_paid_at、鎖序、索引、停權、register、cancel-signup 退場皆核實）。P2：文件兩處與程式不符（P2-1 → **W5-47**、P2-2 撞索引語意只限三代獎勵）、P2-3 並行 repair 測試分不出鎖或索引 → 本 PR 修；P2-4 register 檢查順序 → 第 6 波 | S2 修 P2-1～3 → CI 綠 → 合 |
 | 11/05 09:50 | S2 修 #510 審查 P2-1～3（文件四處改「未送出草稿隨登出清除」、撞索引語意限三代獎勵、並行 repair 測試加 `repaired_count==0`），主 session 核實 delta、CI 全綠 → **#510 合進 develop（54ac83f）**。已通知 S1 rebase 並改 migration 號（W5-46）。照 W5-2 開 **S6**（Opus，規劃） | S1 修 #512；develop 部署後驗 #510 migration 已套 |
+| 11/05 14:00 | S1 修 #512（P1-1 client factory、P1-2 unknown 單不 expire、MerTradeNo、W5-45、可選 P2 也做、W5-46 改號 `20261112000001`；業主 13:25 於 S1 session 授權修 stub），主 session 核實 P1-2 守衛、CI 全綠 → **#512 合進 develop（3712737）**。develop 甲段交業主。S4 交 #511（CI 綠）→ 獨立 Opus 審查：**P0 posthog-js 預設載入 Logs 擴充，專案端開 console 擷取即繞過所有防線**、P1 3、P2 5 → 退回 S4；主 session 定 **W5-48**。S6 交規劃（P0 0、P1 16）；主 session 代跑正式站／develop 唯讀 SQL（環 0、自領 0、q7＝3／1 佐證閘門 bug、回填差集 0）；業主裁 **W5-49～51**，主 session 定 **W5-52** | 業主做 develop 甲段；S4 修 P0；S6 修 plan 重審；S7 等業主授權 |
