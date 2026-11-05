@@ -3409,3 +3409,18 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   結果寫 plan §8，審查 session 只讀。
 
 處置：第 1、2、4 條列入下次框架整併；第 3 條業主裁決 W4-25 列第 5 波必上（pg_cron）；第 5 條已寫入〈慣例〉；第 6 條業主裁決 W4-26，已寫入〈慣例〉。
+
+## 2026-11-05｜誤擋／漏網（環境、測試）｜第 5 波 S2（PR #510）
+
+- **雲端容器起不了 `supabase start`**（環境）：Docker daemon 可手動啟動，但映像拉不到——Docker Hub 回 429、ECR／GHCR 的
+  blob CDN 被 agent proxy 擋（403）。D 層紅綠只能靠 PR 的 api-tests 軌：ci.yml 的 `cancel-in-progress` 讓每次 push 取消前一輪，
+  所以紅燈 commit 要單獨推、等結果再推下一批（每輪約 5 分鐘）。補位做法：本機 Postgres 16（`/usr/lib/postgresql/16`）＋
+  最小 Supabase shim（auth.users／storage／cron 的空殼）可套全部 migration，SQL 層的並行與鎖序可在本機用雙 psql 驗。
+  候選：把 shim 與套用腳本收進 `scripts/`，或為雲端 session 提供映像快取。
+- **postgres.js 的查詢是 lazy 的**（漏網，測試寫錯）：`second = sql2\`...\`` 不會立刻送出，要 await／then 或 `.execute()`；
+  「連線 1 持鎖期間連線 2 再跑一次」的並行測試因此實際是序列，修正前就綠（S2 階段 1 紅燈 commit 在 CI 上意外綠）。
+  既有的並行測試用 `Promise.allSettled([call(), call()])` 會觸發 then，不受影響；凡「先建查詢、稍後 await」的寫法都要 `.execute()`。
+- **共用測試 DB 的全域上限查詢**（漏網）：`/internal/system-alerts/recent` 由舊到新取前 20 筆，測試假設窗內 error 告警不超過 20；
+  S2 新增的重複付款告警讓它在 CI 紅。測試資料要放在不受其他測試影響的位置（本次改放窗口前緣），或查詢以 marker 過濾。
+
+處置：第 1 條列入下次框架整併（shim 腳本化）；第 2、3 條為測試寫法教訓，已在 S2 修正，不另立規則。

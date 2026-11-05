@@ -16,8 +16,8 @@
 | 4 | D:稍後註冊改登出、cancel-signup 退場 | ✅ 綠 | 6b29d0f(CI run 41941807197 D 紅 1 條；本機 vitest 紅 4 條) | b7f84de(CI run 41942455580 綠)；appShell 測試 64815b2(業主授權) |
 | 5 | E:prepare 停權 403+prepare_payment_order(後端) | ✅ 綠 | c027e80(CI run 41942455580 紅 10 條) | b3b4e70(CI run 41943509156 綠) |
 | 6 | E:結帳頁停權卡(前端) | ✅ 綠 | 5037fc1(本機 vitest 紅 5 條) | 448281b |
-| 7 | A+W5-14:重複付款偵測、付款途中停權告警 | ✅ 綠(待 CI) | 922820b(CI run 41943509156 紅 5 條) | dda4a53 |
-| 8 | 收尾 | ⬜ 未開始 | | |
+| 7 | A+W5-14:重複付款偵測、付款途中停權告警 | ✅ 綠 | 922820b(CI run 41943509156 紅 5 條) | dda4a53 |
+| 8 | 收尾 | ✅ | — | 規格書 ef3c079；審查處置 37524b9 |
 
 ## 目前位置與下一步
 
@@ -41,4 +41,16 @@
   前者因 log_system_alert 本身吞錯、後兩者是現況特徵，作為回歸防線保留(逃生口 1 的變體：不跳過階段，其餘 5 條真紅)。
 - 階段 7 會改變 9 支既有測試裡「同一人 active 時再付一次 null 單」的錨點(改接續＋告警)；它們斷言的是獎金與任務，CI 全綠為準。
 
+## 偏離規劃（實作審查後補記，見 implementation-review.md）
+
+- 停權說明文案改為「會員功能、付款與刊登已暫停」（會員區同步）：規格書 §5.2 已把付款列為凍結項。
+- 400 拒絕推薦碼以共用文案常數判別（不加 code）：400 須與 prepare fresh、/referrals/validate 同形。
+- e2e 未加 prepare 403 mock：新 E 情境不經 prepare，「送單 403 切停權卡」由 V 層涵蓋。
+- 產品碼額外小改：`scrollIntoView?.()`（jsdom 無此 API）、一般錯誤路徑改用 extractApiErrorMessage（修 [object Object]）。
+- 停權卡沿用 `StatusCallout` 的 role="status"（plan 寫 alert，階段 6 確認後採既有元件）。
+- 四組唯一索引：gen1 一組實測 23505，其餘三組以 pg_indexes 斷言定義。
+- `cancel-signup-retired.test.ts` 新檔（plan 寫在 guard 檔加一條，但 guard 檔整檔退場）。
+
 ## 框架摩擦
+
+- 已整併進 docs/plans/friction-log.md（2026-11-05 條）。
