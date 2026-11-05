@@ -521,6 +521,9 @@ Deno.test('prepare_payment_order：六參數與三參數版都只給 service_rol
 // ---------------------------------------------------------------
 async function waitForAdvisoryWaiters(sql: Sql | postgres.TransactionSql, n: number) {
   for (let i = 0; i < 100; i++) {
+    // pg_stat_activity 在同一個交易內只快照一次（stats_fetch_consistency）；持鎖的交易裡
+    // 輪詢必須先清快照，否則永遠看不到後來才排隊的人。
+    await sql`select pg_stat_clear_snapshot()`;
     const [r] = await sql`
       select count(*)::int as n from pg_stat_activity
       where wait_event_type = 'Lock' and wait_event = 'advisory'`;
