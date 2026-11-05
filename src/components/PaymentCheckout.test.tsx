@@ -887,3 +887,93 @@ describe('結帳頁冷載入的暫時性故障', () => {
     expect(await screen.findByText('登入頁')).toBeTruthy();
   });
 });
+
+// W5-5（pay P2-9＝auth P2-1，第 5 波 S2 階段 6）：停權者不得付款。結帳頁顯示與會員區相同的
+// 停權說明、不渲染付款鈕；localStorage 快照沒有停權欄位，以背景 /profile 覆蓋；後端 403
+// ACCOUNT_SUSPENDED 是快照過時時的最後一道。
+describe('停權者的結帳頁', () => {
+  function stubBackend(opts: {
+    profile?: Record<string, unknown> | 'pending';
+    prepare?: { status: number; body: unknown };
+  }) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        if (/\/profile(\?|$)/.test(String(url))) {
+          if (opts.profile === 'pending') return new Promise<Response>(() => {});
+          return new Response(JSON.stringify(opts.profile ?? { registrationStep: 1 }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('/payuni/prepare') && opts.prepare) {
+          return new Response(JSON.stringify(opts.prepare.body), { status: opts.prepare.status });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+    return calls;
+  }
+
+  const SUSPENDED_PROFILE = {
+    registrationStep: 1,
+    name: '停權者',
+    birthDate: '1990-01-01',
+    nationalId: 'A12****789',
+    phone: '0912345678',
+    suspended: true,
+  };
+
+  beforeEach(() => {
+    localStorage.removeItem('pendingUser');
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: { access_token: 'test-token' } } });
+  });
+
+  it('API 讀到停權時顯示停權說明，不顯示付款鈕', async () => {
+    stubBackend({ profile: SUSPENDED_PROFILE });
+    renderPage();
+    expect(await screen.findByText('帳號已停權')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('客服');
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+    expect(screen.queryByTestId('edit-profile-button')).toBeNull();
+  });
+
+  it('本機快照進頁、背景 /profile 回停權時切到停權說明', async () => {
+    stubBackend({ profile: SUSPENDED_PROFILE });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    expect(await screen.findByText('帳號已停權')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+  });
+
+  it('本機快照進頁、背景 /profile 還沒回來前付款鈕停用', async () => {
+    stubBackend({ profile: 'pending' });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    expect((pay as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('送單收到 403 ACCOUNT_SUSPENDED 時切到停權說明，不跳錯誤 toast', async () => {
+    stubBackend({
+      profile: { registrationStep: 1, name: '快照過時' },
+      prepare: {
+        status: 403,
+        body: {
+          success: false,
+          error: { code: 'ACCOUNT_SUSPENDED', message: '帳號已停權，請聯絡客服' },
+        },
+      },
+    });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(pay);
+    expect(await screen.findByText('帳號已停權')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+  });
+});

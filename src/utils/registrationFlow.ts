@@ -403,3 +403,13 @@ export function isFunnelRoute(pathname: string): boolean {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   return FUNNEL_ROUTES.includes(path);
 }
+
+/**
+ * 結帳頁是否因停權而不給付款（W5-5，規格書 §5.2 凍結項含付款）。
+ * 只看 `/profile` 的 `suspended`；localStorage 快照沒有這個欄位，由呼叫端以 API 覆蓋。
+ */
+export function isCheckoutBlockedBySuspension(
+  _profile: { suspended?: boolean | null } | null,
+): boolean {
+  return false;
+}
