@@ -15,12 +15,12 @@
 | 3 | Edge prepare 改寫 | ✅ 綠（deno check；CI 待推） | fd1da6d1 | （本 commit） |
 | 4 | `/profile` 續費卡單旗標＋heal | ✅ 綠（deno check；CI 待推） | 34976ec7 | （本 commit） |
 | 5 | pair-history 表＋回填＋king_round_base | ✅ 綠（本機 PG16 驗 4 案；CI 待推） | def43188 | （本 commit） |
-| 6 | 結帳頁 server profile＋新約確認框 | ⬜ 未開始 | | |
+| 6 | 結帳頁 server profile＋新約確認框 | ✅ 綠（vitest 70／70） | 1c70eb1b | （本 commit） |
 | 7 | e2e mocked＋journey f70＋規格書同步 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-業主 11/05 22:37 開工（review.md 處置節）。階段 1～5 綠；下一步階段 6（結帳頁前端）。階段 2 與 3 須同一 PR 合併（plan §2.3）。
+業主 11/05 22:37 開工（review.md 處置節）。階段 1～6 綠；下一步階段 7（e2e mocked＋journey f70）。階段 2 與 3 須同一 PR 合併（plan §2.3）。
 本機驗證環境：scratchpad 的 `apply.sh`（PG16＋shim，套全部 migration）；deno 測試的正式紅綠以 CI api-tests 為準。
 舊敘述：規劃完成、/review-plan 完成（P0 0／P1 16／P2 13，見 review.md）。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
 施工前先請主 session 代跑 plan §7 的唯讀查詢 1–7，結果記在下方。
@@ -42,6 +42,10 @@
 結論：migration B 回填正式站新增 15 列 pair、不改既有 21 列 reward_transactions；king_round_base 無 fresh 歷史可補（ledger_reset 0）；1 張既有 credit 不受影響；q7 佐證 changed_at 閘門 bug 成立。
 
 ## Blockers（逃生口紀錄）
+
+- 階段 6 綠燈期：2 支既有測試釘住被裁決改掉的行為（〈fresh 選中展開清空揭露…〉的舊文案「不填則不會有推薦人」，W5-51；
+  〈暫時無法驗證後按付款會重驗…〉假設無資產新約第二次按即送單，W5-7）。業主 2026-11-06 00:03（台北）於本 session 互動選項：
+  「授權改這 2 支測試」。暫移 tdd-lock 改兩處斷言（文案改斷言「維持原本的推薦人」、第二次按付款後先點確認鈕），其餘斷言不動，隨即恢復鎖。
 
 ## 框架摩擦
 

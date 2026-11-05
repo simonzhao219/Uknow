@@ -316,10 +316,11 @@ describe('PaymentCheckout 補繳制', () => {
     const section = screen.getByTestId('renewal-mode-section');
     expect(section.textContent).not.toContain('預設推薦碼');
     expect(section.textContent).not.toContain('維持原推薦關係');
-    // Q11 正向面（plan §4 逐字）：必須傳達「這會改變既有推薦關係」——
-    // 只驗「不包含」擋不住文案被弱化成首購式說明。
+    // Q11 正向面：必須傳達「這會改變既有推薦關係」——只驗「不包含」擋不住文案被弱化成
+    // 首購式說明。留空的後果依後端會套用的來源說（W5-51）：這裡 renewal 沒帶
+    // freshDefaultReferrerAvailable（空窗）→ 視為不可用 → 維持原本的推薦人。
     expect(section.textContent).toContain('選擇新約會重新建立推薦關係');
-    expect(section.textContent).toContain('不填則不會有推薦人');
+    expect(section.textContent).toContain('維持原本的推薦人');
   });
 
   it('fresh 卡片顯示新約的具體效期迄日（AC-2），不是只講起算規則', async () => {
@@ -804,6 +805,8 @@ describe('PaymentCheckout 換推薦人驗證', () => {
     expect(requests.filter((r) => r.url.includes('/payuni/prepare'))).toEqual([]);
 
     fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    // W5-7：新約一律先二次確認（無資產也一樣），確認後才送單。
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
     await waitFor(() =>
       expect(requests.filter((r) => r.url.includes('/payuni/prepare')).length).toBe(1),
     );

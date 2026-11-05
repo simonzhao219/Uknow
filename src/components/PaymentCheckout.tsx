@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -13,7 +13,18 @@ import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetch
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
 import { AuthDegradedNotice } from './AuthDegradedNotice';
 import { SuspendedNotice } from './SuspendedNotice';
-import { ACCOUNT_SUSPENDED } from '@contract';
+import {
+  ACCOUNT_SUSPENDED,
+  PAYMENT_PENDING_ACTIVATION,
+  REFERRAL_CYCLE,
+  RENEWAL_MODE_REQUIRED,
+} from '@contract';
+import {
+  freshCodeHint,
+  freshCodePlaceholder,
+  freshReferrerSentence,
+  hasFreshAssets,
+} from '../utils/freshRenewalCopy';
 import { normalizeReferralCode } from '../utils/referralCode';
 import { formatTwDate, subscriptionLastDay, twDayOf, twDayPlusDays } from '../utils/twDate';
 import {
@@ -67,6 +78,17 @@ export function PaymentCheckout() {
   >('idle');
   const [newReferrerName, setNewReferrerName] = useState<string | null>(null);
   const [newCodeUnavailableMessage, setNewCodeUnavailableMessage] = useState<string | null>(null);
+  // S6：後端回 REFERRAL_CYCLE 時，欄位錯誤改說成環的原因（不是「不存在或已失效」）。
+  const [newCodeInvalidMessage, setNewCodeInvalidMessage] = useState<string | null>(null);
+  const newCodeInputRef = useRef<HTMLInputElement>(null);
+  const renewalSectionRef = useRef<HTMLDivElement>(null);
+  // S6：送單被拒後的內嵌狀態（toast 會消失，這些要留在畫面上）。
+  //   modeUpdated：RENEWAL_MODE_REQUIRED 後重抓到續費身分，請使用者選模式
+  //   modeRetry：重抓失敗；modeContact：重抓成功仍判不出續費（無限 400 的出口）
+  //   paidPendingNoTrade：409 已付款待開通卻沒有單號（契約錯誤），交客服、不導向
+  const [checkoutNotice, setCheckoutNotice] = useState<
+    'modeUpdated' | 'modeRetry' | 'modeContact' | 'paidPendingNoTrade' | null
+  >(null);
   // 續約者的個資極少變動：預設摺疊成一行摘要，點開才看明細（首購維持全展開）。
   const [profileExpanded, setProfileExpanded] = useState(false);
 
@@ -261,8 +283,24 @@ export function PaymentCheckout() {
         // force：要的是「此刻」的停權狀態，不併進別處沒逾時的在飛請求（否則可能永不回來、鈕永遠停用）。
         fetchProfileForSession(session, { force: true, timeoutMs: PROFILE_FETCH_TIMEOUT_MS })
           .then((result) => {
-            if (result.kind === 'ok' && isCheckoutBlockedBySuspension(result.profile)) {
+            if (result.kind !== 'ok') return; // W5-54：讀不到不擋，後端 prepare 兜底
+            const profile = result.profile;
+            if (isCheckoutBlockedBySuspension(profile)) {
               setSuspended(true);
+              return;
+            }
+            // 快照只當首繪（S6，pay P1-1）：已是會員、已付款開通中 → 照 API 分支導走；
+            // 伺服器說是曾訂閱者而快照不是 → 換成伺服器資料，切成續約／新約雙模式。
+            if (
+              profile.accountStatus === 'active' ||
+              (profile.paidAwaitingActivation && profile.lastTradeNo)
+            ) {
+              const redirect = resolveCheckoutPageRedirect(profile);
+              if (redirect) navigate(redirect, { replace: true });
+              return;
+            }
+            if (profile.subscriptionEndDate && !userData.subscriptionEndDate) {
+              setPendingUser((prev: any) => ({ ...prev, ...profile }));
             }
           })
           .catch(() => {})
@@ -389,14 +427,20 @@ export function PaymentCheckout() {
     return rest === 0 ? `${years} 年` : `${years} 年 ${rest} 個月`;
   };
 
-  // AC-15：fresh 且（有可清空資產或本輪已付過補繳）→ 付款前需二次確認。
+  // W5-7（S6）：新約一律二次確認——就算沒有可清空的資產，推薦關係也會變。renewal 尚未
+  // 載入時走不到這裡（AC-17 先擋），所以框內一定有資產數字可唸。
   const [freshConfirmOpen, setFreshConfirmOpen] = useState(false);
-  const needsFreshConfirm =
-    renewalMode === 'fresh' &&
-    !!renewal &&
-    (renewal.freshForfeitPoints > 0 ||
-      renewal.freshForfeitReferrals > 0 ||
-      renewal.hasPaidAnyBackfill);
+  const needsFreshConfirm = renewalMode === 'fresh' && !!renewal;
+  const freshHasAssets = !!renewal && hasFreshAssets(renewal);
+  const freshDefaultAvailable = renewal?.freshDefaultReferrerAvailable;
+  const freshReferrerLine = freshReferrerSentence({
+    code: newReferralCode,
+    codeStatus: newCodeStatus,
+    referrerName: newReferrerName,
+    currentCode: pendingUser?.referredByCode ?? null,
+    isAutoReferral: !!pendingUser?.isAutoReferral,
+    defaultAvailable: freshDefaultAvailable,
+  });
   // 目前實際效期迄日 = 下一筆起算日的前一天（補繳進度與確認警語共用）。
   // 不用「迄日 − 1 年」反推：迄日落在 02-29 時會少一天。
   const paidUpToDay = renewal ? twDayPlusDays(renewal.extendAnchorDate, -1) : null;
@@ -518,6 +562,34 @@ export function PaymentCheckout() {
     await submitPayment();
   };
 
+  // RENEWAL_MODE_REQUIRED 之後：以伺服器資料重判續費身分（S6，pay P1-1 前端）。
+  const reloadRenewalIdentity = async (session: { access_token: string }) => {
+    const result = await fetchProfileForSession(session as any, {
+      force: true,
+      timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
+    }).catch(() => null);
+    if (!result || result.kind !== 'ok') {
+      setCheckoutNotice('modeRetry');
+      return;
+    }
+    if (!result.profile.subscriptionEndDate) {
+      setCheckoutNotice('modeContact');
+      return;
+    }
+    setPendingUser((prev: any) => ({ ...prev, ...result.profile }));
+    setCheckoutNotice('modeUpdated');
+    refreshSubscription?.();
+    requestAnimationFrame(() => {
+      renewalSectionRef.current?.scrollIntoView?.({ block: 'start' });
+      renewalSectionRef.current?.focus();
+    });
+  };
+
+  const retryRenewalIdentity = async () => {
+    const { session } = await readSession(supabase.auth);
+    if (session) await reloadRenewalIdentity(session);
+  };
+
   // 真正送單（/payuni/prepare → PayUni 表單跳轉）。守衛都在呼叫端；
   // AC-15 的確認對話框確認後也直接走這裡。
   const submitPayment = async () => {
@@ -561,6 +633,33 @@ export function PaymentCheckout() {
       // 快照過時、頁面上沒看到停權時的最後一道（W5-5）：切停權說明，不當一般錯誤。
       if (response.status === 403 && extractApiErrorCode(result) === ACCOUNT_SUSPENDED) {
         setSuspended(true);
+        return;
+      }
+
+      // S6（pay P1-4）：已付款待開通——不再建單，導去開通中畫面；沒有單號是契約錯誤，交客服。
+      if (response.status === 409 && extractApiErrorCode(result) === PAYMENT_PENDING_ACTIVATION) {
+        if (typeof result?.lastTradeNo === 'string' && result.lastTradeNo) {
+          showToast('付款已完成，開通處理中', 'info');
+          navigate(`/payment/result?tradeNo=${encodeURIComponent(result.lastTradeNo)}`);
+        } else {
+          setCheckoutNotice('paidPendingNoTrade');
+        }
+        return;
+      }
+
+      // S6（pay P1-1）：曾訂閱者沒帶續費模式——快照過時。重抓會員資料切成雙模式。
+      if (response.status === 400 && extractApiErrorCode(result) === RENEWAL_MODE_REQUIRED) {
+        await reloadRenewalIdentity(session);
+        return;
+      }
+
+      // S6（ref P0-2）：新推薦碼在自己的推薦網絡內——標在碼欄位（行動版要捲過去才看得到）。
+      if (response.status === 400 && extractApiErrorCode(result) === REFERRAL_CYCLE) {
+        setNewCodeStatus('invalid');
+        setNewReferrerName(null);
+        setNewCodeInvalidMessage(extractApiErrorMessage(result, '此推薦碼無法作為推薦人'));
+        newCodeInputRef.current?.scrollIntoView?.({ block: 'center' });
+        newCodeInputRef.current?.focus();
         return;
       }
 
@@ -826,8 +925,16 @@ export function PaymentCheckout() {
 
           {/* 續費模式選擇：續約（接續原效期，可補繳）/ 新約（重新起算，換推薦人、清空帳本） */}
           {isRenewal && (
-            <div className="space-y-3" data-testid="renewal-mode-section">
+            <div
+              className="space-y-3 outline-none"
+              data-testid="renewal-mode-section"
+              ref={renewalSectionRef}
+              tabIndex={-1}
+            >
               <h3 className="text-sm font-medium">續費方式</h3>
+              {checkoutNotice === 'modeUpdated' && (
+                <StatusCallout variant="neutral" title="已更新您的會員資料，請選擇續約或新約" />
+              )}
 
               {/* 載入中（plan §4 第 2 列）：還在抓不是錯誤，走 skeleton 而非
                   錯誤文案——沒有暖快取的續約者每次進頁都會先經過這裡。 */}
@@ -1044,18 +1151,26 @@ export function PaymentCheckout() {
                       </label>
                       <Input
                         id="new-referral-code"
+                        ref={newCodeInputRef}
                         value={newReferralCode}
                         placeholder={
-                          // 自動綁定的預設碼不外洩到 placeholder（決定 4）
-                          pendingUser.referredByCode && !pendingUser.isAutoReferral
-                            ? `目前：${pendingUser.referredByCode}`
-                            : '輸入推薦碼'
+                          // 只有留空＝維持原推薦人時才提示目前的碼；自動綁定的預設碼不外洩（決定 4）
+                          freshCodePlaceholder(
+                            pendingUser.referredByCode ?? null,
+                            !!pendingUser.isAutoReferral,
+                            freshDefaultAvailable,
+                          )
+                        }
+                        aria-invalid={newCodeStatus === 'invalid' || undefined}
+                        aria-describedby={
+                          newCodeStatus === 'invalid' ? 'new-referral-code-error' : undefined
                         }
                         onChange={(e) => {
                           // 續約換線的碼與註冊走同一組規則——全形數字一樣要摺。
                           setNewReferralCode(normalizeReferralCode(e.target.value));
                           setNewCodeStatus('idle');
                           setNewReferrerName(null);
+                          setNewCodeInvalidMessage(null);
                         }}
                         onBlur={() => handleValidateNewCode(newReferralCode)}
                         data-testid="new-referral-code-input"
@@ -1075,8 +1190,11 @@ export function PaymentCheckout() {
                         </p>
                       )}
                       {newCodeStatus === 'invalid' && (
-                        <p className="text-xs text-destructive-subtle-foreground">
-                          推薦碼不存在或已失效
+                        <p
+                          id="new-referral-code-error"
+                          className="text-xs text-destructive-subtle-foreground"
+                        >
+                          {newCodeInvalidMessage ?? '推薦碼不存在或已失效'}
                         </p>
                       )}
                       {newCodeStatus === 'unavailable' && (
@@ -1084,10 +1202,10 @@ export function PaymentCheckout() {
                           {newCodeUnavailableMessage ?? '暫時無法驗證，請稍後再試'}
                         </p>
                       )}
-                      {/* Q11 裁決文案（plan §4 逐字）：關鍵是讓使用者在選擇前知道
-                          「這會改變既有推薦關係」；不解釋預設推薦碼機制。 */}
-                      <p className="text-xs text-muted-foreground">
-                        選擇新約會重新建立推薦關係。若要留在原本的推薦人底下，請填入他的推薦碼；不填則不會有推薦人。
+                      {/* W5-51（S6）：與新約確認框同一文案來源（freshRenewalCopy）——留空會不會
+                          換推薦人，依後端會套用的來源說；不解釋預設推薦碼機制（§7.4）。 */}
+                      <p className="text-xs text-muted-foreground" data-testid="fresh-code-hint">
+                        {freshCodeHint(freshDefaultAvailable)}
                       </p>
                     </div>
                   </div>
@@ -1113,7 +1231,13 @@ export function PaymentCheckout() {
             <Button
               onClick={handlePayUniPayment}
               disabled={
-                isLoading || isButtonLocked || suspensionPending || !isProfileComplete(pendingUser)
+                isLoading ||
+                isButtonLocked ||
+                suspensionPending ||
+                checkoutNotice === 'modeRetry' ||
+                checkoutNotice === 'modeContact' ||
+                checkoutNotice === 'paidPendingNoTrade' ||
+                !isProfileComplete(pendingUser)
               }
               className="w-full"
               size="lg"
@@ -1136,6 +1260,37 @@ export function PaymentCheckout() {
                 </>
               )}
             </Button>
+
+            {suspensionPending && (
+              <p className="text-sm text-center text-muted-foreground" role="status">
+                正在確認您的會員狀態…
+              </p>
+            )}
+            {checkoutNotice === 'modeRetry' && (
+              <StatusCallout
+                variant="warning"
+                title="暫時無法確認會員狀態"
+                action={
+                  <Button tone="secondary" size="sm" onClick={retryRenewalIdentity}>
+                    重試
+                  </Button>
+                }
+              />
+            )}
+            {checkoutNotice === 'modeContact' && (
+              <StatusCallout
+                variant="warning"
+                title="無法確認您的會員資料，請聯絡客服"
+                description={`LINE 官方帳號 ${LINE_OFFICIAL_ACCOUNT_HANDLE}`}
+              />
+            )}
+            {checkoutNotice === 'paidPendingNoTrade' && (
+              <StatusCallout
+                variant="warning"
+                title="付款已完成，開通處理中，請聯絡客服"
+                description={`LINE 官方帳號 ${LINE_OFFICIAL_ACCOUNT_HANDLE}`}
+              />
+            )}
 
             {/* 資料未填齊時，說明付款鈕為何反灰，並給一個回填資料的明確入口，
                 避免使用者面對一顆「按不動」的按鈕不知所措。資料已鎖定者這個
@@ -1178,7 +1333,14 @@ export function PaymentCheckout() {
               <AlertDialogHeader>
                 <AlertDialogTitle>確定要以新約重新開始嗎？</AlertDialogTitle>
                 <AlertDialogDescription asChild>
-                  <div className="space-y-2 text-left">
+                  {/* 段落多時（資產＋補繳＋推薦人）小螢幕可捲動；確認鈕在捲動區外。 */}
+                  <div
+                    className="space-y-2 text-left max-h-[50vh] overflow-y-auto"
+                    role="region"
+                    aria-label="新約影響說明"
+                    // biome-ignore lint/a11y/noNoninteractiveTabindex: 可捲動區需能以鍵盤捲動
+                    tabIndex={0}
+                  >
                     {/* 零值子句不唸（同揭露卡片）。 */}
                     {renewal &&
                       (renewal.freshForfeitPoints > 0 || renewal.freshForfeitReferrals > 0) && (
@@ -1203,15 +1365,18 @@ export function PaymentCheckout() {
                         ），改選新約後這些效期不會退還，也不會保留到新約。
                       </p>
                     )}
+                    {!freshHasAssets && <p>目前沒有點數或推薦紀錄需要清空。</p>}
+                    {freshReferrerLine && <p>{freshReferrerLine}</p>}
                     <p>新約將自付款日起重新計算一年效期。</p>
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel data-testid="fresh-confirm-cancel">再想想</AlertDialogCancel>
-                {/* 新約會清空累積且無法復原＝不可逆確認框，確認鈕紅實心（§12.11，#354 裁決 #10）。 */}
+                {/* 有資產＝會失去、無法復原 → 紅實心（§12.11，#354 裁決 #10）；無資產只換推薦人
+                    與重算效期 → 流程鈕（W5-51）。 */}
                 <AlertDialogAction
-                  variant="destructive"
+                  variant={freshHasAssets ? 'destructive' : undefined}
                   data-testid="fresh-confirm-action"
                   onClick={() => {
                     setFreshConfirmOpen(false);
