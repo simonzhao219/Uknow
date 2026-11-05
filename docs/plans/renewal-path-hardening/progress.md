@@ -10,7 +10,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 環偵測函式＋自領停發 | ⬜ 未開始 | | |
+| 1 | 環偵測函式＋自領停發 | ✅ 綠（本機 PG16 驗；CI 待推） | c07b790c | （本 commit） |
 | 2 | 訂單換線意圖＋prepare RPC 新 outcome＋付款端 0d＋changed_at | ⬜ 未開始 | | |
 | 3 | Edge prepare 改寫 | ⬜ 未開始 | | |
 | 4 | `/profile` 續費卡單旗標＋heal | ⬜ 未開始 | | |
@@ -20,7 +20,9 @@
 
 ## 目前位置與下一步
 
-規劃完成、/review-plan 完成（P0 0／P1 16／P2 13，見 review.md）。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
+業主 11/05 22:37 開工（review.md 處置節）。階段 1 綠；下一步階段 2（A2：意圖欄＋六參數 RPC＋0d＋changed_at）。
+本機驗證環境：scratchpad 的 `apply.sh`（PG16＋shim，套全部 migration）；deno 測試的正式紅綠以 CI api-tests 為準。
+舊敘述：規劃完成、/review-plan 完成（P0 0／P1 16／P2 13，見 review.md）。下一步：業主裁決 plan §6 Q1–Q6 與審查 P0 → 在本 session 親打 `/tdd-implement renewal-path-hardening`。
 施工前先請主 session 代跑 plan §7 的唯讀查詢 1–7，結果記在下方。
 
 ## 正式站唯讀查詢結果
