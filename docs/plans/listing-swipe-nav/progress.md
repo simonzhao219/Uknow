@@ -43,6 +43,8 @@ hash 說明：分支會被推送守衛反覆 rebase 到最新 origin/develop，c
 - **偏離規劃（階段 8）**：plan 寫的「有脈絡的骨架同形探針」不成立——脈絡只在首頁清單已進快取時才存在，那時詳情頁一律從快取即時渲染、不會出現骨架，兩者不會同時發生。改為量「有換篇控制（從首頁進）與沒有（直接開連結）時，詳情頁各區塊位置一致（≤2px，375／1280）」，直接驗證「控制放在返回鈕同一列、不新增列」這個真正的風險（`test_browse_controls_do_not_shift_the_detail_layout`）。
 - **本機跑 e2e 的方法（給接手者）**：Python 3.13 venv（scratchpad）＋`pip install -r e2e/requirements.txt`；Playwright 1.56 期待 chromium build 1194，容器預裝 1243，以 `PLAYWRIGHT_BROWSERS_PATH` 指向一個只放 symlink 的目錄（`chromium-1194/chrome-linux`→預裝 chrome-linux64、`chromium_headless_shell-1194/chrome-linux/headless_shell`→預裝 chrome-headless-shell）即可，不必重裝瀏覽器。
 
+- **階段 2 / Q5 續（2026-11-06，W5-64）**：www.tgos.tw 自 2026-11-06 01:26 UTC 起對本容器回純 HTTP 403 Forbidden（134 bytes），不再是維護頁；已回報主 session。業主裁決 **W5-64**：業主自己用瀏覽器從 data.gov.tw 資料集 7441 下載「鄉(鎮、市、區)界線1140318.zip」，直接在**本 session 對話裡附檔**。收到後：自行算 SHA-256，與下載頁資訊（URL、取得日期、「業主提供」）一併記入座標產生腳本檔頭；離線產座標表；顯名照 W5-34（只寫檔頭與規格書）。不偽裝 User-Agent、不繞過封鎖；自動重試已取消。在業主附檔前，階段 2、3、8b 暫停；若需確認檔名或版本，直接在本 session 問業主。
+
 ## 框架摩擦
 
 (無)
