@@ -105,6 +105,7 @@
 | W5-61 | S6 獨立審查 P2-1：批次自癒 `complete_paid_pending_orders(null)` 單一交易內握前輪 profiles 列鎖，0a′ 等 advisory 時可與線上 fresh 付款死鎖，被選中方的一代獎金被 `when others` 吞掉而靜默漏發 | **本 PR 修**：批次路徑在 0a′ 改 `pg_try_advisory_xact_lock`，拿不到就跳過留給下一輪；補測試（業主 2026-11-06） |
 | W5-62 | S6 獨立審查 P2-2：新 Edge 若先於 migration 部署，prepare 全 500（含首購） | **晉升清單加一步**（核准正式站部署前確認 migration 已套用）；部署 workflow 自動檢查列第 6 波（業主 2026-11-06） |
 | W5-63 | S6 P2-3：會員現任推薦人即預設推薦人時，新約留空確認框仍寫「您的推薦人將改變」（實際不變；推薦人與獎金正確） | **先合 #514，留第 6 波**：後端回第三態「預設推薦人即現任」，前端寫「您的推薦人維持不變」、不揭露是誰（業主 2026-11-06） |
+| W5-64 | S7：www.tgos.tw 維護結束後對雲端機器回 HTTP 403（非代理白名單；疑 WAF），界線 zip 取不到，卡階段 2、3、8b | **業主用瀏覽器自行下載「鄉(鎮、市、區)界線1140318.zip」（data.gov.tw 7441），在 S7 session 附檔**；S7 記 SHA-256／URL／取得日期，離線產座標表，顯名照 W5-34；不繞封鎖（業主 2026-11-06）。預算確認：S7 疊在 develop 1005／313 上 → raw 1015／gzip 316（W5-43 合計），超過即停下回報 |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -267,3 +268,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/06 01:40 | S6 交 **#514**（draft；7 階段綠、/review-implementation P0 0、3 條 P1 已修、2 條 P1 記偏離、journey dispatch 中）。業主裁 **W5-58～60**。主 session 另派獨立 Opus 審查員審 #514 | S6 補 W5-58／59；等審查、CI、journey |
 | 11/06 02:00 | #514 獨立 Opus 審查：**P0 0、P1 0**、P2 3（鎖序、R1～R7、新舊版本相容、正式站 migration 安全皆核實）。業主裁 **W5-61**（批次自癒死鎖本 PR 修）、**W5-62**（部署順序進晉升清單＋第 6 波）；P2-3 交 S6 確認 | S6 修 W5-61 → CI 綠 → 合 #514 |
 | 11/06 03:05 | S6 修 W5-61（紅 3ac750b1／綠 356cb48c；批次設交易層旗標、0a′ try 鎖拋 U6R01、批次記 skipped_locked；主 session 對基準版逐行比對只差三處）；CI 全綠、journey 全套於 74e0c0b 綠。S6 回報 P2-3 有兩條非競態錯句 → 業主裁 **W5-63**（留第 6 波）。**#514 合進 develop（fb8f95c）**，S6 收工 | develop 部署後確認 S6 migration 已套；S7 收尾 → 晉升 |
+| 11/06 09:35 | develop 部署 fb8f95c 成功（health sha 比對過）、S6 migration 7 支與 W5-61 函式已在 develop。S7 回報：rebase 後 check 全綠、階段 1、4～7、8a 完成；TGOS 改回 403 → 業主裁 **W5-64**（業主下載後附檔給 S7）；預算合計 1015／316 主 session 核可 | 業主附檔給 S7；S7 做階段 2、3、8b、9 |
