@@ -963,7 +963,7 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 前端以 PostHog（歐盟區）記錄頁面瀏覽與操作錄影，用於找出使用者卡關的位置（業主裁決 W4-35～37）。
 
-**預設關閉**：key 在 `config/posthogTarget.ts`（`phc_` 寫入 key 為公開值，commit 在 git；main 用正式 project、其餘分支用 develop project）。key 為佔位值、沒有 `CF_PAGES_BRANCH` 的本機建置、journey（外部指定 Supabase project）一律不注入，執行期不載入 SDK、不送任何請求。`VITE_ANALYTICS=off`（Pages 環境變數，重新部署即生效）可緊急關閉；`VITE_ANALYTICS_SAMPLE`（0～1，預設 1＝全錄）可降低錄影比例。
+**只在正式站開啟**：key 在 `config/posthogTarget.ts`（`phc_` 寫入 key 為公開值，commit 在 git）。只有正式站一個 project（免費方案限 1 個，W5-68）：main 建置注入正式 key；develop 與其他分支的 key 為佔位值，不注入。key 為佔位值、沒有 `CF_PAGES_BRANCH` 的本機建置、journey（外部指定 Supabase project）一律不注入，執行期不載入 SDK、不送任何請求。`VITE_ANALYTICS=off`（Pages 環境變數，重新部署即生效）可緊急關閉；`VITE_ANALYTICS_SAMPLE`（0～1，預設 1＝全錄）可降低錄影比例。
 
 **載入**：`window load` 後等瀏覽器 idle 才動態載入 SDK，不進 entry；SDK 用 `posthog-js/dist/module.slim` 只掛錄影擴充（`SessionReplayExtensions`）——預設入口的 logs、conversations 等擴充會依 PostHog 專案端的遠端設定自行啟動（攔截 console 外送、身分表單收姓名與 Email），前端沒有選項能關，所以不載入；`posthog-js` 釘精確版本，升版時由 `analyticsPrivacyWorstCase.test.ts`（最壞遠端設定）把關；錄影元件由 PostHog 資產網域 `eu-assets.i.posthog.com` 外部載入（第三方腳本不受 lockfile 控制、可讀 DOM，業主已接受，W5-37），且只載入釘版本的路徑（`strict_script_versioning: true`，載不到就不錄、不退回未釘版的最新檔）；PostHog 專案設定檔 `/array/<token>/config.js` 一定會被執行，這是對廠商信任的剩餘風險，日後補完整 CSP 時處理。
 

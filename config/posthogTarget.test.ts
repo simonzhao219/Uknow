@@ -8,11 +8,12 @@ import {
 const REAL_KEYS = { production: 'phc_prod_real', develop: 'phc_dev_real' };
 
 describe('resolvePosthogTarget', () => {
-  it('預設 key 為佔位值時，main 與 develop 建置都不注入（W5-35 關閉態）', () => {
-    expect(POSTHOG_KEYS.production).toBe(PLACEHOLDER_POSTHOG_KEY);
+  it('只有正式站設 key：main 建置注入正式 key，develop 與預覽分支不注入（W5-68）', () => {
+    expect(POSTHOG_KEYS.production).toMatch(/^phc_(?!PLACEHOLDER)/);
     expect(POSTHOG_KEYS.develop).toBe(PLACEHOLDER_POSTHOG_KEY);
-    expect(resolvePosthogTarget({ CF_PAGES_BRANCH: 'main' }).key).toBeNull();
+    expect(resolvePosthogTarget({ CF_PAGES_BRANCH: 'main' }).key).toBe(POSTHOG_KEYS.production);
     expect(resolvePosthogTarget({ CF_PAGES_BRANCH: 'develop' }).key).toBeNull();
+    expect(resolvePosthogTarget({ CF_PAGES_BRANCH: 'feature/x' }).key).toBeNull();
   });
 
   it('main 分支建置用正式 project key', () => {
