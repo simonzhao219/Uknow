@@ -140,6 +140,10 @@ high／critical 會晚兩天才被看見（issue #467）。dispatch 也驗不到
 - 推送守衛（`.claude/hooks/pre-push-rebase.sh`）會自動 rebase 到最新 develop，之後要 `--force-with-lease`，而
   auto mode 分類器可能擋改寫遠端分支的 force push：被擋時不硬繞，改在遠端分支頂端疊快轉 commit，或交主 session rebase。
 - 新的 `docs/plans/<slug>/` 若要隨 PR 先合併，開 PR 前就加 `plans-keep` 註解，否則 `check-plans-scaffold` 紅。
+- **裁決編號只由主 session 發**（第 4 波審查 P2-16）：執行 session 拿到的業主授權記成「業主 YYYY-MM-DD HH:MM 互動選項：原話」，
+  不自編 `W<n>-x`——第 4 波有執行 session 自稱的 W4-21 與 plan 的 W4-21 撞號，`grep` 會指到兩件事。
+- **紅綠燈 hash 以 PR 內文為準**（第 4 波審查 P2-17）：rebase 會改寫 hash，執行 session 每次 rebase 後更新 PR 內文的表；
+  主 session 的 plan §8 只記 PR 號，不抄 hash。
 
 **凍結期只許 hotfix。**（第 1 波裁決 8）晉升後的凍結窗口內，main 只收「營運中發現、
 定義明確、不動註冊／付款／登入主幹、無 migration」的修正，而且照樣走晉升 PR＋業主核准
