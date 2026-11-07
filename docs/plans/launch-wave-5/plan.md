@@ -230,7 +230,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S2 | `session_01MQovbESfcRiNxR7jrSF4PC` | Opus | `feature/payment-concurrency-guard` | #510 ✅ 54ac83f | 收工 |
 | S3 | `session_01MQovbC1eQchSVQ5EtHXBdN` | Sonnet | `fix/transient-not-final` | #508 ✅ 22a03af | 收工 |
 | S5 | `session_01MQovbFK1GajBKp2k4tryQx` | Sonnet | `fix/csv-and-network-search` | #507 ✅ 547adb1 | 收工 |
-| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509（draft） | 實作中：階段 1、4、5、6 綠；2、3、8b 等 TGOS |
+| S7 | `session_01MQovbBUd7B4BdTZNQngYxy` | Sonnet | `feature/listing-swipe-nav` | #509 | **已合（45556bc）**，收工 |
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511 ✅ cebc239 | 收工；晉升前填 key（W5-35） |
 | S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | #514 | **已合（fb8f95c）**，收工 |
 | S8 | `session_01MQovbBQu7kxFjWhxHoGSZi` | Sonnet | `fix/terminology-guard` | #513 ✅ 2957408 | 收工 |
@@ -275,3 +275,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/06 09:35 | develop 部署 fb8f95c 成功（health sha 比對過）、S6 migration 7 支與 W5-61 函式已在 develop。S7 回報：rebase 後 check 全綠、階段 1、4～7、8a 完成；TGOS 改回 403 → 業主裁 **W5-64**（業主下載後附檔給 S7）；預算合計 1015／316 主 session 核可 | 業主附檔給 S7；S7 做階段 2、3、8b、9 |
 | 11/07 14:20 | 業主附界線 zip 給 S7；S7 全階段完成（#509 head 9fea296，CI 綠、ready；/review-implementation P0 0；bundle entry 1011.6／315.2、總 1946.4，在 1015／316／1950 內）。主 session 派獨立 Opus 審查（第一次因容器重啟中斷，重派）。業主裁 **W5-65、66**。develop 乙段 pg_net 回 401 → 指紋比對不一致 → **W5-67** 腳本換新 | 等審查 → 合 #509 → 業主手機實測、跑換新腳本 → 乙段驗證 → 晉升 |
 | 11/07 15:00 | #509 獨立 Opus 審查：**P0 0、P1 1**（座標在離開首頁期間回來 → 返回時第二次定位被接受而重排，違反「返回不重排」；審查員以補完測試實證轉紅）、P2 3（定位錯誤仍等滿 1.5 秒、方向鍵 repeat 連續換篇、檔頭缺資料集完整網址）→ 全數退回 S7 本 PR 修 | S7 修 → CI 綠 → 合 #509 |
+| 11/07 15:10 | S7 修審查 P1＋P2 三項（紅 42c1e2b／綠 ea1ffad；`homeListingsCache.orderMode` 記離開前排序，返回本次造訪不採用座標；定位錯誤解除等待；忽略 event.repeat；檔頭補資料集網址），主 session 核對 delta、CI 全綠 → **#509 合進 develop（45556bc）**，S7 收工。本波五項必上與 S6、S7、S8 全數合併 | 業主手機實測（W5-66）＋手動換 RECONCILE_SECRET（W5-67）→ develop 乙段驗證 → PostHog key → 開晉升 PR |
