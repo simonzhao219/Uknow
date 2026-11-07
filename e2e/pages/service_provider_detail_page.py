@@ -41,3 +41,13 @@ class ServiceProviderDetailPage(BasePage):
         """頁首返回圖示鈕。名稱說去向：站內有上一頁時「返回上一頁」，從分享連結直接
         開進來（沒有站內歷史）時「回首頁」。"""
         return self.page.get_by_role("button", name=re.compile(r"^(返回上一頁|回首頁)$"))
+
+    # --- 換篇（S7）----------------------------------------------------------
+    # 頁首列右側的「‹ 3/12 ›」：<nav aria-label="換篇">，按鈕名稱是「上一篇／下一篇」
+    # （輪播自己的箭頭叫「上一張／下一張」，不會撞名）。頭尾的鈕用 aria-disabled，不是 disabled。
+
+    def browse_nav(self):
+        return self.page.get_by_role("navigation", name="換篇")
+
+    def browse_button(self, label: str):
+        return self.browse_nav().get_by_role("button", name=label)

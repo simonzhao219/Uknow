@@ -5,7 +5,10 @@ import {
   getCachedCoords,
   getCachedFilters,
   getCachedListing,
+  freezeBrowseContext,
+  getBrowseContext,
   getCachedListings,
+  getLastViewedId,
   getSavedScrollY,
   resetHomeListingsCache,
   resetHomeView,
@@ -13,6 +16,7 @@ import {
   setCachedCoords,
   setCachedFilters,
   setCachedListings,
+  setLastViewedId,
 } from './homeListingsCache';
 
 const row = (id: string) => ({ id, name: id }) as unknown as PublicListingRow;
@@ -84,5 +88,55 @@ describe('homeListingsCache', () => {
     expect(getCachedListings()).toBeNull();
     expect(getCachedCoords()).toBeNull();
     expect(getSavedScrollY()).toBe(0);
+  });
+});
+
+describe('browse context（換篇脈絡）', () => {
+  it('凍結後可讀回有序 id、進入的那篇與版本', () => {
+    const version = freezeBrowseContext(['a', 'b', 'c'], 'b');
+    expect(getBrowseContext()).toEqual({ ids: ['a', 'b', 'c'], entryId: 'b', version });
+  });
+
+  it('凍結時複製陣列，之後改動來源不影響已凍結的順序', () => {
+    const ids = ['a', 'b'];
+    freezeBrowseContext(ids, 'a');
+    ids.reverse();
+    expect(getBrowseContext()?.ids).toEqual(['a', 'b']);
+  });
+
+  it('每次凍結都換新版本', () => {
+    const v1 = freezeBrowseContext(['a'], 'a');
+    const v2 = freezeBrowseContext(['a'], 'a');
+    expect(v1).not.toBe(v2);
+    expect(v1).not.toBe('');
+  });
+
+  it('重新凍結會清掉上一輪最後看的那篇', () => {
+    freezeBrowseContext(['a', 'b'], 'a');
+    setLastViewedId('b');
+    freezeBrowseContext(['a', 'b'], 'b');
+    expect(getLastViewedId()).toBeNull();
+  });
+
+  it('最後看的那篇可寫入與讀回', () => {
+    expect(getLastViewedId()).toBeNull();
+    setLastViewedId('b');
+    expect(getLastViewedId()).toBe('b');
+  });
+
+  it('resetHomeView 清掉最後看的那篇，但保留凍結脈絡', () => {
+    const version = freezeBrowseContext(['a', 'b'], 'a');
+    setLastViewedId('b');
+    resetHomeView();
+    expect(getLastViewedId()).toBeNull();
+    expect(getBrowseContext()?.version).toBe(version);
+  });
+
+  it('resetHomeListingsCache（登出）清掉凍結脈絡與最後看的那篇', () => {
+    freezeBrowseContext(['a', 'b'], 'a');
+    setLastViewedId('b');
+    resetHomeListingsCache();
+    expect(getBrowseContext()).toBeNull();
+    expect(getLastViewedId()).toBeNull();
   });
 });

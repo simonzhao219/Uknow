@@ -13,7 +13,7 @@ import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
 import { MaintenanceBanner } from './components/MaintenanceBanner';
 import { HomePage } from './components/HomePage';
-import { ServiceProviderDetail } from './components/ServiceProviderDetail';
+import { ServiceProviderDetailRoute } from './components/ServiceProviderDetailRoute';
 import { AuthPage } from './components/AuthPage';
 import { OTPVerificationPage } from './components/OTPVerificationPage';
 import { CompleteProfile } from './components/CompleteProfile';
@@ -305,7 +305,7 @@ function AppContent() {
                 <Suspense fallback={<RouteLoader />}>
                   <Routes>
                     <Route path="/" element={<HomePage />} />
-                    <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
+                    <Route path="/service-providers/:id" element={<ServiceProviderDetailRoute />} />
                     {/* Authentication Routes */}
                     <Route path="/login" element={<AuthPage />} />
                     <Route path="/register" element={<AuthPage />} />

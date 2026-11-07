@@ -27,6 +27,8 @@ def _parse_names(names: str):
 _CITY_COORDS = {
     "台北市": {"latitude": 25.0330, "longitude": 121.5654},
     "高雄市": {"latitude": 22.6273, "longitude": 120.3014},
+    # 區級排序用：高雄苓雅區中心附近
+    "高雄市苓雅區": {"latitude": 22.623, "longitude": 120.32},
 }
 
 
@@ -59,6 +61,15 @@ def directory_add_city_listing(rest_mock, directory, name, city):
     # Accumulates across steps, preserving insertion order (which HomePage keeps
     # as the default "most recent first" order until distance sort reorders it).
     row = build_public_listing(listing_id=_listing_id(len(directory) + 1), name=name, city=city)
+    directory[name] = row
+    rest_mock.set_public_listings(list(directory.values()))
+
+
+@given(parsers.parse('the public directory has a listing "{name}" in "{city}" serving "{district}"'))
+def directory_add_district_listing(rest_mock, directory, name, city, district):
+    row = build_public_listing(
+        listing_id=_listing_id(len(directory) + 1), name=name, city=city, districts=[district]
+    )
     directory[name] = row
     rest_mock.set_public_listings(list(directory.values()))
 
@@ -96,6 +107,13 @@ def directory_listing_has_detail(rest_mock, directory, name):
     # The detail page reads `.single()`, a separate mock slot from the list read;
     # serve the same row there so clicking the card lands on real content.
     rest_mock.set_public_listing(directory[name])
+
+
+@given("every directory listing has a detail page")
+def every_listing_has_detail(rest_mock, directory):
+    # Browse prev/next moves between several detail pages, so the detail read has to
+    # answer each listing's own `id=eq.<id>` (not one fixed row).
+    rest_mock.serve_public_listing_details(list(directory.values()))
 
 
 @given(parsers.parse('no public listing exists for id "{listing_id}"'))
@@ -171,6 +189,16 @@ def open_that_detail(page, directory):
     page.goto(f"/service-providers/{row['id']}")
 
 
+@when("I go to the next listing")
+def go_next_listing(service_provider_detail_page):
+    service_provider_detail_page.browse_button("下一篇").click()
+
+
+@when("I go to the previous listing")
+def go_previous_listing(service_provider_detail_page):
+    service_provider_detail_page.browse_button("上一篇").click()
+
+
 # --- Then ------------------------------------------------------------------
 
 
@@ -239,3 +267,21 @@ def detailed_view_active(home_page):
 @then("the directory has no horizontal overflow")
 def no_horizontal_overflow(home_page):
     assert not home_page.has_horizontal_overflow(), "首頁在手機視窗下產生了水平溢出（跑版）"
+
+
+# --- detail page browse prev/next（S7）--------------------------------------
+
+
+@then(parsers.parse('the detail page position should read "{text}"'))
+def detail_position(service_provider_detail_page, text):
+    expect(service_provider_detail_page.browse_nav()).to_contain_text(text, timeout=5_000)
+
+
+@then(parsers.parse('the "{label}" button should be disabled'))
+def browse_button_disabled(service_provider_detail_page, label):
+    expect(service_provider_detail_page.browse_button(label)).to_have_attribute("aria-disabled", "true")
+
+
+@then("the detail page should have no browse controls")
+def no_browse_controls(service_provider_detail_page):
+    expect(service_provider_detail_page.browse_nav()).to_have_count(0)

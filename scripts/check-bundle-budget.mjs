@@ -27,8 +27,10 @@ const BUDGET = {
   // S6（續約路徑潛伏組）：結帳頁在 entry 內，續費身分確認、建單拒絕的內嵌狀態、新約確認框
   // 文案（freshRenewalCopy）實測 raw +3.1 kB／gzip +1.2 kB（gzip 仍在 313 內，不調）。
   // 業主 2026-11-06 01:16 互動選項核准 raw 1002→1005。
-  entryRawKB: 1005, // 原 1000；S4 +2；S6 +3
-  entryGzipKB: 313, // 原 310→312（H1 hotfix）；S4 +1.0
+  // S7（刊登換篇＋區級距離排序，W5-30／W5-43）：entry 必含首頁排序／凍結脈絡／卡片連結與詳情頁
+  // 換篇控制，手勢與鍵盤、座標表已拆動態 chunk；額度 gzip +3、raw 依約 1:3.2 同比例 +10，疊在上面各項之上。
+  entryRawKB: 1015, // 原 1000；S4 +2；S6 +3；S7 +10
+  entryGzipKB: 316, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3
   // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
   // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。
   totalRawKB: 1950, // 原 1600；S4 +350

@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type Ref } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type Ref } from 'react';
+import { useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { getCachedListing } from '../utils/homeListingsCache';
+import { getCachedListing, setLastViewedId } from '../utils/homeListingsCache';
+import { importWithRetry } from '../utils/lazyWithRetry';
+import { prefersReducedMotion } from '../utils/motionPreference';
+import { useBrowseNeighbors } from '../hooks/useBrowseNeighbors';
+import { BrowseNav, type BrowseVia } from './listing/BrowseNav';
 import { CategoryBadge } from './common/CategoryBadge';
 import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
@@ -27,15 +31,25 @@ import type { PublicListingRow } from '../types/listing';
 // 「真的沒有這筆」只有兩種：.single() 對零列回 PGRST116；id 不是合法 uuid（分享連結被
 // 截斷、手打錯）回 22P02。其餘（網路、5xx、沒有資料也沒有錯誤碼的怪回應）是暫時讀不到——
 // 從 LINE 分享連結進來的訪客遇到這種失敗，不能被告知「找不到」，要給重試。
+// 換篇的鍵盤與照片外滑動：只在有首頁脈絡時才載入（分享連結進來的訪客不付這段）。
+const BrowseGestures = lazy(() => importWithRetry(() => import('./listing/BrowseGestures')));
+
 const NOT_FOUND_CODES = new Set(['PGRST116', '22P02']);
 
 type LoadStatus = 'loading' | 'ready' | 'notFound' | 'error';
 
-export function ServiceProviderDetail() {
+export function ServiceProviderDetail({
+  onBrowseNotice,
+}: {
+  /** 頭尾再換篇時的播報（「已是最後一篇」），由路由層的 live 區唱出。 */
+  onBrowseNotice?: (message: string) => void;
+} = {}) {
   const { showToast } = useNotification();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
+  const neighbors = useBrowseNeighbors();
   // 從首頁點進來時，首頁快取已有同一筆公開刊登：先用它渲染（不閃骨架），背景再重驗。
   const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(() =>
     getCachedListing(id),
@@ -109,6 +123,76 @@ export function ServiceProviderDetail() {
     target.current?.focus();
   }, [status]);
 
+  // ── 換篇（W5-20～22、27）──
+  // 換篇＝replace 成新的 id：歷史只留一筆，返回一次回首頁。state 沿用 browseFrom／ctx，
+  // 另記 dir／via 給新實例還原焦點用（鈕與鍵盤保留焦點在原鈕，手勢才移到標題）。
+  const routeState = location.state as { dir?: 'prev' | 'next'; via?: BrowseVia } | null;
+  const arrivedByBrowse = neighbors && navigationType === 'REPLACE' ? routeState?.via : undefined;
+  // 頭尾再換篇：只有內容區輕推 24px 再回原位（不動頁首與輪播以外的結構，不循環）。
+  // 偏好減少動態時不動，文字播報（「已是最後一篇」）仍照常。
+  const contentRef = useRef<HTMLDivElement>(null);
+  const bounceContent = (direction: 'prev' | 'next') => {
+    const el = contentRef.current;
+    if (!el || prefersReducedMotion() || typeof el.animate !== 'function') return;
+    const push = direction === 'next' ? -24 : 24;
+    el.animate(
+      [
+        { transform: 'translateX(0)' },
+        { transform: `translateX(${push}px)` },
+        { transform: 'translateX(0)' },
+      ],
+      { duration: 180, easing: 'ease-out' },
+    );
+  };
+  // 換篇後新內容從來的那一側滑入（200ms）；只有「換篇重掛」才有，第一次進來、重整都不動。
+  const enterClass =
+    arrivedByBrowse && !prefersReducedMotion()
+      ? `animate-in fade-in duration-200 ${routeState?.dir === 'prev' ? 'slide-in-from-left-6' : 'slide-in-from-right-6'}`
+      : '';
+
+  const goBrowse = (direction: 'prev' | 'next', via: BrowseVia) => {
+    if (!neighbors) return;
+    const target = direction === 'next' ? neighbors.nextId : neighbors.prevId;
+    if (!target) {
+      onBrowseNotice?.(direction === 'next' ? '已是最後一篇' : '已是第一篇');
+      bounceContent(direction);
+      return;
+    }
+    setLastViewedId(target);
+    navigate(`/service-providers/${target}`, {
+      replace: true,
+      state: { ...(location.state as object | null), dir: direction, via },
+    });
+  };
+  const gestureRef = useRef<HTMLDivElement>(null);
+  const focusedAfterBrowse = useRef(false);
+  // 換篇後新頁一律從頂端開始。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在換篇重掛時做一次
+  useEffect(() => {
+    if (arrivedByBrowse) window.scrollTo(0, 0);
+  }, []);
+  // 手勢換篇：焦點移到新頁標題（載入完成後）。
+  useEffect(() => {
+    if (arrivedByBrowse !== 'swipe' || focusedAfterBrowse.current || status === 'loading') return;
+    focusedAfterBrowse.current = true;
+    const target = { error: errorRef, ready: headingRef, notFound: notFoundRef }[status];
+    target.current?.focus();
+  }, [arrivedByBrowse, status]);
+
+  const browseNav = neighbors ? (
+    <BrowseNav
+      neighbors={neighbors}
+      onGo={goBrowse}
+      autoFocusDir={arrivedByBrowse && arrivedByBrowse !== 'swipe' ? routeState?.dir : undefined}
+    />
+  ) : null;
+  const gestures = neighbors ? (
+    <Suspense fallback={null}>
+      <BrowseGestures containerRef={gestureRef} onNavigate={goBrowse} />
+    </Suspense>
+  ) : null;
+  const gestureClass = neighbors ? 'touch-pan-y touch-pinch-zoom' : '';
+
   // 頁首返回圖示鈕（全站同款，§12.13）。去向與 MarkdownContent 同一個決策來源：從 LINE
   // 分享連結直接開進來時站內沒有上一頁（location.key 是 'default'），navigate(-1) 會離開
   // 網站或沒反應，改回首頁。不用 useBackNavigation——它的層級表把 /service-providers/*
@@ -125,10 +209,21 @@ export function ServiceProviderDetail() {
       <ArrowLeft className="h-5 w-5" />
     </Button>
   );
+  // 有脈絡時頁首列右側多一組換篇控制（同列、列高不變）；沒有脈絡時維持單顆返回鈕。
+  const topBar = browseNav ? (
+    <div className="flex items-center justify-between gap-2">
+      {backButton}
+      {browseNav}
+    </div>
+  ) : (
+    backButton
+  );
 
   if (status === 'notFound') {
     return (
-      <div className="max-w-4xl mx-auto text-center py-12">
+      <div ref={gestureRef} className={`max-w-4xl mx-auto text-center py-12 ${gestureClass}`}>
+        {browseNav && <div className="flex justify-end">{browseNav}</div>}
+        {gestures}
         <h2
           ref={notFoundRef}
           tabIndex={-1}
@@ -146,8 +241,9 @@ export function ServiceProviderDetail() {
 
   if (status !== 'ready' || !serviceProvider) {
     return (
-      <div className="max-w-4xl mx-auto space-y-6">
-        {backButton}
+      <div ref={gestureRef} className={`max-w-4xl mx-auto space-y-6 ${gestureClass}`}>
+        {topBar}
+        {gestures}
         {status === 'error' ? (
           // 暫時讀不到＝「錯誤但可重試」（LoadErrorCallout，§12.11）；ref 是重試後的焦點落點。
           <LoadErrorCallout
@@ -201,12 +297,21 @@ export function ServiceProviderDetail() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {backButton}
+    <div ref={gestureRef} className={`max-w-4xl mx-auto space-y-6 ${gestureClass}`}>
+      {topBar}
+      {gestures}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div
+        ref={contentRef}
+        data-browse-content=""
+        className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${enterClass}`}
+      >
         {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
-        <PhotoCarousel photos={serviceProvider.photos} name={serviceProvider.name} />
+        <PhotoCarousel
+          photos={serviceProvider.photos}
+          name={serviceProvider.name}
+          onEdgeSwipe={neighbors ? (direction) => goBrowse(direction, 'swipe') : undefined}
+        />
 
         {/* 詳細資訊區域 */}
         <div className="space-y-6">
