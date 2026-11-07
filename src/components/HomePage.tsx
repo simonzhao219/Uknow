@@ -1,5 +1,13 @@
 import type React from 'react';
-import { useState, useMemo, useEffect, useContext, useRef, useCallback } from 'react';
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+  useContext,
+  useRef,
+  useCallback,
+} from 'react';
 import { useLocation, useNavigationType } from 'react-router-dom';
 import { UserContext } from '../App';
 import { Button } from './ui/button';
@@ -40,7 +48,14 @@ import {
 } from '../utils/districtSelection';
 import { filterAndSortListings } from '../utils/homeListingOrder';
 import { getLoadedDistrictTable, loadDistrictTable } from '../utils/districtTableLoader';
+import type { Coords } from '../utils/homeListingsCache';
 import type { DistrictTable } from '../utils/listingDistanceOrder';
+import {
+  GEO_WAIT_MS,
+  runReorder,
+  takeReorderSnapshot,
+  type ReorderSnapshot,
+} from '../utils/homeReorder';
 import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { ListingLink, OpenListingContext } from './home/ListingLink';
@@ -88,6 +103,10 @@ const formatDistrict = (serviceProvider: PublicListingRow): string => {
   const displayText = districts.join(', ');
   return serviceProvider.districts.length > maxDisplay ? `${displayText}...` : displayText;
 };
+
+// 座標表在模組載入時就開始預載（動態 chunk，不進 entry），比元件掛載更早、與路由 chunk 並行；
+// 失敗在元件掛載時由 loadDistrictTable() 的 catch 處理，這裡不重複。
+loadDistrictTable().catch(() => {});
 
 export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
@@ -170,18 +189,72 @@ export function HomePage() {
     getCachedCoords(),
   );
 
-  // 區中心座標表（動態 chunk，不進 entry；與清單 fetch、定位並行預載）。
+  // 區中心座標表（動態 chunk，不進 entry；與清單 fetch、定位、permissions.query 在掛載時並行）。
   // 載入失敗＝維持最新排序（靜默），不影響清單。
   const [districtTable, setDistrictTable] = useState<DistrictTable | null>(() =>
     getLoadedDistrictTable(),
   );
+
+  // 冷載入的定位等待（W5-25）：只有「無快取清單、無快取座標、定位已授權」才把首次顯示延後到
+  // 座標與座標表就位（或自掛載起 1.5 秒）；有快取清單（返回）一律立即顯示，座標晚到再重排。
+  // 初值先假設會等（有 permissions API 與定位才可能等），查到非 granted 立刻解除。
+  const [geoWaiting, setGeoWaiting] = useState(
+    () =>
+      getCachedListings() === null &&
+      getCachedCoords() === null &&
+      typeof navigator !== 'undefined' &&
+      !!navigator.geolocation &&
+      !!navigator.permissions?.query,
+  );
+  const waiting = geoWaiting && !(userCoords && districtTable);
+  const showSkeleton = loading || waiting;
+
+  // 座標與座標表的最新值（回呼裡讀）、清單是否已顯示、等待重排的「重排前」快照。
+  const coordsRef = useRef(userCoords);
+  const tableRef = useRef(districtTable);
+  const displayedRef = useRef(false);
+  const flipSnapshot = useRef<ReorderSnapshot | null>(null);
+  const flipHandle = useRef<{ cancel: () => void } | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // 座標或座標表到位。若這次讓清單從「最新序」變成「距離序」且清單已顯示，先記下重排前的位置。
+  const applyGeo = (next: { coords?: Coords; table?: DistrictTable }) => {
+    const wasDistance = !!(coordsRef.current && tableRef.current);
+    if (next.coords) {
+      coordsRef.current = next.coords;
+      setCachedCoords(next.coords);
+      setUserCoords(next.coords);
+    }
+    if (next.table) {
+      tableRef.current = next.table;
+      setDistrictTable(next.table);
+    }
+    const isDistance = !!(coordsRef.current && tableRef.current);
+    if (!wasDistance && isDistance && displayedRef.current && listRef.current) {
+      flipHandle.current?.cancel(); // 量測前先取消進行中的動畫，免得把動畫中的 transform 當基準
+      flipSnapshot.current = takeReorderSnapshot(listRef.current);
+    }
+  };
+
   useEffect(() => {
     let alive = true;
+    const stopWaiting = () => alive && setGeoWaiting(false);
     loadDistrictTable()
-      .then((table) => alive && setDistrictTable(table))
-      .catch(() => {});
+      .then((table) => alive && applyGeo({ table }))
+      .catch(stopWaiting);
+    if (!geoWaiting) {
+      return () => {
+        alive = false;
+      };
+    }
+    const timer = setTimeout(stopWaiting, GEO_WAIT_MS);
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((r) => r.state !== 'granted' && stopWaiting())
+      .catch(stopWaiting);
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, []);
 
@@ -195,9 +268,7 @@ export function HomePage() {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const next = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setCachedCoords(next);
-        setUserCoords(next);
+        applyGeo({ coords: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
       },
       // 失敗不清掉既有座標：排序沿用已經顯示的那一個，不為一次逾時就跳回最新排序
       () => {},
@@ -290,6 +361,19 @@ export function HomePage() {
     ],
   );
 
+  displayedRef.current = !showSkeleton && filteredServiceProviders.length > 0;
+
+  // 座標晚到造成的重排：套用新順序後做 FLIP，並維持視窗內第一張可見卡的視覺位置（W5-29）。
+  useLayoutEffect(() => {
+    const snapshot = flipSnapshot.current;
+    const list = listRef.current;
+    if (!snapshot || !list) return;
+    flipSnapshot.current = null;
+    const handle = runReorder(list, snapshot);
+    flipHandle.current = handle;
+  }, [filteredServiceProviders]);
+  useEffect(() => () => flipHandle.current?.cancel(), []);
+
   // 點卡片時凍結「此刻畫面上的順序」給詳情頁換篇用（W5-26）。
   const openListing = useCallback(
     (id: string) =>
@@ -301,7 +385,7 @@ export function HomePage() {
   );
 
   // 載入中與讀取失敗時沒有「結果數」可說：面板主鈕不寫「查看 0 位」（§6：失敗不寫找到 0 筆）
-  const resultCount = loading || loadError ? null : filteredServiceProviders.length;
+  const resultCount = showSkeleton || loadError ? null : filteredServiceProviders.length;
 
   const handleCityChange = (city: string, checked: boolean) => {
     // 勾選縣市＝預設全區；取消＝移除該市整個 key。純函式只動這一市。
@@ -462,7 +546,7 @@ export function HomePage() {
             骨架本來就跟著檢視模式走。 */}
         <div className="mb-4">
           <div className="flex justify-between items-center gap-3">
-            {loading ? (
+            {showSkeleton ? (
               <Skeleton className="h-5 w-28" />
             ) : loadError ? (
               // 讀取失敗時不說「找到 0 位」——那是空狀態的說法；佔位讓切換鈕留在右邊
@@ -475,7 +559,7 @@ export function HomePage() {
             <div className="flex items-center gap-2">
               {/* 手機版搜尋／篩選都收進底部工具列後，這裡是面板外
                   唯一的一鍵清除入口，因此不再只限桌面顯示 */}
-              {!loading && totalFilters > 0 && (
+              {!showSkeleton && totalFilters > 0 && (
                 <Button
                   onClick={clearFilters}
                   variant="ghost"
@@ -492,7 +576,7 @@ export function HomePage() {
         </div>
 
         {/* ========== 載入中狀態：骨架屏（與卡片版面一致，降低版面跳動） ========== */}
-        {loading && (
+        {showSkeleton && (
           // <output>（隱含 role="status"）＋名稱＋aria-busy，比照後台 AdminListSkeleton 與
           // 詳情頁骨架；裡面只用 div。
           // tabIndex={-1}：使用者按重新載入時焦點交給它（名稱即播報字）。
@@ -531,7 +615,7 @@ export function HomePage() {
         {/* ========== 載入失敗（與空狀態明確區分，提供重試） ========== */}
         {/* 暫時讀不到＝「錯誤但可重試」（LoadErrorCallout，§12.11），與詳情頁的讀取失敗同一款；
             ref 是重新載入後的焦點落點。 */}
-        {!loading && loadError && (
+        {!showSkeleton && loadError && (
           <LoadErrorCallout
             ref={errorRef}
             title="載入失敗"
@@ -541,7 +625,7 @@ export function HomePage() {
         )}
 
         {/* ========== 空狀態顯示（僅在載入完成、無錯誤且無資料時） ========== */}
-        {!loading && !loadError && filteredServiceProviders.length === 0 && (
+        {!showSkeleton && !loadError && filteredServiceProviders.length === 0 && (
           <div className="text-center py-12">
             <MapPin className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground text-lg mb-2">
@@ -564,36 +648,42 @@ export function HomePage() {
         )}
 
         {/* ========== 正常顯示資料（僅在載入完成且有資料時） ========== */}
-        {!loading && filteredServiceProviders.length > 0 && (
+        {!showSkeleton && filteredServiceProviders.length > 0 && (
           <OpenListingContext.Provider value={openListing}>
-            {/* 手機版：依檢視模式在「3 欄照片牆」與「2 欄詳細卡」間切換 */}
-            <div className="block md:hidden">
-              {viewMode === 'photo' ? (
-                <div className="grid grid-cols-3 gap-0.5">
-                  {filteredServiceProviders.map((serviceProvider) => (
-                    <MobilePhotoWallCard
-                      key={serviceProvider.id}
-                      serviceProvider={serviceProvider}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {filteredServiceProviders.map((serviceProvider) => (
-                    <MobileServiceProviderCard
-                      key={serviceProvider.id}
-                      serviceProvider={serviceProvider}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+            <div
+              ref={listRef}
+              data-listing-list
+              className="data-[reordering=true]:pointer-events-none"
+            >
+              {/* 手機版：依檢視模式在「3 欄照片牆」與「2 欄詳細卡」間切換 */}
+              <div className="block md:hidden">
+                {viewMode === 'photo' ? (
+                  <div className="grid grid-cols-3 gap-0.5">
+                    {filteredServiceProviders.map((serviceProvider) => (
+                      <MobilePhotoWallCard
+                        key={serviceProvider.id}
+                        serviceProvider={serviceProvider}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {filteredServiceProviders.map((serviceProvider) => (
+                      <MobileServiceProviderCard
+                        key={serviceProvider.id}
+                        serviceProvider={serviceProvider}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
 
-            {/* 桌面版卡片網格 */}
-            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredServiceProviders.map((serviceProvider) => (
-                <ServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
-              ))}
+              {/* 桌面版卡片網格 */}
+              <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredServiceProviders.map((serviceProvider) => (
+                  <ServiceProviderCard key={serviceProvider.id} serviceProvider={serviceProvider} />
+                ))}
+              </div>
             </div>
           </OpenListingContext.Provider>
         )}
