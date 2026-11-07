@@ -218,7 +218,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 4 | GitHub 設定（補強，非必須）：Fork PR workflows 設「Require approval for all external contributors」；Environments → develop 加 required reviewer | 待回報 |
 | 5 | 晉升合進 main 後核准 `production` 部署 | 等晉升 |
 | 6 | 晉升前在 eu.posthog.com 建 develop、正式站兩個 project，把 `phc_` key 給主 session（W5-35）；專案端勾選：Discard client IP、開 Session replay，關 exception autocapture／dead clicks／console／network／canvas（S4 Q8） | S4 合併前 |
-| 9 | develop 甲段：S1（#512）已合，在 develop 的 SQL Editor 建 Vault 兩筆（`uknow_api_base_url`＝`https://ijcxnxhrziehdtkwausy.supabase.co/functions/v1/api`、`uknow_internal_secret`＝develop 的 RECONCILE_SECRET），不設 PHOTO_PURGE_LIVE；Edge 部署後做乙段驗證（checklist 步驟 8） | 待做 |
+| 9 | develop 甲段：S1（#512）已合，在 develop 的 SQL Editor 建 Vault 兩筆（`uknow_api_base_url`＝`https://ijcxnxhrziehdtkwausy.supabase.co/functions/v1/api`、`uknow_internal_secret`＝develop 的 RECONCILE_SECRET），不設 PHOTO_PURGE_LIVE；Edge 部署後做乙段驗證（checklist 步驟 8） | ✅ 11/07（W5-67 換新後乙段通過） |
 | 8 | 晉升上線第一天在 PostHog 抽看 5～10 支錄影（註冊、付款、提領頁），確認無個資（W5-39） | 晉升後 |
 | 7 | 環境網路白名單再加 `www.tgos.tw`，並告知 S7（W5-33） | ✅ 11/05 |
 
@@ -276,3 +276,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/07 14:20 | 業主附界線 zip 給 S7；S7 全階段完成（#509 head 9fea296，CI 綠、ready；/review-implementation P0 0；bundle entry 1011.6／315.2、總 1946.4，在 1015／316／1950 內）。主 session 派獨立 Opus 審查（第一次因容器重啟中斷，重派）。業主裁 **W5-65、66**。develop 乙段 pg_net 回 401 → 指紋比對不一致 → **W5-67** 腳本換新 | 等審查 → 合 #509 → 業主手機實測、跑換新腳本 → 乙段驗證 → 晉升 |
 | 11/07 15:00 | #509 獨立 Opus 審查：**P0 0、P1 1**（座標在離開首頁期間回來 → 返回時第二次定位被接受而重排，違反「返回不重排」；審查員以補完測試實證轉紅）、P2 3（定位錯誤仍等滿 1.5 秒、方向鍵 repeat 連續換篇、檔頭缺資料集完整網址）→ 全數退回 S7 本 PR 修 | S7 修 → CI 綠 → 合 #509 |
 | 11/07 15:10 | S7 修審查 P1＋P2 三項（紅 42c1e2b／綠 ea1ffad；`homeListingsCache.orderMode` 記離開前排序，返回本次造訪不採用座標；定位錯誤解除等待；忽略 event.repeat；檔頭補資料集網址），主 session 核對 delta、CI 全綠 → **#509 合進 develop（45556bc）**，S7 收工。本波五項必上與 S6、S7、S8 全數合併 | 業主手機實測（W5-66）＋手動換 RECONCILE_SECRET（W5-67）→ develop 乙段驗證 → PostHog key → 開晉升 PR |
+| 11/07 16:35 | 業主手動換新 RECONCILE_SECRET（GitHub、正式站／develop Edge、develop Vault；W5-67）。develop 乙段通過：`invoke_internal_endpoint('reconcile')` → HTTP 200、`scheduled_job_runs` 新增 succeeded 列（先前 06:07～08:07 三輪 pg_cron 皆 401、01:07～05:07 為 vault_missing） | 確認正式站看門狗 :37 那輪成功；業主手機實測、PostHog key → 晉升 |
