@@ -112,6 +112,8 @@
 | W5-68 | PostHog 免費方案限 1 個 project，第 2 個需綁卡升級 | **只用 1 個給正式站**：main 注入正式 key，develop／預覽維持佔位不注入；晉升前不在 develop 驗證，改由上線當天業主抽看錄影（W5-39）（業主 2026-11-07） |
 | W5-69 | 業主正式站實測：左右滑可順利換到下一篇，但換篇缺少過場動畫、感覺突然 | **列第 6 波優化**（業主 2026-11-07） |
 | W5-70 | 業主：後台要能看到整棵推薦樹，搭配查帳必要資訊，確認推薦、獎勵、任務、提領一切如預期 | **列第 6 波**（新功能，走三段式；規劃時先和業主確認要顯示的欄位與查帳情境）（業主 2026-11-07） |
+| W5-71 | R5 P2-1～4：PaymentCheckout 送單錯誤分支（自己的碼／碼失效 400 無專屬處理、非 JSON／斷網顯示技術字串、已有有效訂閱不導走）與新約確認框 portal 未包 privateClass | **第 6 波合成一支 Sonnet `/fix-bug`**（業主 2026-11-07） |
+| W5-72 | R5 P2-5：批次自癒與線上付款在三代鏈上 profiles 列鎖互鎖（W5-61 同類），被選中方漏發獎金只留 warning，下次 /profile 由 repair 補回 | **第 6 波優先修**，與 W5-61 同處；同 PR 先把 40P01 改成 error 告警（業主 2026-11-07） |
 | W5-31 | S1 階段 0 ④：pg_net 裝好後 anon／authenticated 有 net schema 權限（平台預設，postgres 無法 revoke；PostgREST 未暴露 net） | **接受平台預設**（業主 2026-11-05 04:00 於 S1 session 互動選項）；plan §2.2 照實改寫，階段 8 改斷言：PostgREST 暴露 schema 不含 net、invoke／帳本函式已 revoke、vault 不可讀 |
 | W5-32 | S1 ⑥ PayUni 官方 TradeStatus 碼表、S7 Q5 內政部鄉鎮市區界線：雲端網路白名單擋 `docs.payuni.com.tw`、`data.gov.tw`、`www.nlsc.gov.tw`、`api.nlsc.gov.tw` | **業主自行到環境網路設定放行四個網域**（業主 2026-11-05 04:00 互動選項），兩個 session 重試；仍不通再議（S1 備案 (c) 第三方碼表＋晉升前補官方碼表）。S1 階段 1、3～9 先做；S7 階段 2 暫停 |
 | W5-41 | S1：PayUni 官方 TradeStatus 碼表有 8（訂單待確認），plan 未預期 | **當 unknown 交人工**：永不自動標 expired、每張一筆 error、掃描排後段（業主 2026-11-05 約 08:2x 於 S1 session 互動選項）。官方碼表（單筆交易查詢 Ver 2.0）：0 取號成功／9 未付款／1 已付款／2 失敗／3 取消／4 逾期／8 待確認；4、9 依 plan 併入 0 的路徑，6 不存在→unknown |
@@ -208,6 +210,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 **S2（#510）留下的**：後台刪帳號工具（W5-12「註冊中要刪找客服」目前沒有工具）；停權狀態確認期間付款鈕灰掉無說明（UIUX P2）；`/auth/register` 先驗推薦碼後查已完成註冊（已付款者舊分頁拿 400 而非 403）。
 **S1（#512）留下的**：unknown 單人工確認已付款後的手動開通入口（W5-44③）。
 **S6／S4 留下的**：PostHog develop project（W5-68，需付費方案時再議）。
+**R5（review.md §6.3）補遺**：本波審查 P2、PR 未驗與已知限制、第 4 波四份稽核未修 P2 的完整清單以 `docs/plans/launch-wave-5/review.md` §6.3 為準（第 4 波稽核檔已隨 R5 退場，原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`）；其中 W5-71、W5-72 已裁決。
 **業主新增（W5-70）**：後台完整推薦樹＋查帳資訊。
 **S7（#509）留下的**：換篇過場動畫（W5-69）；屏東「南鄉」→「南州鄉」（W5-65）。
 **S6（#514）留下的**：journey f70 缺章（W5-60）；deploy-supabase.yml 部署 Edge 前自動確認 migration 已套用（W5-62）；確認框推薦人句在「讀 status 後才成環」競態下與結果不符（P2-3）；現任推薦人即預設推薦人時新約留空仍寫「將改變」（W5-63）。
@@ -286,3 +289,4 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | 11/07 18:15 | 業主給正式站 PostHog key → 主 session 開 **#515**（`config/posthogTarget.ts` 正式 key、develop 佔位、規格書 §15）CI 全綠 → **合進 develop（e6c2835）**。開**晉升 PR #516**（develop → main，journey 全套跑中）。#506 於晉升後合併（不讓 journey 重跑） | journey 綠 → 合 main → W5-62 確認 migration → 業主正式站 Vault 甲段 → 核准 production → 乙段、health sha |
 | 11/07 18:58 | **晉升 #516 合進 main（f5a1ed8）**：journey 全套綠（28 分）、main push CI 綠。W5-62 核對：正式站 7 支 migration 已套、六參數 prepare／referral_would_cycle／W5-61 版函式在、cron.job 5 列、pg_net 已裝、配對名單回填 18 列（預查 15，差額為 11/05 後新配對）。業主建正式站 Vault 兩筆 → 核准 production（run 42365227288 success，含 health sha 比對）→ Deploy Smoke success。乙段：`invoke_internal_endpoint('reconcile')` HTTP 200、帳本 succeeded | 11:07 UTC pg_cron 首輪、業主確認 PHOTO_PURGE_LIVE、上線首日抽看錄影（W5-39）；合 #506；開 R5 |
 | 11/07 19:13 | 正式站乙段後半通過：pg_cron `reconcile-pending-payments` 11:07 UTC 首輪 succeeded（net 200、帳本 succeeded、checked／unknown／incomplete 全 0）。部署後 system_alerts 0 列；配對名單 hist 18＝來源 18、差集 0；無 pending 訂單。R5 開工（P0 0），代跑查詢已交。業主新增第 6 波 W5-69、W5-70 | 19:25 UTC 檢查照片清理首輪 dryRun（佐證 PHOTO_PURGE_LIVE）；業主完成 PostHog 引導並確認有錄影；等 R5 |
+| 11/07 19:20 | R5 交 **#517**（P0 0、P1 0、P2 8；跨 PR 交互核實無誤；`launch-wave-4/` 已退場）。業主裁 **W5-71**（結帳頁四項第 6 波合一支 fix-bug）、**W5-72**（批次自癒互鎖第 6 波優先、先改 error 告警）。§6.3 補遺以指標併入 §5。合併順序：#506 先、#517 後 | 合 #506 → #517；19:25 UTC 照片清理 dryRun |
