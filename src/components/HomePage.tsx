@@ -104,9 +104,10 @@ const formatDistrict = (serviceProvider: PublicListingRow): string => {
   return serviceProvider.districts.length > maxDisplay ? `${displayText}...` : displayText;
 };
 
-// 座標表在模組載入時就開始預載（動態 chunk，不進 entry），比元件掛載更早、與路由 chunk 並行；
-// 失敗在元件掛載時由 loadDistrictTable() 的 catch 處理，這裡不重複。
-loadDistrictTable().catch(() => {});
+// 從首頁進站時，座標表在模組載入就開始預載（動態 chunk，不進 entry），比元件掛載更早；
+// 其他入口（分享連結直開詳情、後台、登入）不付這筆流量，掛載首頁時才載。失敗由掛載處的 catch 處理。
+if (typeof location !== 'undefined' && location.pathname === '/')
+  loadDistrictTable().catch(() => {});
 
 export function HomePage() {
   // 登入會員在手機版有固定底部導覽列（BottomNav），浮動搜尋／篩選工具列
@@ -207,7 +208,8 @@ export function HomePage() {
       !!navigator.permissions?.query,
   );
   const waiting = geoWaiting && !(userCoords && districtTable);
-  const showSkeleton = loading || waiting;
+  // 讀取失敗不被定位等待蓋住（錯誤框與焦點照常出現）。
+  const showSkeleton = loading || (waiting && !loadError);
 
   // 座標與座標表的最新值（回呼裡讀）、清單是否已顯示、等待重排的「重排前」快照。
   const coordsRef = useRef(userCoords);
@@ -216,9 +218,19 @@ export function HomePage() {
   const flipSnapshot = useRef<ReorderSnapshot | null>(null);
   const flipHandle = useRef<{ cancel: () => void } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // 座標或座標表到位。若這次讓清單從「最新序」變成「距離序」且清單已顯示，先記下重排前的位置。
   const applyGeo = (next: { coords?: Coords; table?: DistrictTable }) => {
+    // 已有座標（返回路徑的快取、或本次造訪已定位）就不再收新座標：新座標只會讓使用者眼前的
+    // 順序靜默重排；首頁已卸載（使用者在詳情頁時才到）也不寫快取，否則返回時順序跟離開前不同。
+    if (next.coords && (coordsRef.current || !mountedRef.current)) return;
     const wasDistance = !!(coordsRef.current && tableRef.current);
     if (next.coords) {
       coordsRef.current = next.coords;

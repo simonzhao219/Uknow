@@ -227,3 +227,36 @@ describe('HomePage 座標晚到的動畫重排', () => {
     expect(scrollBy).not.toHaveBeenCalled();
   });
 });
+
+describe('HomePage 座標只在首次定位時採用', () => {
+  it('離開首頁後才到的座標不寫入快取，返回時順序不變', async () => {
+    permission = 'prompt';
+    const first = await mountHome();
+    await flush();
+    expect(names()[0]).toBe(taipei.name);
+    first.unmount();
+    await grantLocation();
+
+    order.mockReturnValueOnce(new Promise(() => {}));
+    await mountHome();
+    await flush();
+    expect(names()[0]).toBe(taipei.name);
+  });
+
+  it('已有座標時再回來的新座標不改變當下順序', async () => {
+    permission = 'prompt';
+    await mountHome();
+    await flush();
+    await grantLocation();
+    expect(names()[0]).toBe(kaohsiung.name);
+    geoCallbacks = [];
+    cleanup();
+
+    order.mockReturnValueOnce(new Promise(() => {}));
+    await mountHome();
+    await flush();
+    expect(names()[0]).toBe(kaohsiung.name);
+    await grantLocation();
+    expect(names()[0]).toBe(kaohsiung.name);
+  });
+});
