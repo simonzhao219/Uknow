@@ -118,11 +118,26 @@ def main() -> int:
  * （臺/台寫法以程式為準；屏東縣「南州鄉」在程式裡是「南鄉」，見產生腳本的別名表）。
  */
 """
-    lines = [header, "/** 鍵：`縣市|區`；值：[緯度, 經度]。 */", "export const DISTRICT_CENTROIDS: Readonly<Record<string, readonly [number, number]>> = {"]
-    for key in expected:
-        lat, lng = centroids[key]
-        lines.append(f"  '{key}': [{lat:.3f}, {lng:.3f}],")
+    # 依縣市分組輸出（縣市名只寫一次，省下約 1.5 kB；載入時展開成「縣市|區」鍵，bundle 預算緊）。
+    lines = [
+        header,
+        "const BY_CITY: Record<string, Record<string, readonly [number, number]>> = {",
+    ]
+    for city, districts in regions.items():
+        lines.append(f"  {city}: {{")
+        for d in districts:
+            lat, lng = centroids[f"{city}|{d}"]
+            lines.append(f"    {d}: [{lat:.3f}, {lng:.3f}],")
+        lines.append("  },")
     lines.append("};")
+    lines.append("")
+    lines.append("/** 鍵：`縣市|區`；值：[緯度, 經度]。 */")
+    lines.append("export const DISTRICT_CENTROIDS: Readonly<Record<string, readonly [number, number]>> =")
+    lines.append("  Object.fromEntries(")
+    lines.append("    Object.entries(BY_CITY).flatMap(([city, ds]) =>")
+    lines.append("      Object.entries(ds).map(([d, xy]) => [`${city}|${d}`, xy] as const),")
+    lines.append("    ),")
+    lines.append("  );")
     Path(args.out).write_text("\n".join(lines) + "\n", encoding="utf8")
     print(f"OK: {len(expected)} 區 → {args.out}（zip SHA-256 {sha256}）")
     return 0

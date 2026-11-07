@@ -49,3 +49,5 @@ hash 說明：分支會被推送守衛反覆 rebase 到最新 origin/develop，c
 
 (無)
 - **階段 2 完成（2026-11-07）**：業主附檔後離線產出 368 區座標表（`scripts/gen-district-centroids.py`，檔頭記 URL／SHA-256／取得日期／業主提供／授權與顯名）。逃生口 1：表的鍵集合與範圍測試因資料隨紅燈 commit 一併提交而立即通過，其餘（`nearestDistrict`／`sortByDistance`／`filterAndSortListings` 第 4 參數）紅燈後轉綠。實作中發現返回首頁第二次掛載需同步取得座標表（否則首渲染先最新序再重排，既有返回測試紅），故加 `districtTableLoader.ts` 模組層快取；未動測試。資料差異：程式 `TAIWAN_REGIONS` 屏東縣「南鄉」＝官方「南州鄉」（疑為程式筆誤，未改 constants，腳本別名表對應）；「霧臺鄉」程式用臺、其餘多用台，鍵以程式為準。bundle 實測：entry raw 1009.2／gzip 314.2、總 JS raw 1947.9（上限 1950，餘 2.1 kB）；座標表 chunk 14.3 kB 獨立不進 entry。階段 3 起 total 只剩 2.1 kB 餘裕，超過就停下回報。
+- **階段 3 完成（2026-11-07）**：紅 8bc1016／綠 143d55d（實際 hash 以 PR 內文為準）。定位等待、FLIP 重排（`utils/flipReorder.ts` 純計算＋WAAPI、`utils/homeReorder.ts` DOM 銜接）、動畫期間 `data-reordering` 擋點擊（播完或 300ms 保險）、第一張可見卡錨點補償 scrollY、偏好減少動態直接換。與 plan 的差異：未另存 `orderMode` 快取——返回路徑由「快取座標＋已載入座標表」決定性地得到距離序（階段 2 的模組層座標表快取），行為相同、少一份狀態。座標表預載提前到 HomePage 模組載入時。bundle：第一版總 JS raw 1950.3 超出 0.3 kB（W5-30 不上調），改把座標表依縣市分組輸出（縣市名只寫一次、載入時展開）而不是調預算；實測 entry raw 1011.6／gzip 315.2、總 JS raw 1946.4（餘 3.6 kB）。注意：全套 vitest 曾有一次 `HomePage.geoOrder` 「座標晚到」測試失敗後重跑全綠（動態 import 座標表的真實非同步與假計時器競爭），已把預載提前；若再現請回報。
+
