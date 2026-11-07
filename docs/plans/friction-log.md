@@ -3484,10 +3484,12 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **PostHog 免費方案只給 1 個 project**（漏網，規劃）：S4 規劃假設 develop、正式站各一個 project（W5-35），到晉升前才發現
   第 2 個要綁卡升級，改成只給正式站、develop 不驗證（W5-68）——上線前少了一道在 develop 驗錄影遮罩的關卡，改靠上線當天
   人工抽看（W5-39）。教訓：第三方服務的方案限制（project 數、保留期、事件額度）列進規劃的「外部依賴」段，規劃審查時就問。
-- **pre-commit 對「feat: 前綴＋改測試」給 TDD 紅燈提示**（誤擋，流程）：主 session 回報綠燈後補測試的 commit 被當成紅燈期
-  的情境提示，訊息指向 `touch .claude/tdd-lock`，對已在綠燈的執行 session 是誤導。R5 在 `scripts/git-hooks/pre-commit` 只找到
-  `npm run check` 未過時的固定提示（:91-92），沒找到依 commit 前綴分流的邏輯——出處待主 session 補（可能是 check 偶發紅
-  被誤讀成紅燈提示）。候選：提示只在「staged 有測試檔且 check 失敗在 vitest」時印，並先印失敗的測試名。
+- **pre-commit 的 `npm run check` 偶發失敗，失敗提示一律導向 TDD 紅燈通道**（誤擋／漏網，流程）：本波主 session 兩次遇到
+  （11/07 約 06:2x UTC 的 docs commit、約 09:55 UTC `fix/posthog-prod-key` 的 commit），都是 pre-commit 的 `npm run check` 偶發失敗、
+  原樣重試即綠；失敗段落因只取 tail 沒留下，疑 flaky 測試但未捕捉。失敗時 `scripts/git-hooks/pre-commit:87-92` 固定印
+  「若這是 TDD 的紅燈測試 commit：先 touch .claude/tdd-lock…」，對非 TDD 的 commit（docs、設定）容易誤導成要進紅燈期。
+  候選：hook 失敗時把失敗的測試名（vitest 的 failed 清單）寫進檔案（如 `.claude/metrics/last-check-failure.txt`）並印出路徑，
+  偶發才有證據可追；TDD 提示只在 staged 含測試檔時才印。
 - **三種 session 分工本波照〈慣例〉走**（流程）：主 session 沒寫產品碼（#515 只改 `config/posthogTarget.ts` 常數，屬設定）；
   9 支程式 PR 都由執行 session 施工，其中 5 支合併前加派獨立審查員；裁決編號全由主 session 發，沒有再撞號。
   審查 session 開在部署後約 1 小時（11/07 晉升當天），§3 的 pg_cron 首輪與 24 小時數字仍靠主 session 代跑。
@@ -3495,4 +3497,4 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   `git show e6c2835:docs/plans/launch-wave-4/plan.md` §0；四份稽核在同一 commit 的 `audit-{pay,ref,auth,ops}.md`。
 
 處置：第 1、2 條列入下次框架整併（第 2 條含 `scripts/` 換新腳本）；第 3、4 條為規劃寫法教訓，寫進下次 `/plan-feature`
-「外部依賴」檢查題；第 5 條待主 session 補出處後再定；第 6、7 條為紀錄。
+「外部依賴」檢查題；第 5 條列入下次框架整併（hook 落檔失敗測試名）；第 6、7 條為紀錄。

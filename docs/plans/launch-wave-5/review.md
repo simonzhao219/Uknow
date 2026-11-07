@@ -132,8 +132,8 @@ profiles 列鎖可以互鎖，W5-61 只修了 advisory 那一種。被選中的�
 ### 4.2 框架摩擦
 
 已寫進 `docs/plans/friction-log.md` 新節「2026-11-07｜第 5 波審查」：容器重啟讓背景審查員結果遺失、RECONCILE_SECRET 四處同值
-無從核對（W5-67）、TGOS 對雲端 IP 回 403（W5-64）、PostHog 免費方案只給 1 個 project（W5-68）、pre-commit 對「feat: 前綴＋改測試」的
-TDD 提示（出處待主 session 補）、W4-x 裁決原文的取回指令。
+無從核對（W5-67）、TGOS 對雲端 IP 回 403（W5-64）、PostHog 免費方案只給 1 個 project（W5-68）、pre-commit 的 `npm run check`
+偶發失敗而失敗提示一律導向 TDD 紅燈通道、W4-x 裁決原文的取回指令。
 
 ## 5. 給主 session／業主的待辦
 
