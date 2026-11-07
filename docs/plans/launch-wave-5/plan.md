@@ -236,7 +236,7 @@ R3 P2-16、P2-17、P2-8、P2-9、P2-11、P2-14、P2-19、P2-20；#395 方向 3 s
 | S4 | `session_01MQovbEeehM4wJEccfk4ez9` | Sonnet | `feature/posthog-monitoring` | #511 ✅ cebc239 | 收工；晉升前填 key（W5-35） |
 | S6 | `session_01MQovbEoRnFFpm8XdeNidBN` | Opus | `feature/renewal-path-hardening` | #514 | **已合（fb8f95c）**，收工 |
 | S8 | `session_01MQovbBQu7kxFjWhxHoGSZi` | Sonnet | `fix/terminology-guard` | #513 ✅ 2957408 | 收工 |
-| R5 | — | Opus | `docs/wave5-review` | — | 晉升後開 |
+| R5 | `session_01MQovbB6vPbhWwnHkkkYDeZ` | Opus | `docs/wave5-review` | — | 審查中（11/07 開） |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
 
