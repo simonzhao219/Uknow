@@ -48,3 +48,4 @@ hash 說明：分支會被推送守衛反覆 rebase 到最新 origin/develop，c
 ## 框架摩擦
 
 (無)
+- **階段 2 完成（2026-11-07）**：業主附檔後離線產出 368 區座標表（`scripts/gen-district-centroids.py`，檔頭記 URL／SHA-256／取得日期／業主提供／授權與顯名）。逃生口 1：表的鍵集合與範圍測試因資料隨紅燈 commit 一併提交而立即通過，其餘（`nearestDistrict`／`sortByDistance`／`filterAndSortListings` 第 4 參數）紅燈後轉綠。實作中發現返回首頁第二次掛載需同步取得座標表（否則首渲染先最新序再重排，既有返回測試紅），故加 `districtTableLoader.ts` 模組層快取；未動測試。資料差異：程式 `TAIWAN_REGIONS` 屏東縣「南鄉」＝官方「南州鄉」（疑為程式筆誤，未改 constants，腳本別名表對應）；「霧臺鄉」程式用臺、其餘多用台，鍵以程式為準。bundle 實測：entry raw 1009.2／gzip 314.2、總 JS raw 1947.9（上限 1950，餘 2.1 kB）；座標表 chunk 14.3 kB 獨立不進 entry。階段 3 起 total 只剩 2.1 kB 餘裕，超過就停下回報。
