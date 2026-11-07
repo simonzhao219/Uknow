@@ -260,6 +260,7 @@ export function HomePage() {
         serviceProviders,
         { searchQuery, category: selectedCategory, genders: selectedGenders, districtsByCity },
         userCoords,
+        null,
       ),
     [serviceProviders, searchQuery, selectedCategory, selectedGenders, districtsByCity, userCoords],
   );

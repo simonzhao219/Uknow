@@ -4,12 +4,14 @@ import type { PublicListingRow } from '../types/listing';
 import { calculateDistance, cityCoordinates } from './distance';
 import { listingMatchesDistricts } from './districtSelection';
 import type { Coords, HomeFilters } from './homeListingsCache';
+import type { DistrictTable } from './listingDistanceOrder';
 import { listingMatchesSearch } from './listingSearch';
 
 export function filterAndSortListings(
   listings: PublicListingRow[],
   filters: HomeFilters,
   coords: Coords | null,
+  _table: DistrictTable | null,
 ): PublicListingRow[] {
   const { searchQuery, category, genders, districtsByCity } = filters;
   const selectedCities = Object.keys(districtsByCity);
