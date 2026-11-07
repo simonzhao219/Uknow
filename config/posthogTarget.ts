@@ -15,8 +15,9 @@ export const PLACEHOLDER_POSTHOG_KEY = 'phc_PLACEHOLDER_NOT_CONFIGURED';
 /** 僅整合測試可用的假 key 前綴（見 resolvePosthogTarget 的覆寫規則）。 */
 export const TEST_POSTHOG_KEY_PREFIX = 'phc_test_';
 
+// 只有正式站一個 project（W5-68：PostHog 免費方案限 1 個 project）；develop 與預覽維持佔位＝不注入。
 export const POSTHOG_KEYS = {
-  production: PLACEHOLDER_POSTHOG_KEY,
+  production: 'phc_AXSCAsT58p4GmDAUHgFNgxncUsAipu9QEECg4z7oJEv3',
   develop: PLACEHOLDER_POSTHOG_KEY,
 } as const;
 
