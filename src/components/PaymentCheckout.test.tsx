@@ -35,13 +35,18 @@ vi.mock('../App', () => ({
   UserContext: createContext<any>({ user: null, setUser: () => {} }),
 }));
 
+const getSessionMock = vi.hoisted(() => ({
+  impl: (): Promise<unknown> =>
+    Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
+}));
+
 vi.mock('../utils/supabase/client', () => ({
   createClient: () => ({
     auth: {
       // 需要可用 session：checkPendingUser 的 localStorage 分支會驗證它，
       // 而 fetchReferrerInfo 的網路層測試正要觀察「拿到 session 之後
       // 還會不會發請求」——永不 resolve 的做法會讓斷言變成假陽性。
-      getSession: () => Promise.resolve({ data: { session: { access_token: 'test-token' } } }),
+      getSession: () => getSessionMock.impl(),
     },
   }),
 }));
@@ -311,10 +316,11 @@ describe('PaymentCheckout 補繳制', () => {
     const section = screen.getByTestId('renewal-mode-section');
     expect(section.textContent).not.toContain('預設推薦碼');
     expect(section.textContent).not.toContain('維持原推薦關係');
-    // Q11 正向面（plan §4 逐字）：必須傳達「這會改變既有推薦關係」——
-    // 只驗「不包含」擋不住文案被弱化成首購式說明。
+    // Q11 正向面：必須傳達「這會改變既有推薦關係」——只驗「不包含」擋不住文案被弱化成
+    // 首購式說明。留空的後果依後端會套用的來源說（W5-51）：這裡 renewal 沒帶
+    // freshDefaultReferrerAvailable（空窗）→ 視為不可用 → 維持原本的推薦人。
     expect(section.textContent).toContain('選擇新約會重新建立推薦關係');
-    expect(section.textContent).toContain('不填則不會有推薦人');
+    expect(section.textContent).toContain('維持原本的推薦人');
   });
 
   it('fresh 卡片顯示新約的具體效期迄日（AC-2），不是只講起算規則', async () => {
@@ -595,7 +601,9 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
   });
 
-  it('fresh 無資產且未付過補繳時，付款不需二次確認直接送單', async () => {
+  // W5-7（業主 2026-11-04 裁決，S6 階段 6 反向斷言）：新約無條件二次確認——沒有資產時也
+  // 要確認，因為新約一定會動到推薦關係。無資產時確認鈕是流程鈕（墨黑，W5-51／§12.11）。
+  it('fresh 無資產且未付過補繳時，仍先彈確認且確認鈕是流程鈕', async () => {
     const calls = spyFetch();
     setSubscription({
       ...RENEWAL,
@@ -603,6 +611,7 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
       backfillAmount: 1200,
       freshForfeitPoints: 0,
       freshForfeitReferrals: 0,
+      freshDefaultReferrerAvailable: true,
     });
     seedLongExpired();
     renderPage();
@@ -611,10 +620,48 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
     fireEvent.click(screen.getByTestId('payuni-pay-button'));
 
-    expect(screen.queryByTestId('fresh-confirm-dialog')).toBeNull();
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).toContain('目前沒有點數或推薦紀錄需要清空');
+    expect(dialog.textContent).toContain('您的推薦人將改變');
+    expect(screen.getByTestId('fresh-confirm-action').classList.contains('bg-destructive')).toBe(
+      false,
+    );
+    expect(calls.filter((u) => u.includes('/payuni/prepare'))).toEqual([]);
+    fireEvent.click(screen.getByTestId('fresh-confirm-action'));
     await waitFor(() => {
       expect(calls.filter((u) => u.includes('/payuni/prepare')).length).toBe(1);
     });
+  });
+
+  it('fresh 留空且預設推薦人不可用時，確認框不寫推薦人句、說明寫維持原推薦人', async () => {
+    spyFetch();
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: false });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    expect(screen.getByTestId('fresh-code-hint').textContent).toContain('維持原本的推薦人');
+    expect((screen.getByTestId('new-referral-code-input') as HTMLInputElement).placeholder).toBe(
+      '目前：8048901',
+    );
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).not.toContain('推薦人將');
+  });
+
+  it('fresh 留空且預設推薦人可用時，說明寫推薦人將改變、不提示目前的碼', async () => {
+    spyFetch();
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    expect(screen.getByTestId('fresh-code-hint').textContent).toContain('不填則推薦人將改變');
+    expect((screen.getByTestId('new-referral-code-input') as HTMLInputElement).placeholder).toBe(
+      '輸入推薦碼',
+    );
   });
 });
 
@@ -758,6 +805,8 @@ describe('PaymentCheckout 換推薦人驗證', () => {
     expect(requests.filter((r) => r.url.includes('/payuni/prepare'))).toEqual([]);
 
     fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    // W5-7：新約一律先二次確認（無資產也一樣），確認後才送單。
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
     await waitFor(() =>
       expect(requests.filter((r) => r.url.includes('/payuni/prepare')).length).toBe(1),
     );
@@ -779,7 +828,12 @@ describe('結帳頁冷載入的暫時性故障', () => {
       vi.fn(async (url: string) => {
         if (/\/profile(\?|$)/.test(String(url))) {
           const status = seq.length > 1 ? (seq.shift() as number) : seq[0];
-          const body = status === 200 ? { registrationStep: 1, name: '王小明' } : {};
+          const body =
+            status === 200
+              ? { registrationStep: 1, name: '王小明' }
+              : status === 404
+                ? { error: { code: 'PROFILE_MISSING', message: '用戶不存在' } }
+                : {};
           return new Response(JSON.stringify(body), { status });
         }
         return new Response(JSON.stringify({ success: true }), { status: 200 });
@@ -798,7 +852,44 @@ describe('結帳頁冷載入的暫時性故障', () => {
     );
   }
 
-  beforeEach(() => localStorage.removeItem('pendingUser'));
+  beforeEach(() => {
+    localStorage.removeItem('pendingUser');
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: { access_token: 'test-token' } } });
+  });
+
+  // R4 P2-5：閘道層 404（無 PROFILE_MISSING 碼）不是帳號異常，是暫時性故障。
+  it('/profile 回不帶碼的 404（閘道層）時停在結帳頁顯示重試外框，不導登入頁', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('Not Found', { status: 404 })),
+    );
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  // T1-B 未修：getSession 因 Auth 暫時性錯誤回 session:null，不是「未登入」。
+  it('getSession 因暫時性 Auth 錯誤回 null 時顯示重試外框，不導登入頁', async () => {
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: null }, error: { name: 'AuthRetryableFetchError' } });
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  it('getSession 擲例外時顯示重試外框，不導登入頁', async () => {
+    getSessionMock.impl = () => Promise.reject(new Error('storage locked'));
+    renderAtCheckout();
+    expect(await screen.findByTestId('auth-degraded')).toBeTruthy();
+    expect(screen.queryByText('登入頁')).toBeNull();
+  });
+
+  it('getSession 乾淨回 null（真的沒登入）時照舊導登入頁', async () => {
+    getSessionMock.impl = () => Promise.resolve({ data: { session: null }, error: null });
+    renderAtCheckout();
+    expect(await screen.findByText('登入頁')).toBeTruthy();
+  });
 
   it('/profile 5xx 時停在結帳頁顯示重試外框，不導登入頁', async () => {
     stubProfile(503);
@@ -838,5 +929,386 @@ describe('結帳頁冷載入的暫時性故障', () => {
     stubProfile(status);
     renderAtCheckout();
     expect(await screen.findByText('登入頁')).toBeTruthy();
+  });
+});
+
+// W5-5（pay P2-9＝auth P2-1，第 5 波 S2 階段 6）：停權者不得付款。結帳頁顯示與會員區相同的
+// 停權說明、不渲染付款鈕；localStorage 快照沒有停權欄位，以背景 /profile 覆蓋；後端 403
+// ACCOUNT_SUSPENDED 是快照過時時的最後一道。
+describe('停權者的結帳頁', () => {
+  function stubBackend(opts: {
+    profile?: Record<string, unknown> | 'pending';
+    prepare?: { status: number; body: unknown };
+  }) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        if (/\/profile(\?|$)/.test(String(url))) {
+          if (opts.profile === 'pending') return new Promise<Response>(() => {});
+          return new Response(JSON.stringify(opts.profile ?? { registrationStep: 1 }), {
+            status: 200,
+          });
+        }
+        if (String(url).includes('/payuni/prepare') && opts.prepare) {
+          return new Response(JSON.stringify(opts.prepare.body), { status: opts.prepare.status });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+    return calls;
+  }
+
+  const SUSPENDED_PROFILE = {
+    registrationStep: 1,
+    name: '停權者',
+    birthDate: '1990-01-01',
+    nationalId: 'A12****789',
+    phone: '0912345678',
+    suspended: true,
+  };
+
+  beforeEach(() => {
+    localStorage.removeItem('pendingUser');
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: { access_token: 'test-token' } } });
+  });
+
+  it('API 讀到停權時顯示停權說明，不顯示付款鈕', async () => {
+    stubBackend({ profile: SUSPENDED_PROFILE });
+    renderPage();
+    expect(await screen.findByText('帳號已停權')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain('客服');
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+    expect(screen.queryByTestId('edit-profile-button')).toBeNull();
+  });
+
+  it('本機快照進頁、背景 /profile 回停權時切到停權說明', async () => {
+    stubBackend({ profile: SUSPENDED_PROFILE });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    expect(await screen.findByText('帳號已停權')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+  });
+
+  it('本機快照進頁、背景 /profile 還沒回來前付款鈕停用', async () => {
+    stubBackend({ profile: 'pending' });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    expect((pay as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('載入中（尚未拿到 profile）不渲染付款鈕', async () => {
+    getSessionMock.impl = () => new Promise(() => {});
+    renderPage();
+    expect(await screen.findByText('載入中...')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+  });
+
+  it('停權的首購者出口是登出，走與頁首相同的 useFunnelLogout', async () => {
+    stubBackend({ profile: SUSPENDED_PROFILE });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '登出' }));
+    await waitFor(() => expect(funnelLogout.logout).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('link', { name: '回首頁' })).toBeNull();
+  });
+
+  it('停權的續費者出口是回首頁，不登出', async () => {
+    stubBackend({
+      profile: { ...SUSPENDED_PROFILE, registrationStep: 3, subscriptionEndDate: recentEnd },
+    });
+    renderPage();
+    expect(await screen.findByRole('link', { name: '回首頁' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '登出' })).toBeNull();
+  });
+
+  it('送單收到 403 ACCOUNT_SUSPENDED 時切到停權說明，不跳錯誤 toast', async () => {
+    stubBackend({
+      profile: { registrationStep: 1, name: '快照過時' },
+      prepare: {
+        status: 403,
+        body: {
+          success: false,
+          error: { code: 'ACCOUNT_SUSPENDED', message: '帳號已停權，請聯絡客服' },
+        },
+      },
+    });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(pay);
+    expect(await screen.findByText('帳號已停權')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+  });
+});
+
+// 第 5 波 S6 階段 6：續費身分以伺服器為準（pay P1-1 前端、W5-54）、prepare 的新拒絕
+// （RENEWAL_MODE_REQUIRED、PAYMENT_PENDING_ACTIVATION、REFERRAL_CYCLE）、填回原推薦人的碼（W5-55）。
+describe('PaymentCheckout 續費身分與建單拒絕', () => {
+  const RENEWER_PROFILE = {
+    registrationStep: 3,
+    name: '續費者',
+    birthDate: '1990-01-01',
+    nationalId: 'A12****789',
+    phone: '0912345678',
+    email: 'user@example.invalid',
+    subscriptionEndDate: recentEnd,
+    accountStatus: 'expired',
+    referredByCode: '8048901',
+    isAutoReferral: false,
+  };
+
+  function stubBackend(opts: {
+    profile?:
+      | Record<string, unknown>
+      | 'pending'
+      | 'error'
+      | Array<Record<string, unknown> | 'error'>;
+    prepare?: { status: number; body: unknown };
+    validateName?: string;
+  }) {
+    const calls: string[] = [];
+    let profileCall = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        if (/\/profile(\?|$)/.test(String(url))) {
+          const p = Array.isArray(opts.profile)
+            ? opts.profile[Math.min(profileCall++, opts.profile.length - 1)]
+            : opts.profile;
+          if (p === 'pending') return new Promise<Response>(() => {});
+          if (p === 'error') return new Response('{}', { status: 500 });
+          return new Response(JSON.stringify(p ?? { registrationStep: 1 }), { status: 200 });
+        }
+        if (String(url).includes('/referrals/validate/')) {
+          return new Response(
+            JSON.stringify({ valid: true, referrer: { userName: opts.validateName ?? '王小明' } }),
+            { status: 200 },
+          );
+        }
+        if (String(url).includes('/payuni/prepare') && opts.prepare) {
+          return new Response(JSON.stringify(opts.prepare.body), { status: opts.prepare.status });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+    return calls;
+  }
+
+  function renderWithRoutes() {
+    return render(
+      <MemoryRouter initialEntries={['/payment/checkout']}>
+        <Routes>
+          <Route path="/payment/checkout" element={<PaymentCheckout />} />
+          <Route path="/payment/result" element={<p>開通中頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  beforeEach(() => {
+    localStorage.removeItem('pendingUser');
+    getSessionMock.impl = () =>
+      Promise.resolve({ data: { session: { access_token: 'test-token' } } });
+    setSubscription(RENEWAL);
+  });
+
+  it('本機首購快照、伺服器說是過期續費者時，切成續約／新約雙模式', async () => {
+    stubBackend({ profile: RENEWER_PROFILE });
+    seedPendingUser({ registrationStep: 2 });
+    renderPage();
+    expect(await screen.findByTestId('renewal-mode-section')).toBeTruthy();
+  });
+
+  it('背景確認會員狀態時顯示確認中文案，不沿用停權字樣', async () => {
+    stubBackend({ profile: 'pending' });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    expect(await screen.findByText('正在確認您的會員狀態…')).toBeTruthy();
+    expect(screen.queryByText(/停權/)).toBeNull();
+  });
+
+  it('本機首購快照、背景確認失敗時仍可付款（W5-54 首購放行、後端兜底）', async () => {
+    stubBackend({ profile: 'error' });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('背景確認失敗時顯示暫時無法確認＋重試，重試成功後切成雙模式（W5-54）', async () => {
+    stubBackend({ profile: ['error', RENEWER_PROFILE] });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    expect(await screen.findByText('暫時無法確認會員狀態')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重試' }));
+    expect(await screen.findByTestId('renewal-mode-section')).toBeTruthy();
+    expect(screen.queryByText('暫時無法確認會員狀態')).toBeNull();
+  });
+
+  it('送單收到 RENEWAL_MODE_REQUIRED 時重抓會員資料並提示選擇續約或新約', async () => {
+    stubBackend({
+      profile: [{ registrationStep: 1 }, RENEWER_PROFILE],
+      prepare: {
+        status: 400,
+        body: {
+          success: false,
+          error: { code: 'RENEWAL_MODE_REQUIRED', message: '請選擇續約或新約' },
+        },
+      },
+    });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(pay);
+    const notice = await screen.findByText('已更新您的會員資料，請選擇續約或新約');
+    expect(notice.closest('[role="status"]')).toBeTruthy();
+    expect(screen.getByTestId('renewal-mode-section')).toBeTruthy();
+  });
+
+  it('RENEWAL_MODE_REQUIRED 後重抓仍判不出續費時，請聯絡客服並停用付款', async () => {
+    stubBackend({
+      profile: [{ registrationStep: 1 }, { registrationStep: 1 }],
+      prepare: {
+        status: 400,
+        body: {
+          success: false,
+          error: { code: 'RENEWAL_MODE_REQUIRED', message: '請選擇續約或新約' },
+        },
+      },
+    });
+    seedPendingUser({ registrationStep: 1 });
+    renderPage();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(pay);
+    expect(await screen.findByText(/無法確認您的會員資料，請聯絡客服/)).toBeTruthy();
+    expect((screen.getByTestId('payuni-pay-button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('送單收到 409 已付款待開通時導到開通中頁', async () => {
+    stubBackend({
+      profile: { registrationStep: 1 },
+      prepare: {
+        status: 409,
+        body: {
+          success: false,
+          error: { code: 'PAYMENT_PENDING_ACTIVATION', message: '付款已完成，開通處理中' },
+          lastTradeNo: 'T-PAID',
+        },
+      },
+    });
+    seedPendingUser({ registrationStep: 1 });
+    renderWithRoutes();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(pay);
+    expect(await screen.findByText('開通中頁')).toBeTruthy();
+  });
+
+  it('409 缺單號時不導向，顯示客服入口並停用付款', async () => {
+    stubBackend({
+      profile: { registrationStep: 1 },
+      prepare: {
+        status: 409,
+        body: {
+          success: false,
+          error: { code: 'PAYMENT_PENDING_ACTIVATION', message: '付款已完成，開通處理中' },
+        },
+      },
+    });
+    seedPendingUser({ registrationStep: 1 });
+    renderWithRoutes();
+    const pay = await screen.findByTestId('payuni-pay-button');
+    await waitFor(() => expect((pay as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(pay);
+    expect(await screen.findByText(/付款已完成，開通處理中，請聯絡客服/)).toBeTruthy();
+    expect(screen.queryByText('開通中頁')).toBeNull();
+    expect((screen.getByTestId('payuni-pay-button') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('新約碼在自己推薦網絡內（REFERRAL_CYCLE）時標在碼欄位並標記無效', async () => {
+    stubBackend({
+      profile: RENEWER_PROFILE,
+      validateName: '一代會員',
+      prepare: {
+        status: 400,
+        body: {
+          success: false,
+          error: {
+            code: 'REFERRAL_CYCLE',
+            message: '此推薦碼屬於您的推薦網絡成員，無法作為推薦人',
+          },
+        },
+      },
+    });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048777' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('new-referrer-name');
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
+    expect(await screen.findByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人')).toBeTruthy();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('REFERRAL_CYCLE 標記後離開碼欄位不重驗，環的原因留在欄位上', async () => {
+    stubBackend({
+      profile: RENEWER_PROFILE,
+      validateName: '一代會員',
+      prepare: {
+        status: 400,
+        body: {
+          success: false,
+          error: {
+            code: 'REFERRAL_CYCLE',
+            message: '此推薦碼屬於您的推薦網絡成員，無法作為推薦人',
+          },
+        },
+      },
+    });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048777' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('new-referrer-name');
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
+    await screen.findByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人');
+    fireEvent.blur(input);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByTestId('new-referrer-name')).toBeNull();
+    expect(screen.getByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人')).toBeTruthy();
+  });
+
+  it('新約填回現任推薦人的碼時，確認框寫推薦人維持（W5-55）', async () => {
+    stubBackend({ profile: RENEWER_PROFILE, validateName: '王小明' });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048901' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('new-referrer-name');
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).toContain('您的推薦人維持 王小明');
   });
 });

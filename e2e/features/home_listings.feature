@@ -69,6 +69,14 @@ Feature: Public service-provider directory (home page)
     Then the first listing should be "高雄服務者"
 
   @listing
+  Scenario: Within one city the listing in my own district comes first
+    Given the public directory has a listing "岡山服務者" in "高雄市" serving "岡山區"
+    And the public directory has a listing "苓雅服務者" in "高雄市" serving "苓雅區"
+    And my location is "高雄市苓雅區"
+    When I visit "/"
+    Then the first listing should be "苓雅服務者"
+
+  @listing
   Scenario: Coming back from a detail page keeps the directory and its order without a loading skeleton
     Given the public directory has a listing "台北服務者" in "台北市"
     And the public directory has a listing "高雄服務者" in "高雄市"

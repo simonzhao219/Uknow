@@ -363,10 +363,10 @@ Deno.test('fresh 換推薦人：推薦邊 rewire 到新推薦人，新訂閱獎�
     const res = await postPrepare(token, { renewalMode: 'fresh', referredByCode: code2 });
     assertEquals(res.body.success, true, JSON.stringify(res.body));
 
-    // prepare 當下就更新推薦來源
+    // S6（ref P0-1）：建單不動推薦來源，換線意圖只存在訂單上——棄單不會換線。
     const { data: profile } = await client
       .from('profiles').select('referred_by_user_id, referred_by_code').eq('id', payer.id).single();
-    assertEquals(profile?.referred_by_user_id, referrer2.id);
+    assertEquals(profile?.referred_by_user_id, referrer1.id);
 
     // 完成付款 → 推薦邊 rewire、新訂閱的 gen1 獎勵歸 referrer2
     assertEquals(await payPendingOrder(client, payer.id, res.body.data.tradeNo), null);

@@ -1,0 +1,51 @@
+{
+  "description": "pg_net 回 401（密鑰不一致），對帳停擺",
+  "health": {
+    "generatedAt": "2026-11-20T01:37:03Z",
+    "jobs": {
+      "reconcile": {
+        "cronJobPresent": true,
+        "cronJobActive": true,
+        "lastCompletedAt": "2026-11-20T00:37:10Z",
+        "lastCompletedStatus": "succeeded",
+        "lastCompletedTrigger": "github",
+        "lastPgCronCompletedAt": "2026-11-19T22:07:41Z",
+        "lastPgCronRowAt": "2026-11-20T01:07:00Z",
+        "lastPgCronErrorCode": "vault_missing",
+        "counts24h": {
+          "succeeded": 24,
+          "failed": 0,
+          "skipped": 0,
+          "abandoned": 0
+        },
+        "lastPurgeDryRun": null
+      },
+      "purge-photos": {
+        "cronJobPresent": true,
+        "cronJobActive": true,
+        "lastCompletedAt": "2026-11-19T19:17:20Z",
+        "lastCompletedStatus": "succeeded",
+        "lastCompletedTrigger": "pg_cron",
+        "lastPgCronCompletedAt": "2026-11-19T19:17:20Z",
+        "lastPgCronRowAt": "2026-11-19T19:17:20Z",
+        "lastPgCronErrorCode": null,
+        "counts24h": {
+          "succeeded": 1,
+          "failed": 0,
+          "skipped": 0,
+          "abandoned": 0
+        },
+        "lastPurgeDryRun": false
+      }
+    },
+    "pgNet6h": {
+      "non2xx": 3,
+      "timedOut": 0,
+      "lastStatusCodes": [
+        401,
+        401,
+        401
+      ]
+    }
+  }
+}

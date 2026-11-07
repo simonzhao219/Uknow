@@ -15,6 +15,12 @@
 //   3. 讀取一律經過 sanitize：只收白名單欄位、限制長度、型別不符即丟棄，
 //      避免被塞髒資料污染表單或撐爆儲存體。
 
+//
+// 清除時機：註冊完成、登出（含「稍後註冊」，等同登出；SIGNED_OUT → clearAccountLocalState），以及 session 確認失效時
+// （clearAccountLocalState 也會清草稿）。草稿的鍵不含 uid——session 失效後若保留，
+// 下一位在同一分頁登入的人會拿到前一位填的身分證與電話。暫時性故障（Auth 抖動、
+// 逾時）不算失效，不清草稿。對應 docs/multi-step-flow-recovery.md 完善資料列。
+
 import { NAME_MAX_LENGTH, type NameMode } from './profileValidation';
 
 export interface ProfileDraft {

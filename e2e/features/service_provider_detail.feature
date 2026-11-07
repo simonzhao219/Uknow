@@ -49,3 +49,54 @@ Feature: Public service-provider detail page
     And I press the detail page's back button labelled "返回上一頁"
     Then I should be redirected to "/"
     And I should see the listing card for "Alice 美髮師"
+
+  # --- Browse previous / next listing from the directory (S7) ---------------
+
+  @listing
+  Scenario: Browsing from the directory shows the position and moves to the next listing
+    Given the public directory lists providers "Alice 美髮師", "Bob 美甲師", "Cara 美容師"
+    And every directory listing has a detail page
+    When I visit "/"
+    And I open the listing card for "Alice 美髮師"
+    Then the detail page position should read "1/3"
+    And the "上一篇" button should be disabled
+    When I go to the next listing
+    Then I should be on the detail page for "Bob 美甲師"
+    And the detail page position should read "2/3"
+    When I go to the next listing
+    Then I should be on the detail page for "Cara 美容師"
+    And the "下一篇" button should be disabled
+
+  @listing
+  Scenario: Browsing covers only the filtered directory and one back press returns to it
+    Given the public directory lists providers "Alice 美髮師", "Bob 美甲師", "Cara 美容師", "David 水電工"
+    And every directory listing has a detail page
+    When I visit "/"
+    And I search the directory for "師"
+    And I open the listing card for "Alice 美髮師"
+    Then the detail page position should read "1/3"
+    When I go to the next listing
+    Then I should be on the detail page for "Bob 美甲師"
+    When I press the detail page's back button labelled "返回上一頁"
+    Then I should be redirected to "/"
+    And the directory search box should contain "師"
+    And I should see the listing card for "Cara 美容師"
+    And I should not see the listing card for "David 水電工"
+
+  @listing @negative
+  Scenario: Opening a detail link directly shows no browse controls
+    Given a public listing "Cara 美容師" exists with description "專業臉部保養與清潔"
+    When I open that listing's detail page
+    Then I should see the text "Cara 美容師"
+    And the detail page should have no browse controls
+
+  @listing @negative
+  Scenario: After reloading a detail page opened from the directory the browse controls are gone
+    Given the public directory lists providers "Alice 美髮師", "Bob 美甲師"
+    And every directory listing has a detail page
+    When I visit "/"
+    And I open the listing card for "Alice 美髮師"
+    Then the detail page position should read "1/2"
+    When I reload the page
+    Then I should see the text "服務介紹"
+    And the detail page should have no browse controls

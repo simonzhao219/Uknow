@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type TouchEvent } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { FOCUS_RING_GAP } from '../ui/focusRing';
 import { cn } from '../ui/utils';
+import { swipeIntent } from '../../utils/swipeIntent';
 
 interface PhotoCarouselProps {
   photos: string[];
   name: string;
+  /** 起手就在最後一張再往左（next）／第一張再往右（prev）滑時觸發，給詳情頁換篇用。 */
+  onEdgeSwipe?: (direction: 'prev' | 'next') => void;
 }
 
 function prefersReducedMotion() {
@@ -27,7 +30,7 @@ function prefersReducedMotion() {
  * 根節點的子區塊順序是 [正方形, 圓點列]，`DetailSkeleton` 與 e2e
  * `test_public_skeleton_layout.py` 的結構探針都依這個順序比位置。
  */
-export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
+export function PhotoCarousel({ photos, name, onEdgeSwipe }: PhotoCarouselProps) {
   const total = photos.length;
   // 0 張：沿用 ImageWithFallback 原本對空 src 的行為（舊版也是 src={undefined}），不另發明空狀態。
   const slides: (string | undefined)[] = total === 0 ? [undefined] : photos;
@@ -53,6 +56,40 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
     [],
   );
 
+  // 盡頭續滑：只認「單指、起點張數」。touchstart 當下以 scrollLeft／clientWidth 現算張數
+  // （不取 rAF 去抖的 state，動量捲動中按下才不會用到舊值）；結束時才看手指位移。
+  // 這樣倒數第二張滑到最後一張的同一下手勢，起點不在盡頭，不會連跳換篇。
+  const gesture = useRef<{ x: number; y: number; index: number } | null>(null);
+
+  const handleTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (!onEdgeSwipe || e.touches.length !== 1 || el.clientWidth === 0) {
+      gesture.current = null;
+      return;
+    }
+    const touch = e.touches[0];
+    const index = Math.max(
+      0,
+      Math.min(slides.length - 1, Math.round(el.scrollLeft / el.clientWidth)),
+    );
+    gesture.current = { x: touch.clientX, y: touch.clientY, index };
+  };
+
+  const handleTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    const start = gesture.current;
+    gesture.current = null;
+    const touch = e.changedTouches[0];
+    if (!start || !touch || !onEdgeSwipe) return;
+    const direction = swipeIntent({
+      dx: touch.clientX - start.x,
+      dy: touch.clientY - start.y,
+      startX: start.x,
+      viewportWidth: window.innerWidth,
+    });
+    if (direction === 'next' && start.index === slides.length - 1) onEdgeSwipe('next');
+    else if (direction === 'prev' && start.index === 0) onEdgeSwipe('prev');
+  };
+
   const goTo = (target: number) => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -77,9 +114,16 @@ export function PhotoCarousel({ photos, name }: PhotoCarouselProps) {
           ref={scrollerRef}
           data-carousel-scroller=""
           onScroll={handleScroll}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={() => {
+            gesture.current = null;
+          }}
           tabIndex={multiple ? 0 : undefined}
           className={cn(
             'flex h-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain',
+            // 祖先容器設 pan-y 時，輪播自己要放行橫向捲動；保留雙指縮放（WCAG 1.4.4）。
+            'touch-pan-x touch-pan-y touch-pinch-zoom',
             '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
             'focus-visible:outline-hidden focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring',
           )}

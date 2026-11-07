@@ -20,19 +20,28 @@ name: Purge Listing Photos
 # workflow 不送 include_names，log 只印狀態碼、code 與統計數字，不用 set -x、
 # curl -v，也不印回應 body。要看清單時業主在本機 curl（規格書 §11 的 SOP）。
 #
-# 頻率依據：每日一次。條款窗口三十日、寬限期 7 日（ORPHAN_GRACE_HOURS），
-# 最長下架延遲＝寬限期＋1 輪；GitHub 排程漂移數小時不影響。三十日扣掉寬限期
-# 還能容許約兩週連續失敗，失敗會開 issue。成本只有牆鐘（public repo 的標準
-# runner 免費）與一次 Edge Function 呼叫。排程只打正式站（W2-9）；develop
-# 只走 dispatch。時間選台北凌晨 03:17，避開整點高峰。
+# pg-cron-schedulers（第 5 波 S1）起，**每日清理由 Supabase pg_cron 觸發**（UTC 19:17＝台北
+# 03:17，migration 20261112000001；實刪看正式站 Edge secret PHOTO_PURGE_LIVE）。
+# 這支 workflow 的排程改當**看門狗兼後備觸發**：
+#   - 讀 GET /internal/scheduler-health；26 小時沒有完成的清理就自己補跑並推 LINE P2
+#   - 開關一致性：pg_cron 路徑的實刪狀態與 repo var PHOTO_PURGE_LIVE 不一致時推 LINE P2
+#     （W5-17：本波兩個開關並存）
+#   - 決策在 scripts/scheduler-watchdog.py，表格案例由 framework-check 跑
+#   - workflow_dispatch 的行為與 B1～B4 完全不變
 #
+# 頻率依據：每日一次。條款窗口三十日、寬限期 7 日（ORPHAN_GRACE_HOURS），清理本身已由
+# pg_cron 準時觸發；看門狗只需每日確認一次。成本只有牆鐘（public repo 的標準 runner
+# 免費）、補跑時的一次 Edge Function 呼叫，以及每日至多一則 LINE。排程取 UTC 20:47
+# （台北 04:47）：pg_cron 的 19:17 之後一個半小時，當天那一輪應已完成。排程只打
+# 正式站（W2-9）；develop 只走 dispatch。
+
 # 前提：GitHub 只有一份 RECONCILE_SECRET，而 Supabase Secrets 逐分支獨立、
 # 不繼承——develop 的 Supabase RECONCILE_SECRET 必須與正式站同值，dispatch
 # 到 develop 才打得通（401 就是兩邊不同值）。
 # ============================================================================
 on:
   schedule:
-    - cron: '17 19 * * *'
+    - cron: '47 20 * * *'
   workflow_dispatch:
     inputs:
       target:
@@ -94,8 +103,31 @@ jobs:
           echo "ref=$ref_from_git" >> "$GITHUB_OUTPUT"
           echo "清理目標：$TARGET（$ref_from_git）"
 
+      # 排程觸發時先問 pg_cron 這一天有沒有做完；查不到狀態時決策就是補跑。
+      - name: 看門狗判讀 pg_cron 清理狀態
+        id: watchdog
+        if: github.event_name == 'schedule'
+        env:
+          API_BASE: https://${{ steps.target.outputs.ref }}.supabase.co/functions/v1/api
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          REPO_LIVE: ${{ vars.PHOTO_PURGE_LIVE }}
+        run: |
+          set -uo pipefail
+          code="$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 30 \
+            "$API_BASE/internal/scheduler-health" -H "x-internal-secret: $RECONCILE_SECRET" || echo 000)"
+          code="$(printf '%s' "$code" | tail -c 3)"
+          # 腳本本身壞掉時保底補跑：這一步若紅，後面的補跑會被跳過，看門狗就成了靜默失效。
+          if ! python3 scripts/scheduler-watchdog.py purge --status "$code" --health-file /tmp/health.json \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --repo-live "$REPO_LIVE" > /tmp/watchdog.json; then
+            echo "::error::看門狗腳本執行失敗，保底補跑清理（見 run log）"
+            echo "backfill=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 -c "import json; d=json.load(open('/tmp/watchdog.json')); print('看門狗：' + (d['rule'] or 'OK') + '；' + '；'.join(d['summary']))" >> "$GITHUB_STEP_SUMMARY"
+
       - name: 呼叫孤兒清理端點
         id: call
+        if: github.event_name == 'workflow_dispatch' || steps.watchdog.outputs.backfill == 'true'
         env:
           ENDPOINT: https://${{ steps.target.outputs.ref }}.supabase.co/functions/v1/api/internal/purge-orphan-listing-photos
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
@@ -122,7 +154,7 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: 失敗時開 issue
-        if: failure()
+        if: failure() && steps.call.outcome == 'failure'
         uses: actions/github-script@v7
         env:
           FAIL_CODE: ${{ steps.call.outputs.code }}
@@ -174,3 +206,27 @@ jobs:
                 '排除後關閉此 issue。',
               ].join('\n'),
             });
+
+      # 看門狗的逾期／開關不一致告警（P2）。放最後、不加 continue-on-error：推送失敗讓
+      # run 變紅，留下紀錄。缺 LINE secret 時 notify 會 no-op，所以先擋。
+      - name: 確認 LINE 推送設定存在
+        if: ${{ !cancelled() && steps.watchdog.outputs.notify == 'true' }}
+        env:
+          LINE_CHANNEL_TOKEN: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          LINE_ALERT_TO: ${{ secrets.LINE_ALERT_TO }}
+        run: |
+          if [ -z "$LINE_CHANNEL_TOKEN" ] || [ -z "$LINE_ALERT_TO" ]; then
+            echo "::error::LINE_CHANNEL_TOKEN／LINE_ALERT_TO 未設定，看門狗有告警卻無法推送。"
+            exit 1
+          fi
+
+      - name: 看門狗告警時推送 LINE
+        if: ${{ !cancelled() && steps.watchdog.outputs.notify == 'true' }}
+        uses: ./.github/actions/notify
+        with:
+          level: ${{ steps.watchdog.outputs.level }}
+          title: ${{ steps.watchdog.outputs.title }}
+          body: ${{ steps.watchdog.outputs.body }}
+          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}
+          line_to: ${{ secrets.LINE_ALERT_TO }}

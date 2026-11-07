@@ -18,3 +18,17 @@ Feature: Renewal backfill recovery
     Then I should see the text "已補至"
     And I should see the text "還差"
 
+
+  Scenario: An expired member with a stale first-purchase snapshot still sees both renewal modes
+    Given I am logged in as an expired member with a stale first-purchase snapshot
+    When I visit "/payment/checkout"
+    Then I should see the text "續費方式"
+    And I should see the text "續約"
+
+  Scenario: A fresh renewal with nothing to forfeit still asks for confirmation
+    Given I am logged in as an expired former member
+    When I visit "/payment/checkout"
+    And I choose the fresh renewal mode
+    And I click pay
+    Then I should see the text "確定要以新約重新開始嗎？"
+    And I should see the text "目前沒有點數或推薦紀錄需要清空。"

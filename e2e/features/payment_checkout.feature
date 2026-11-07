@@ -86,3 +86,10 @@ Feature: Payment checkout
     When I visit "/payment/checkout"
     And I click pay
     Then I should see a toast containing "已有有效訂閱，請到期後再續約"
+
+  # W5-5：停權者不得付款——結帳頁顯示停權說明，不給付款鈕（後端 prepare 另回 403）。
+  Scenario: A suspended member sees the suspension notice instead of the pay button
+    Given I am logged in with registration step 1 as a suspended member
+    When I visit "/payment/checkout"
+    Then I should see the text "帳號已停權"
+    And the pay button is not shown

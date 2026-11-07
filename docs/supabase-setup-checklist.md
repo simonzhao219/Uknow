@@ -127,7 +127,8 @@ API base  : https://<PROJECT_REF>.supabase.co/functions/v1/api
 | `MEMBER_TOKEN_SECRET` | **你** | 會員驗證碼（§13.1）的簽章密鑰；缺了驗證端點一律 500 |
 | `REFERRAL_INVITE_SECRET` | **你** | Email 邀請連結的簽章密鑰（`openssl rand -hex 32`，每個環境各一把、值不同）；缺了寄邀請與接受邀請都回 503 `disabled` |
 | `REFERRAL_EMAIL_INVITE_ENABLED` | **你** | Email 邀請的寄信總開關，`true` 才寄（kill switch）；關掉不影響已寄出的連結 |
-| `RECONCILE_SECRET` | **你** | 內部排程端點的門票（對帳、告警查詢、刊登照片孤兒清理）。正式站必設；develop 要對刊登照片清理 dispatch 時也要設，且**須與正式站同值**（GitHub 只有一份 `secrets.RECONCILE_SECRET`） |
+| `RECONCILE_SECRET` | **你** | 內部排程端點的門票（對帳、告警查詢、刊登照片孤兒清理、排程狀態）。正式站與 develop 都要設（pg_cron 經 Vault 帶同一把打進來，見步驟 8），且**須與正式站同值**（GitHub 只有一份 `secrets.RECONCILE_SECRET`） |
+| `PHOTO_PURGE_LIVE` | **你**（只有正式站） | pg_cron 觸發的刊登照片清理，`true` 才實刪；沒設就 dry-run。**正式站設 `true`、develop 不設**。GitHub dispatch 仍看 repo variable 的 `PHOTO_PURGE_LIVE`，兩邊不一致時看門狗每日推 LINE |
 | `RECONCILE_THRESHOLD_MINUTES` | 選用 | 未設時預設 20 |
 | `DEV_CORS` | 選用 | 開發旗標，放行 localhost |
 
@@ -619,6 +620,64 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
    `update public.profiles set is_admin = false where id = '<錯的帳號 uuid>';`
    ——系統回到沒有管理員的狀態，從第 1 步重來。
 
+## ☑️ 步驟 8：pg_cron 排程的 Vault 憑證（每個環境各一次）
+
+對帳（每小時）與刊登照片清理（每日）由 pg_cron 觸發（`supabase/README.md`〈排程〉）。pg_cron 打端點用的 URL 與密鑰放在 **Vault**，不寫進 migration，所以每個環境要自己建。沒建的環境，排程每輪只寫一列 `skipped/vault_missing`，不送請求；GitHub 看門狗會接手補跑並推 LINE。
+
+**順序依晉升時序分兩段**：migration 在晉升（或合進 develop）時立即套用，Edge Function 要等部署完成。
+
+**甲段：migration 套用後、Edge 部署前**
+
+1. 確認 Edge Secrets 有 `RECONCILE_SECRET`。正式站另加 `PHOTO_PURGE_LIVE=true`，develop 不設。舊版 Edge 不讀這個值，先設不會有影響。
+2. SQL Editor 執行（`<ref>` 正式站見 `src/utils/supabase/info.tsx`、develop 見 `config/supabaseTarget.ts`）：
+
+   ```sql
+   select vault.create_secret('https://<ref>.supabase.co/functions/v1/api', 'uknow_api_base_url');
+   select vault.create_secret('<與該環境 RECONCILE_SECRET 相同的值>', 'uknow_internal_secret');
+   ```
+
+   同名 secret 已存在時會失敗。改用：
+
+   ```sql
+   select vault.update_secret(id, '<新值>') from vault.secrets where name = '<名稱>';
+   ```
+
+3. 這段期間每小時第 7 分，舊版端點照常對帳，但不寫帳本。看門狗會因為 health 404 自己補跑，不推 LINE。
+
+**乙段：Edge 部署後**
+
+4. 確認 health 不再回 404：`reconcile-payments.yml` 下一次看門狗 run 的 step summary 會顯示判讀結果（`R5` 正常、`R6` 停擺）。
+   不想等，可以 dispatch 一次 `reconcile-payments.yml`，或直接做第 5 步。
+5. 立即驗證：先執行 `select public.invoke_internal_endpoint('reconcile');`，應回傳 request id。1 分鐘後查：
+
+   ```sql
+   select status, error_code, trigger, started_at from public.scheduled_job_runs
+    where job = 'reconcile' and started_at > now() - interval '5 minutes' order by id desc;
+   ```
+
+   時間條件不能省：甲段期間每小時會留下 `skipped/vault_missing` 舊列，看最新一列會誤判。
+
+   | 看到 | 代表 |
+   |---|---|
+   | `succeeded`（trigger 是 `pg_cron`） | 完成 |
+   | `running` | 還在跑（最多 150 秒），2 分鐘後再查 |
+   | `failed` | 端點有執行，結果是失敗。看 `error_code`（例如 `query_all_failed`＝PayUni 查詢全滅）與後台系統告警 |
+   | `skipped/concurrent` | 剛好撞到另一輪（例如整點第 7 分的排程），過幾分鐘再執行一次第 5 步 |
+   | `skipped/vault_missing` | Vault 沒設好，回第 2 步 |
+   | 沒有任何列 | 查 `select status_code, content from net._http_response order by id desc limit 1;`。401 是密鑰不一致；404 是 Edge 還沒部署；連 `_http_response` 都沒有列，是 pg_net 沒裝（migration 沒套到） |
+
+**輪替 `RECONCILE_SECRET`**：依序改三處，然後照第 4 步驗證。
+
+1. Edge Secret；
+2. Vault 的 `uknow_internal_secret`；
+3. GitHub 的 `secrets.RECONCILE_SECRET`。
+
+三步盡量在幾分鐘內做完。空檔內會有 401：
+- pg_cron 那輪會失敗；
+- GitHub 看門狗若剛好在這時執行，會推「查不到 pg_cron 狀態」，或開「付款對帳排程失敗」issue。
+
+這是輪替造成的預期假警報。做完第 5 步、確認 `succeeded` 之後，關掉 issue 即可。
+
 ## 快速檢查表（每個環境各一份）
 
 - [ ] 步驟 1：6 個 Edge Function Secrets 已新增並 Save
@@ -645,6 +704,9 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
       拿到的碼確實是 `8048876`，`reward_config.default_referrer_code` 已填同一個值
 - [ ] 步驟 7（僅全新資料庫）：宣告前 `check` 確認是預定的帳號且 `userName` 非空；
       宣告後 `check` 回 `isAdmin: true`
+- [ ] 步驟 8：Vault 兩筆（`uknow_api_base_url`、`uknow_internal_secret`）已建；`cron.job` 有
+      `reconcile-pending-payments`、`purge-orphan-listing-photos`、`prune-scheduled-job-runs`；
+      手動 invoke 後帳本出現 `pg_cron/succeeded`。正式站另確認 Edge Secrets 有 `PHOTO_PURGE_LIVE=true`
 
 ### 兩個環境都設完後，再驗一次「沒有交叉」
 

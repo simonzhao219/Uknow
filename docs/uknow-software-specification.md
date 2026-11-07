@@ -57,7 +57,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 | **訪客** | 瀏覽/搜尋服務提供者、查看詳情、註冊登入、閱讀條款與規則頁 |
 | **會員（會籍有效）** | 刊登管理、推薦系統、任務、獎勵與提領、掃碼驗證其他會員的身分（§13.1） |
 | **會員（會籍失效）** | 可登入，但會籍限定功能被導向續約；刊登隱藏、不可提領。**獎勵頁例外**：可讀（見 §5 的「保留不歸零」），頁首常駐續約提示，提領動作仍擋 |
-| **註冊中（尚未成為會員）** | 有帳號，且資料未齊（不論是否訂閱過、是否為管理員，一律算註冊中，會被導去完善資料頁），或從未訂閱過且首購未完成（含已付款待開通）。不可用會員區；頁首只有「登出」，離開註冊頁面時多一顆「繼續完成註冊」（已付款待開通為「查看開通進度」）。頁首登出不刪帳號、不清草稿，下次登入接回原步驟；完善資料頁的「稍後註冊」則會刪除帳號資料，先跳確認框說明後果並指向頁首登出，刪除失敗時停在原頁說明原因 |
+| **註冊中（尚未成為會員）** | 有帳號，且資料未齊（不論是否訂閱過、是否為管理員，一律算註冊中，會被導去完善資料頁），或從未訂閱過且首購未完成（含已付款待開通）。不可用會員區；頁首只有「登出」，離開註冊頁面時多一顆「繼續完成註冊」（已付款待開通為「查看開通進度」）。頁首登出與完善資料頁的「稍後註冊」是同一個動作：不刪帳號，已送出的資料保留、下次登入接回原步驟；未送出的完善資料草稿隨登出清除。註冊中要刪除帳號請聯繫客服 |
 | **管理員** | 會員管理、提領審核、系統公告 |
 
 頁首從第一個畫面起就依本機記住的登入狀態畫對應版本，不先閃「登入／立即刊登」。仍會看到一次訪客版頁首的情形：
@@ -111,11 +111,18 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 **首頁的返回與重新進入**：只有瀏覽器「返回」回到首頁時還原先前的搜尋、篩選與捲動位置；點 logo、導覽列「首頁」或其他方式進入都是乾淨首頁。
 人已在首頁時再點 logo／「首頁」＝清空搜尋與全部篩選並捲回頂端。〔實作〕`src/components/HomePage.tsx`、`src/utils/homeListingsCache.ts`
 
+**首頁排序規則**：未取得定位時依刊登時間由新到舊。取得定位後依「區級距離」排序：以使用者座標反查最近的區中心作為所在區（近似，非行政區判定）；服務區含所在區的刊登排最前，其餘依各刊登「最近的服務區中心」距離由近到遠，同分維持由新到舊；刊登寫「全區」或服務區為空＝該縣市每一區都服務。已授權定位者冷載入首頁時最多等約 1.5 秒取得座標再顯示；拿不到、太慢或尚未授權時先顯示最新，座標回來後以動畫重排（尊重減少動態偏好）。返回首頁時有快取座標就不重排。使用者座標只留記憶體，不上傳、不存 storage。〔實作〕`src/components/HomePage.tsx`、`src/utils/listingDistanceOrder.ts`（`nearestDistrict`、`sortByDistance`）、`src/utils/homeListingOrder.ts`、`src/utils/flipReorder.ts`、`src/utils/homeReorder.ts`
+
+**區中心座標的資料來源**：`src/utils/districtCentroids.ts`（368 區，動態載入的獨立 chunk）由 `scripts/gen-district-centroids.py` 自內政部地政司「鄉鎮市區界線(TWD97經緯度)」版本 1140318 產生（政府資料開放平臺資料集 7441，政府資料開放授權條款－第 1 版，可商用、可製作衍生物，須顯名）。顯名聲明：內政部地政司 2025 鄉鎮市區界線(TWD97經緯度) 1140318，依政府資料開放授權條款（https://data.gov.tw/license）釋出。每區取多邊形質心，座標取小數 3 位。程式內屏東縣的區名寫「南鄉」，界線資料為「南州鄉」，產生腳本以別名對應。
+
+**刊登詳情頁的換篇**：從首頁點進詳情頁時，凍結點擊當下首頁畫面上的順序（含搜尋、篩選、排序結果），詳情頁可左右滑、點「‹ ›」或在桌機按 ←／→ 切換上一篇／下一篇，標題列顯示「n/N」；照片輪播滑到頭尾再滑會接著換篇。換篇用取代式導覽，歷史只留一筆，按一次返回就回首頁；有換過篇時，返回首頁會把最後看的那張卡捲到中央，沒換過維持離開前的捲動位置。直接輸入網址、重新整理、從其他入口進詳情頁時沒有換篇脈絡，不顯示任何換篇介面。〔實作〕`src/utils/browseContext.ts`、`src/utils/homeListingsCache.ts`、`src/components/ServiceProviderDetail.tsx`、`src/components/listing/BrowseNav.tsx`、`src/utils/swipeIntent.ts`
+
 **守衛語意**
 
 - `ProtectedRoute`：未登入導向 `/login`；可帶 `featureRequired` 檢查功能旗標。
 - `RequireMembershipRoute`：只放行 `active`；`expired` 導向 `/payment/checkout` 續約，
-  付款開通中導向 `/payment/result`。
+  付款開通中導向 `/payment/result`——「付款開通中」＝非 active 且有一張已收到 PayUni 成功
+  回應的待開通訂單，首購與續費者一視同仁（續費者付了款卻卡單，也不會被送回結帳頁重付）。
 - `AdminRoute`：非管理員擋下。
 - `FeatureContext`：功能旗標，**目前為前端全開啟 stub**，尚無後端來源。
 
@@ -162,7 +169,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 訂單者（含付款失敗重試）可由結帳頁「編輯」回到 Step 2 重填；付款已被 PayUni 接受但尚未
 開通（訂單 pending）視同付款前，開通後才鎖定。檢查與寫入和付款完成共用同一把 `profiles`
 列鎖，付款進行中送出的重填會等付款完成後被拒。推薦人在註冊完成後唯一的自助變更路徑是
-續費選新約（§6.2、§7.4）。收款銀行資訊不在此限（每次提領申請時提供，§10.4）。
+續費選新約（§6.2、§7.4），且在該張新約單付款成功時才生效。收款銀行資訊不在此限（每次提領申請時提供，§10.4）。
 〔實作〕`register_profile`（`20261017000004_register_profile_payment_lock.sql`）、
 `resolveProfilePageRedirect`
 
@@ -170,7 +177,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 
 | 欄位 | 規則 |
 |---|---|
-| 推薦碼（選填） | 驗證存在且推薦人未停權；前端即時查詢並顯示推薦人**真實姓名**。查詢端點 `GET /referrals/validate/:code` **需登入**（無 token 回 401）；同一使用者在 5 分鐘內最多查 10 次、24 小時內最多查 50 次（固定窗口，自該窗口第一次請求起算；依序計數，被 5 分鐘窗口擋下的請求不計入 24 小時額度；`bump_rate_limit`，fail-open），超過回 429 `rate_limited`；查詢本身失敗回 503，不偽裝成查無此碼；回應只有推薦人姓名與刊登名、不含任何 id；停權推薦人與查無此碼回應同形；底層 RPC `validate_referral_code` 只給 service_role，不經 PostgREST 對外。推薦碼是流水號，這道防線把枚舉面從匿名降到需登入＋限流：單一帳號受上述額度限制，多開帳號則線性放大，總量受註冊速率（Email OTP 寄信配額）限制。付款前可重填，註冊完成後鎖定（§4.1） |
+| 推薦碼（選填） | 驗證存在且推薦人未停權；前端即時查詢並顯示推薦人**真實姓名**。查詢端點 `GET /referrals/validate/:code` **需登入**（無 token 回 401）；同一使用者在 5 分鐘內最多查 10 次、24 小時內最多查 50 次（固定窗口，自該窗口第一次請求起算；依序計數，被 5 分鐘窗口擋下的請求不計入 24 小時額度；`bump_rate_limit`，fail-open），超過回 429 `rate_limited`；查詢本身失敗回 503，不偽裝成查無此碼；回應只有推薦人姓名與刊登名、不含任何 id；停權推薦人與查無此碼回應同形；底層 RPC `validate_referral_code` 只給 service_role，不經 PostgREST 對外。推薦碼是流水號，這道防線把枚舉面從匿名降到需登入＋限流：單一帳號受上述額度限制，多開帳號則線性放大，總量受註冊速率（Email OTP 寄信配額）限制。送出資料時（`POST /auth/register`）後端以同一支 `validate_referral_code` 再驗一次：查無、推薦人停權、碼已失效一律 400「推薦碼不存在或已失效」（同形），填自己的碼 400，查詢本身失敗 503 `REFERRAL_CHECK_UNAVAILABLE` 且不寫入——不把查不到當成沒填碼（付款時會被預設推薦人覆寫）；前端遇 400 把錯誤標在推薦碼欄位並撤銷已驗證狀態。付款前可重填，註冊完成後鎖定（§4.1） |
 | 真實姓名 | 用於提領時**人工**核對身分（`request_withdrawal` 只驗身分證字號，不比對姓名）；付款前重填時，推薦網絡等以 User ID 關聯的介面即時反映；獎勵明細的被推薦人姓名為發獎當下快照，不連動（`20260719000001`）。**格式驗證**分兩模式，預設中文：中文模式限中文字元＋恰好 0 或 1 個半形空格（兩邊各至少 2 字）、上限 10 字；外文模式限英文字母＋單字間單一半形空格、每字首字母大寫、上限 50 字。兩模式皆不接受標點與數字——身分證上的間隔號（原住民漢字音譯、新住民歸化漢名）在輸入當下自動轉為半形空格。前端依切換鈕嚴格把關、後端採兩模式聯集（模式旗標無安全價值，見〔實作〕）。寫入路徑收斂到 Edge Function（authenticated 對 `profiles` 沒有任何 UPDATE 權限，`handle_new_user` 不從 metadata 帶入姓名） |
 | 身分證字號 | `profiles.national_id`。註冊完成後變更等同轉讓經營權，須書面申請並經書面同意（事業手冊 2-3-3）。⚠️ **唯一性檢核尚未實作**（見 §14 已知落差） |
 | 生日 | 限 18 歲以上 |
@@ -219,7 +226,12 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 `suspended` 是 admin 手動設定的 `profiles.suspended_at`，與會籍狀態
 （由訂閱日期算）是**正交兩軸**——會籍本體仍只有 active/expired 兩態。
 
-- **效果**：凍結金錢／福利相關動作——刊登可見、提領、領取免費續約 credit 皆擋。
+- **效果**：凍結金錢／福利相關動作——刊登可見、提領、領取免費續約 credit、付款皆擋。
+- **付款**：結帳頁對停權者顯示與會員區相同的「帳號已停權」說明、不給付款鈕；`POST /payuni/prepare`
+  在任何寫入之前回 403 `ACCOUNT_SUSPENDED`、不建單（建單函式在 `profiles` 列鎖內再查一次）。
+  建單後、付款途中才被停權的，付款成功照常開通（錢已收），並寫 error 告警
+  `payment_while_suspended` 交客服處理。
+  〔實作〕`SuspendedNotice`、`prepare_payment_order`（`20261111000002`）、`20261111000003`
 - **會員區硬鎖**：`RequireMembershipRoute` 的 `suspendedBlocked` 對非管理員的停權
   會員直接顯示「帳號已停權」，不放行任何會員區頁面（含 `allowExpired` 的獎勵頁）。
   本節原本寫的是「不硬鎖、只凍結價值出口」，與守衛實際行為不符——依「程式碼為準」
@@ -249,8 +261,9 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 `/auth/complete-registration` 回傳的同一份資料）的任一讀取失敗——會員資料、會籍、
 推薦碼、待付款訂單、註冊進度——回 503 `PROFILE_UNAVAILABLE`，不退化成「不存在」
 「已過期」「未付款」；Auth 服務暫時回不來也回 503，只有 Auth 明確判定 token 無效才回 401。
-`/auth/register` 回 503 代表資料已寫入、只是讀不回，前端接續而不重送。前端遇 503、逾時
-或斷線時停在原頁讓人重試，不導登入頁、不登出；會員資料零列（404）視為帳號資料異常，
+`/auth/register` 的 503 看錯誤碼：`PROFILE_UNAVAILABLE` 代表資料已寫入、只是讀不回，前端接續而不重送；
+`REFERRAL_CHECK_UNAVAILABLE` 代表推薦碼暫時查不到、**未寫入**，前端停在原頁、保留草稿，可重送（§4.2）。前端遇 503、逾時
+或斷線時停在原頁讓人重試，不導登入頁、不登出；會員資料零列（404，body 帶 `PROFILE_MISSING` 碼）視為帳號資料異常，不帶碼的 404（閘道層、部署壞掉）歸暫時性，
 在登入頁說明並提供客服聯絡，不自動登出。系統判定 session 無效時只清除本機登入狀態，
 不撤銷其他裝置；其他端點回 401 時先換發 token、再以 `/profile` 確認，確認無效才登出。
 例外：換發 token 遇 429 時，Supabase 用戶端會自行移除本機 session 並廣播登出，前端無法視為暫時性，
@@ -278,7 +291,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 | 模式 | 適用 | 效期錨點 | 推薦人 | 帳本 |
 |---|---|---|---|---|
 | **續約（extend）** | 曾訂閱者**永遠可選**，不因過期多久而消失 | 接續**前一筆訂閱到期日的隔天**，一筆一年 | 不變 | 全數保留 |
-| **新約（fresh）** | 首購或續費 | 從**付款日**起算 | 換線（註冊完成後唯一的自助換線入口，§4.1）；**未填碼＝綁平台預設推薦人**（§7.4） | **清空**（§8.4 `ledger_reset` 沖銷、§9.2 任務歸零） |
+| **新約（fresh）** | 首購或續費 | 從**付款日**起算 | **付款成功時**換線（註冊完成後唯一的自助換線入口，§4.1；建單只記意圖）；**未填碼＝綁平台預設推薦人**（§7.4） | **清空**（§8.4 `ledger_reset` 沖銷、§9.2 任務歸零） |
 
 **補繳**：extend 的效期算術是字面接續、不做「至少從今天起算」的補救——
 算出的效期仍在過去也照給，使用者連續補繳（一筆 NT$1,200 = 一年）直到
@@ -289,13 +302,41 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 都以 `/subscriptions/status` 的 `renewal` 契約（`RenewalInfoSchema`）
 接續顯示進度，前端不留自己的進度副本。
 
+**建單的護欄**（續約與新約共通）：曾訂閱者必須選續約或新約，不帶模式建單回 400
+`RENEWAL_MODE_REQUIRED`；已有「已付款、待開通」的訂單時不再建單，回 409
+`PAYMENT_PENDING_ACTIVATION` 並帶該筆交易編號，前端導去開通中畫面（首購者同樣適用；
+一直開通不了的單由客服人工開通）；新推薦碼屬於自己的推薦樹（任何深度）回 400
+`REFERRAL_CYCLE`（§7.2）。停權仍優先（403）。
+
 **fresh 的護欄**：存在審核中（`pending`）提領時不可選 fresh（§10.1，
 建單 400）；查不到提領狀態或會籍時建單回 500、不建單（§5.3）；選 fresh 前結帳頁揭露將清空的具體數字（點數、累積推薦
-人數），送出付款前需二次確認——補繳中途改選 fresh 時另列「已付款項
-不退還、效期不保留」警語。
+人數），送出付款前**一律**二次確認（沒有資產也要確認，因為推薦關係一定會變）——
+補繳中途改選 fresh 時另列「已付款項不退還、效期不保留」警語。確認框依資產列出後果，
+並說明推薦人會怎麼變：填了別人的碼＝「將改為 {姓名}」、填回現任推薦人的碼＝「維持
+{姓名}」、留空且預設推薦人可用＝「將改變」（不揭露預設推薦人，§7.4）、留空且預設推薦人
+不可用＝不寫推薦人句（付款時維持原推薦人）；新推薦碼欄的說明與 placeholder 說同一件事
+（`/subscriptions/status` 的 `freshDefaultReferrerAvailable`；預設推薦人在本人推薦樹內時判為不可用，
+與付款時的環判定一致）。有可清空的資產時確認鈕為
+紅實心，沒有時為流程鈕。
 
 模式由建單時寫入 `payment_orders.renewal_mode`，付款成功當下才據以決定效期
-——**不信任前端傳入的日期**。
+——**不信任前端傳入的日期**。新約的換線意圖（新推薦人、碼、來源：填碼／預設推薦人／
+預設不可用而維持原推薦人）同樣只寫在**該張訂單**上，建單不動會員的推薦人；只有
+續費者的那張新約單**付款成功**時才換線，棄單後改付續約不會換線。付款當下會重驗
+推薦碼（停權或失效）並檢查成環，任一不過或換線失敗 → 維持原推薦人、帳本照清，
+寫 error 告警（`fresh_referrer_invalid`／`fresh_referrer_cycle`／`fresh_referrer_missing`／
+`fresh_rewire_failed`）。曾訂閱者的付款若沒有續費模式（prepare 以外的路徑漏網），
+照常開通並寫 error 告警 `renewal_without_mode`。
+〔實作〕`20261113000002_renewal_referrer_intent.sql`
+
+**重複付款**：建單只擋「此刻已 active」，舊的待付款單不作廢——PayUni 付款頁在付款期限前
+仍可付，作廢擋不住付款，反而讓對帳不再追它。兩個分頁各建一張單、兩邊都付成功時，付款成功
+當下若此人已在效期內（某筆訂閱的到期時點晚於這筆的付款時點），這筆一律**接續**最後一筆
+訂閱的隔天（錢已收、給足效期），不從付款日重新起算、也不再執行一次新約清帳本、也不換線
+（告警 context 帶該單的換線意圖）；三代獎勵照發。
+新約與首購的重複寫 error 告警 `duplicate_payment`、續約的寫 warning，context 帶兩筆交易
+編號與該筆發出的獎勵列，由客服判斷是否退款並人工沖銷。
+〔實作〕`20261111000003_duplicate_payment_guard.sql`
 
 ---
 
@@ -364,6 +405,10 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 - **換線（rewire）**：新約模式驗證新推薦碼後更新上線，推薦邊即時改指；
   舊上線的歷史獎勵與任務計數保留（獎勵本就 per-payment-event），未來付款
   的獎勵歸新上線。
+- **不得成環**：新上線若是自己、或在自己的推薦樹內（任何深度），一律不得
+  換過去；發三代獎金時收獎者若是付款人本人（資料已成環），該代與其後各代
+  不發並寫 error 告警 `referral_cycle_detected`。〔實作〕`referral_would_cycle`、
+  `pay_referral_generations`
 - **姓名同步**：組織圖姓名一律透過 User ID 關聯查詢，確保顯示最新真實姓名。
   第二、三代顯示名已**遮罩**（`陳○華`）。
 
@@ -404,7 +449,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 - 排序一律在伺服器端計算。`name_*` 必須留在伺服器——二、三代顯示名已遮罩，
   前端沒有可正確排序的真名；`updated_*` 的鍵雖然前端也拿得到，仍不下放，
   避免兩套排序邏輯產生兩份真相。
-- 同鍵時以真名（`Intl.Collator('zh-Hant')`）再以 userId 決勝，確保順序穩定。
+- 同鍵時以畫面上的名字（一代真名、二三代遮罩名；`Intl.Collator('zh-Hant')`）再以 userId 決勝，確保順序穩定。
 
 > **歷史沿革（勿改回）**：排序鍵曾是「自身與可見子樹中最新的加入時間」
 > （欄位 `subtreeLatestJoinedAt`）。該設計下**任何一位下線加入，都會把其所有
@@ -422,7 +467,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 
 **搜尋：符合條件者必須全部可及**
 
-- 搜尋於伺服器端比對**真名**（前端只有遮罩名），輸入後 debounce 300ms 送出。
+- 搜尋於伺服器端比對**畫面上看得到的字串**：一代比對真名，二、三代只比對遮罩後的名字（比對真名會讓人用單字試探還原被遮字元）；每人每分鐘 30 次限流，超過回 429。輸入後 debounce 300ms 送出。
 - 回應含 `total`（全部命中數，不受分頁影響）與該頁 `matches`；UI 顯示
   「已顯示 X / Y 筆記錄」，命中多於一頁時提供「加載更多」。
 - **不得靜默截斷**：只回傳前 N 筆而不揭露總數，會讓使用者以為
@@ -438,21 +483,22 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
   步驟見 `docs/supabase-setup-checklist.md`）：
   - **首次付款**（`subscriptions.is_renewal = false`）：付款成功時由
     `resolve_default_referrer` 套用。
-  - **續費選新約（fresh）且未填碼**：建單時由 `/payuni/prepare` 套用——
-    選新約 = 離開原本的樹，不填碼不等於維持原狀；要留在原上代必須主動
-    填回原推薦碼。
+  - **續費選新約（fresh）且未填碼**：建單時由 `/payuni/prepare` 解析並記在訂單上，
+    該張新約單**付款成功時**才套用（§6.2）——選新約 = 離開原本的樹，不填碼不等於
+    維持原狀；要留在原上代必須主動填回原推薦碼。
 - 碼合法性重用 `validate_referral_code()`（`active` 且推薦人未停權），另有
   自我推薦護欄；解析失敗時**不阻斷金流**（建單/付款照常成功），僅寫
   `system_alerts`（首購路徑 `default_referrer_code_invalid` /
   `default_referrer_suspended`；fresh 路徑
-  `default_referrer_unavailable_on_fresh`），此時 fresh 者維持原上代不變。
+  `default_referrer_unavailable_on_fresh`；預設推薦人在本人推薦樹內也算不可用），此時
+  fresh 者維持原上代不變。
 - **可用性可見**（不能只靠事後告警）：`/health` 回報 `defaultReferrer`
   三態 `ok`／`unset`／`invalid`——部署 SOP 打 `/health` 比對 `sha` 時
   一併看見。
 - 此推薦人**正常參與** §9 推薦王；獎勵發放與換線規則（§7.2、§8.2）完全比照
   一般推薦人，不特殊處理。
 - 自動綁定以 `profiles.referred_by_is_default` 標記（fresh 未填碼路徑也設
-  `true`）；換線到使用者親自填的推薦碼時由 `/payuni/prepare` 重置為
+  `true`）；換線到使用者親自填的推薦碼時於該張新約單付款成功時重置為
   `false`，付款前在 Step 2 重填推薦碼（或清空）時由 `/auth/register`
   重置為 `false`。機制對使用者不揭露（前端據 `isAutoReferral` 契約欄位
   抑制顯示與資料擷取；續約文案只說「留空表示不指定推薦人」）。
@@ -502,7 +548,16 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 
 每一代各自包一層例外隔離（warning-only）：gen2/gen3 失敗不拖累 gen1，
 只留 `system_alerts` 紀錄。兩條路徑各有自癒補償
-（`repair_orphaned_payments` / `repair_orphaned_claim_rewards`）。
+（`repair_orphaned_payments` / `repair_orphaned_claim_rewards`）；自癒先鎖該會員的
+`profiles` 列再重查，並行的補發不會各插一份。自癒只補「事件發生時推薦關係已存在」的
+付款（`referred_by_changed_at` ≤ 付款時點）；付款交易內寫推薦人時（首購套用預設推薦人、
+新約換線），`referred_by_changed_at` 記的是付款時點而非處理當下，這筆付款才補得到。
+
+冪等的最後一道在資料庫：`reward_transactions` 對上表兩組鍵、`ledger_reset` 的
+`subscription_id`、提領退件退款的 `withdrawal_id` 各有唯一索引，同一事件的第二列存不進去。
+三代推薦獎勵撞索引視同已發、不告警；`ledger_reset` 撞索引走新約清帳本的 warning 告警；
+提領退件退款撞索引則整筆失敗（fail-closed）。
+〔實作〕`20261111000001_reward_idempotency_index.sql`
 
 ### 8.4 獎勵明細的來源分類
 
@@ -551,14 +606,20 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
   非點數。需使用者主動領取才延展會籍。
 - **可多張**：當月每滿 8 位發一張，張數 = `floor(當月新人數 / 門檻)`，
   以 `round_ordinal` 區分。〔實作〕`20260724000002_referral_king_multi_credit.sql`
+- **新約後**：已發的 credit（含未領）保留；當月從 0 計門檻——當月張數 = 新約當下該月
+  已應發的張數 + `floor(新約後當月新人數 / 門檻)`，`round_ordinal` 接續（新約當下已達門檻
+  但對帳尚未補發的那張也算已應發，之後照補）。記這個張數失敗時付款照常完成、帳本與當月計數照清，
+  只寫 error 告警（帶月份與應記的張數，人工補記）。〔實作〕`task_progress.king_round_base`、
+  `20261113000003_referral_pair_history.sql`
 - **月份 key** 錨定**付款時間**（非執行時間），時區 `Asia/Taipei`。
 - **計數自癒**：credit 發放獨立於計數 append，每次付款都重新對帳補足差額
   （`reconcile_king_credits`），漏發會被下一筆付款補上。
 
 ### 9.2 「新下線」的判準：pair-history
 
-> **`task +1 ⟺ 被推薦人 R 從未出現在上線 U 的 `task_progress.monthly_referrals`
-> 任一月份陣列中`**（＝對 U 而言第一次）。
+> **`task +1 ⟺ 被推薦人 R 從未出現在上線 U 的配對名單 `referral_pair_history` 中`**
+> （＝對 U 而言第一次）。名單獨立於月份計數（`task_progress.monthly_referrals`），
+> 新約清空計數不會刪到它。
 
 一條規則涵蓋全部情形，並天生具備重放冪等：
 
@@ -572,10 +633,10 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
 價值 1,200 的免費續約，經濟上不划算。
 
 **fresh 清空與 pair-history 的關係**：選 fresh 清空帳本時，
-`total_referrals` 歸 0、**當月**桶刪除（月份 key 沿用付款時點的同一運算
-式），但**歷史月份桶永久保留**——歷史桶就是 pair-history 本體，跨清空
-保留才能擋「換新約重刷推薦王」：清空後老下線再付款，上線照領 100 P
-（§8.2），任務**不 +1**。
+`total_referrals` 歸 0、**當月計數歸零**（月份 key 沿用付款時點的同一運算
+式），其餘月份桶保留；**配對名單不清**——名單跨清空保留才能擋「換新約重刷
+推薦王」：清空後老下線（含當月才加入的）再付款，上線照領 100 P（§8.2），
+任務**不 +1**。
 
 ### 9.3 領取（claim）
 
@@ -675,16 +736,16 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 - **照片上傳流程**〔實作〕`src/hooks/useListingPhotos.ts`、`src/utils/imagePipeline.ts`：選取後每一張都先進入 1:1 取景
   （拖曳定位、縮放）由使用者確認，確認後在瀏覽器內重新編碼成 JPEG（剝除 EXIF）再逐張上傳，單張上傳逾時 60 秒視同失敗；
   一張失敗不影響其他張，可單張重試。裁切工具載入失敗時顯示「請重新整理頁面」，失敗期間不能送出。前端一律把照片重編為 JPEG。恰好 3 張都完成才能送出刊登。
-- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`、`.github/workflows/purge-listing-photos.yml`：
+- **照片檔清理**〔實作〕`supabase/functions/api/listing-photos.ts`、pg_cron 排程 `purge-orphan-listing-photos`（`supabase/README.md`〈排程〉）、`.github/workflows/purge-listing-photos.yml`（看門狗兼後備觸發）：
   服務條款十之一要求撤除內容或本服務終止後三十日內完成下架。刊登照片的 bucket 是公開的，「下架」＝刪除
   Storage 物件；CDN 快取殘留屬條款但書。
   - **即時清理**：編輯存檔成功後，被移除的照片由前端呼叫 `DELETE /listings/photos` 清掉；刪除刊登一律走
     `DELETE /listings/:id`，由後端刪列並清掉該刊登的照片（`listings` 的 RLS 不開放直刪）。兩者都只刪刊登者
     自己的檔，**本人刊登仍引用的檔不刪**，他人刊登引用你的 URL 不擋清理；引用檢查失敗時一檔不刪（fail-closed）。
     清理失敗不影響存檔或刪除本身，殘檔由排程清理兜底。
-  - **排程清理**：每日一次呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）。孤兒＝上傳
+  - **排程清理**：每日一次由 pg_cron 在 UTC 19:17（台北 03:17）呼叫 `POST /internal/purge-orphan-listing-photos`（`RECONCILE_SECRET` 驗證）；26 小時沒有完成時，GitHub 看門狗補跑並推 LINE。孤兒＝上傳
     超過寬限期 168 小時（7 日，`ORPHAN_GRACE_HOURS`）、且檔案前綴本人的刊登沒有引用的檔，涵蓋帳號
-    刪除（`profiles` cascade 刪 `listings`）、`/auth/cancel-signup`、離頁、逾時重試、並發等所有來源。最長下架延遲＝
+    刪除（`profiles` cascade 刪 `listings`）、離頁、逾時重試、並發等所有來源。最長下架延遲＝
     寬限期＋1 輪；單輪最多處理 500 個（`ORPHAN_SWEEP_LIMIT`），回應的 `orphanTotal` 是截斷前的總數。終止的範圍是帳號
     刪除與業主處理的終止請求；會籍到期是否算終止，待律師確認。
     - 引用以 URL 裡 `/listings-photos/<uid>/<檔名>` 取出的物件名判斷，與網域、query、`/render/image/` 等前段無關；
@@ -692,8 +753,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
     - 寬限期以上傳時間起算：上傳後超過 7 日才存檔的照片，存檔前可能已被清掉，刊登會破圖（不做存檔前檢查的代價）。
     - 檔案前綴是上傳者的 uid；日後若做「管理者代他人上傳或改刊登」，代傳的檔前綴是管理者 uid，寬限期後會被清掉，
       屆時要改成以刊登者 uid 上傳。
-  - **安全閘**：預設 dry-run。正式站不論排程或 `workflow_dispatch`，都要 repo variable `PHOTO_PURGE_LIVE` 為 `true`
-    才實刪；dispatch 帶 `dry_run=false` 而開關未開時，會強制改為 dry-run 並在 step summary 警告。develop 的 dispatch
+  - **安全閘**：預設 dry-run。pg_cron 觸發的排程只看正式站 Edge secret `PHOTO_PURGE_LIVE`，為 `true` 才實刪（develop 不設，只列候選）；GitHub 補跑與 `workflow_dispatch` 看 repo variable `PHOTO_PURGE_LIVE`，正式站要為 `true` 才實刪；dispatch 帶 `dry_run=false` 而開關未開時，會強制改為 dry-run 並在 step summary 警告。develop 的 dispatch
     照輸入。開關未開時只列候選、不刪任何檔，三十日下架也就不成立。開啟前由業主以下方「查看候選清單」核對（抽查幾個 path，確認對應帳號已刪或刊登已改）。
     斷路器中止時一檔不刪，回應的 `reason` 標明是哪一道：錨點失效（`anchor`，有照片 URL 的刊登者中，對得到物件的
     不到一半）不可放行；比例閘（`ratio`，孤兒超過 bucket 物件數一半，不分 bucket 大小，develop 因此常需放行）可用
@@ -711,7 +771,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
     被比例閘擋下時，body 加 `"force_ratio": true` 才看得到清單；一次最多列最早的 500 個。
   - **終止／刪除請求 SOP**（條款六「隨時通知終止」、條款十二「請求刪除視同終止」）：期限自**業主收件日**起算。
     人工期限＝三十日－寬限期（7 日）－1 輪（1 日）－2 日緩衝＝**20 日**；寬限期改了，這個期限要跟著重算。
-    - 收件時先確認 `PHOTO_PURGE_LIVE` 為 `true`；沒開的話刪了刊登照片也不會消失，先處理開關。
+    - 收件時先確認正式站 Edge secret 與 repo variable 的 `PHOTO_PURGE_LIVE` 都為 `true`；沒開的話刪了刊登照片也不會消失，先處理開關。
     - 已付款會員：收件後 20 日內在 Supabase Dashboard SQL Editor 執行
       `delete from public.listings where user_id = '<uid>' returning id;`（回傳列可對照留痕），照片由排程清除。不停權：會員仍可登入、領取與提領
       獎勵，停權只用於違規處置；金流與推薦紀錄依條款十二保存。會員日後自行重新刊登，視為新的同意。
@@ -799,7 +859,7 @@ fresh 會清空帳本，而 pending 之後可能被退件、退款會落進已�
 | **會員管理** | `MemberManagement` | 會員列表（全站統計／搜尋；列上顯示**推薦碼**〔目前 active 碼，無則「—」〕與**推薦計畫**〔`referral_program_joined`：已加入／未加入〕；**列上唯一動作是「查看」**）、會員詳情（`MemberDetailSheet`：固定身分卡＝姓名＋狀態徽章＋會籍到期，下接帳號／點數／近期提領／推薦關係（推薦人、推薦碼、推薦計畫、直接推薦）／敏感資料分區，身分證與銀行帳號遮罩）＋面板底部的「管理」區：**停權/解除停權**（§5.2）與**管理員授予／撤銷**都只在這裡，共用同一條路徑，除「恢復」外一律走確認框；次分頁「證件審核」＝身分證照片的通過／退回流程 |
 | **提領管理** | `WithdrawalManagement` | 同屏匯款作業面板（帳號一鍵複製）、標記已匯款／退件／代為結案、批次標記已匯款、事件歷史、CSV 匯出（上限 2,000 筆，超過明示拒絕） |
 | **系統公告** | `SystemNotifications` | 系統公告發布與管理（`announcements`） |
-| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）；error 級另由對帳排程推 LINE，severity 準則見 `supabase/README.md` |
+| **系統告警** | `SystemAlerts` | 檢視/處理背景失敗告警（`system_alerts`）；error 級另由 GitHub 看門狗（`reconcile-payments.yml`，每小時）推 LINE，severity 準則見 `supabase/README.md` |
 
 所有 `/admin/**` 路由統一守門：`requireAuth` + `profiles.is_admin`。
 
@@ -899,6 +959,24 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 
 ---
 
+## 15. 監控與隱私（PostHog EU）
+
+前端以 PostHog（歐盟區）記錄頁面瀏覽與操作錄影，用於找出使用者卡關的位置（業主裁決 W4-35～37）。
+
+**只在正式站開啟**：key 在 `config/posthogTarget.ts`（`phc_` 寫入 key 為公開值，commit 在 git）。只有正式站一個 project（免費方案限 1 個，W5-68）：main 建置注入正式 key；develop 與其他分支的 key 為佔位值，不注入。key 為佔位值、沒有 `CF_PAGES_BRANCH` 的本機建置、journey（外部指定 Supabase project）一律不注入，執行期不載入 SDK、不送任何請求。`VITE_ANALYTICS=off`（Pages 環境變數，重新部署即生效）可緊急關閉；`VITE_ANALYTICS_SAMPLE`（0～1，預設 1＝全錄）可降低錄影比例。
+
+**載入**：`window load` 後等瀏覽器 idle 才動態載入 SDK，不進 entry；SDK 用 `posthog-js/dist/module.slim` 只掛錄影擴充（`SessionReplayExtensions`）——預設入口的 logs、conversations 等擴充會依 PostHog 專案端的遠端設定自行啟動（攔截 console 外送、身分表單收姓名與 Email），前端沒有選項能關，所以不載入；`posthog-js` 釘精確版本，升版時由 `analyticsPrivacyWorstCase.test.ts`（最壞遠端設定）把關；錄影元件由 PostHog 資產網域 `eu-assets.i.posthog.com` 外部載入（第三方腳本不受 lockfile 控制、可讀 DOM，業主已接受，W5-37），且只載入釘版本的路徑（`strict_script_versioning: true`，載不到就不錄、不退回未釘版的最新檔）；PostHog 專案設定檔 `/array/<token>/config.js` 一定會被執行，這是對廠商信任的剩餘風險，日後補完整 CSP 時處理。
+
+**不錄的範圍**：`/payment/*` 與 `/admin*` 不啟動錄影（`recordingAllowed`），且路由層以 `PrivateRegion` 整塊 block；身分證、手機、生日、銀行代號與帳號、證件照欄位群組帶 `ph-no-capture` block class。其餘頁面全文字與輸入遮罩，DOM 屬性採白名單（僅保留 class、style、type、role、id 等非內容屬性，W5-38）。新增敏感欄位時，把 `privateClass()` 併進欄位群組根容器，或設對 `type`／`autocomplete`（`src/utils/analytics/sensitiveFields.ts` 與其測試掃描漏網）。
+
+**匿名**：不送 email、姓名，永不 identify，只有 PostHog 匿名 id（存於 localStorage 的 `ph_<key>_posthog`，與 §10.4 的提領資料是不同的鍵）；登出、換帳號、無效 session 時 `reset(true)` 連裝置 id 一併重置。事件網址一律去掉 query 與 hash（邀請 token、付款單號不外送）。不收 IP／地理位置的真正保證是 PostHog 專案設定「Discard client IP data」，前端只附 `$geoip_disable` 輔助。
+
+**前端明確寫死的選項**：`capture_exceptions`、`capture_heatmaps`、`capture_dead_clicks`、`enable_recording_console_log`、`recordHeaders`／`recordBody`、`captureCanvas` 皆為 false（PostHog 對未設定的選項會採專案端遠端設定，所以不依賴專案設定）。
+
+〔實作〕`src/utils/analytics/`（`analyticsGate.ts`、`analytics.ts`、`analyticsRuntime.ts` 在 entry；`analyticsConfig.ts`、`posthogClient.ts` 與 SDK 在動態 chunk）、`src/hooks/usePageview.ts`、`src/components/common/PrivateRegion.tsx`、`config/posthogTarget.ts`。
+
+---
+
 ## 附錄：關鍵實作索引
 
 | 主題 | 檔案 |
@@ -917,4 +995,5 @@ public`。少了那一行，一般會員直呼 `admin_set_member_admin` 就能�
 | 補繳計畫（backfillPlan 雙副本＋共用案例表） | `supabase/functions/api/tw-dates.ts`、`src/utils/twDate.ts`、`_shared/backfill-cases.ts` |
 | 預設推薦人 | `20260726000101`～`20260726000102`、`/payuni/prepare` fresh 未填碼分支 |
 | 前端業務常數 | `src/utils/constants.ts` |
+| 監控與隱私（PostHog） | `config/posthogTarget.ts`、`src/utils/analytics/` |
 | 前後端共享契約 | `supabase/functions/_shared/api-contract.ts` |

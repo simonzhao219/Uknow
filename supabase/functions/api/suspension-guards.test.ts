@@ -129,3 +129,69 @@ Deno.test('validate_referral_code：停權推薦人的推薦碼不得通過驗�
     await deleteTestUsers(client, [referrer.id, caller.id]);
   }
 });
+
+// ============================================================
+// W5-5（pay P2-9＝auth P2-1，第 5 波 S2 階段 5）：停權者不得付款。prepare 在任何
+// 寫入之前回 403 ACCOUNT_SUSPENDED——不建單，fresh 帶碼也不改推薦人。
+// ============================================================
+async function postPrepare(token: string, body?: Record<string, unknown>) {
+  return await app.request('/api/payuni/prepare', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+}
+
+Deno.test('payuni/prepare：停權的首購者 → 403 ACCOUNT_SUSPENDED，不建單', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Suspended Buyer' });
+  try {
+    await client.from('profiles').update({ suspended_at: new Date().toISOString() })
+      .eq('id', user.id);
+    const token = await getUserAccessToken(client, user.email);
+    const res = await postPrepare(token);
+    assertEquals(res.status, 403, await res.clone().text());
+    assertEquals((await res.json()).error?.code, 'ACCOUNT_SUSPENDED');
+    const { count } = await client.from('payment_orders')
+      .select('id', { count: 'exact', head: true }).eq('user_id', user.id);
+    assertEquals(count, 0);
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
+
+Deno.test('payuni/prepare：停權的過期會員選新約帶碼 → 403，推薦人不變、不建單', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Suspended Renewer' });
+  const other = await createTestUser(client, { name: 'Other Referrer' });
+  try {
+    assertEquals((await payForUser(client, user.id)).error, null);
+    assertEquals((await payForUser(client, other.id)).error, null);
+    const otherCode = await getActiveReferralCode(client, other.id);
+    const past = new Date(Date.now() - 10 * 86400_000).toISOString();
+    await client.from('subscriptions').update({ end_date: past, grace_period_end: past })
+      .eq('user_id', user.id);
+    await client.from('profiles').update({ suspended_at: new Date().toISOString() })
+      .eq('id', user.id);
+    const { data: before } = await client.from('profiles')
+      .select('referred_by_code, referred_by_user_id, referred_by_is_default')
+      .eq('id', user.id).single();
+    const { count: ordersBefore } = await client.from('payment_orders')
+      .select('id', { count: 'exact', head: true }).eq('user_id', user.id);
+
+    const token = await getUserAccessToken(client, user.email);
+    const res = await postPrepare(token, { renewalMode: 'fresh', referredByCode: otherCode });
+    assertEquals(res.status, 403, await res.clone().text());
+    assertEquals((await res.json()).error?.code, 'ACCOUNT_SUSPENDED');
+
+    const { data: after } = await client.from('profiles')
+      .select('referred_by_code, referred_by_user_id, referred_by_is_default')
+      .eq('id', user.id).single();
+    assertEquals(after, before, '停權者的 fresh 不得改寫推薦人');
+    const { count: ordersAfter } = await client.from('payment_orders')
+      .select('id', { count: 'exact', head: true }).eq('user_id', user.id);
+    assertEquals(ordersAfter, ordersBefore);
+  } finally {
+    await deleteTestUsers(client, [user.id, other.id]);
+  }
+});

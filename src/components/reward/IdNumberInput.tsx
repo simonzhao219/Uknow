@@ -4,6 +4,7 @@ import { Label } from '../ui/label';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { apiRequestJson, buildApiUrl } from '../../utils/apiClient';
 import { useImeComposition } from '../../hooks/useImeComposition';
+import { privateClass } from '../../utils/analytics/privacy';
 
 interface IdNumberInputProps {
   value: string;
@@ -119,7 +120,7 @@ export function IdNumberInput({
   };
 
   return (
-    <div className="space-y-2">
+    <div className={privateClass('space-y-2')}>
       <Label htmlFor="idNumber">{label}</Label>
       <div className="relative">
         <Input

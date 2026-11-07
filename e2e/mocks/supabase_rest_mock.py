@@ -16,6 +16,7 @@ success is a bodiless 201 (insert) / 204 (update, delete).
 """
 
 import json
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import BrowserContext
 
@@ -107,6 +108,7 @@ class SupabaseRestMock:
         self._listing_by_id = None     # single GET /listings by id  (Edit read)
         self._public_listing = None    # single GET /public_listings (Detail)
         self._public_listing_error = None  # (status, body) to fail Detail's single read
+        self._public_listings_by_id = None  # id -> row: Detail's single read resolved by `id=eq.<id>`
         self._public_listing_hold = False  # hold Detail's single read until released
         self._held_public_listing = []     # routes held by `hold_public_listing`
         self._public_listings = []     # select() list GET /public_listings (HomePage)
@@ -161,6 +163,13 @@ class SupabaseRestMock:
         self._public_listing_error = None
         self._ensure_routes()
         return listing
+
+    def serve_public_listing_details(self, listings):
+        """Answer Detail's `.single()` read for *each* of these rows by its
+        `id=eq.<id>` filter (404 for any other id). `set_public_listing` serves one
+        row for every id; scenarios that move between several detail pages
+        (browse prev/next) need this instead."""
+        self._public_listings_by_id = {row["id"]: row for row in listings}
 
     def fail_public_listing(self, status: int = 500, message: str = "internal error"):
         """Make Detail's `.single()` read fail with a transient error (not the
@@ -277,6 +286,10 @@ class SupabaseRestMock:
         if self._public_listing_error:
             status, body = self._public_listing_error
             return _fulfill_json(route, body, status=status)
+        if self._public_listings_by_id is not None:
+            wanted = parse_qs(urlparse(route.request.url).query).get("id", [""])[0].removeprefix("eq.")
+            row = self._public_listings_by_id.get(wanted)
+            return _fulfill_json(route, row) if row else _not_found_406(route)
         if self._public_listing is None:
             return _not_found_406(route)
         return _fulfill_json(route, self._public_listing)

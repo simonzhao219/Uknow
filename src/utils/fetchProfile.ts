@@ -5,13 +5,14 @@
 // 而非 token（同一人 token 換發不該多打一次）。登出或換 session 時呼叫
 // clearInflight()，之後的請求不會合併到以已撤銷 token 在飛的舊請求。
 
+import { PROFILE_MISSING } from '@contract';
 import { buildApiUrl } from './apiUrl';
 
 export type ProfileFetchResult =
   | { kind: 'ok'; profile: any }
   | { kind: 'unauthorized'; status: number }
   | { kind: 'transient' }
-  /** 404：session 有效但 profiles 零列（帳號資料異常，W4-11）——不是無效 session。 */
+  /** 404＋PROFILE_MISSING：session 有效但 profiles 零列（帳號資料異常，W4-11）——不是無效 session。 */
   | { kind: 'missing' };
 
 /** 冷啟動 /profile 的逾時（D6；上線後依量測調整）。逾時歸 transient。 */
@@ -75,7 +76,13 @@ async function request(token: string, opts: FetchProfileOptions): Promise<Profil
       ...(controller ? { signal: controller.signal } : {}),
     });
     if (!response.ok) {
-      if (response.status === 404) return { kind: 'missing' };
+      // 只認後端帶 PROFILE_MISSING 碼的 404 為帳號資料異常；閘道層 404（Edge 部署壞掉、
+      // 路由錯）沒有這個碼，歸暫時性，否則全體使用者會看到「帳號異常」。
+      if (response.status === 404) {
+        return (await readErrorCode(response)) === PROFILE_MISSING
+          ? { kind: 'missing' }
+          : { kind: 'transient' };
+      }
       return UNAUTHORIZED_STATUSES.includes(response.status)
         ? { kind: 'unauthorized', status: response.status }
         : { kind: 'transient' };
@@ -86,6 +93,16 @@ async function request(token: string, opts: FetchProfileOptions): Promise<Profil
     return { kind: 'transient' };
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+async function readErrorCode(response: Response): Promise<string | null> {
+  try {
+    const body = await response.json();
+    const code = body?.error?.code;
+    return typeof code === 'string' ? code : null;
+  } catch {
+    return null;
   }
 }
 

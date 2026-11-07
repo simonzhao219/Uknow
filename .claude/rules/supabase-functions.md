@@ -46,10 +46,10 @@ paths:
 | 1 | 前置 | CORS、`READ_PATHS`、`CORS_304_HEADERS` |
 | 2 | 共用工具 | `sb()`、`getRewardConfig()`、`requireAuth()`、限流 `clientIp()`／`rateLimit()`＋限流常數、`isAdminUser()`、`verifyNationalId()`、`maskNationalId()`、`maskBankAccount()` |
 | 3 | PayUni 設定 | `payuniConfig()` |
-| 4 | auth | `/profile`、`/auth/*`(check-email / register / profile / cancel-signup / complete-registration / reset-registration) |
+| 4 | auth | `/profile`、`/auth/*`(check-email / register / profile / complete-registration / reset-registration) |
 | 5 | 推薦碼 | `/referrals/validate/:code`、`/referrals/join-program` |
 | 6 | admin | `/admin/system-alerts`、`/admin/features`、`/admin/withdrawals`、`/admin/members`、`/admin/announcements`、`/announcements/active`、`/admin-setup/*` |
-| 7 | 金流 | `/payuni/prepare`、`/payuni/result/:tradeNo`、`/payuni/return`、`/webhooks/payuni/notify`、`/internal/reconcile-pending-payments` |
+| 7 | 金流 | `/payuni/prepare`、`/payuni/result/:tradeNo`、`/payuni/return`、`/webhooks/payuni/notify`、`/internal/reconcile-pending-payments`（端點層在 `reconcile-handler.ts`，帳本與租約在 `scheduled-runs.ts`）、`/internal/scheduler-health`、`/internal/system-alerts/recent` |
 | 8 | 會籍 | `/subscriptions/status` |
 | 9 | 獎勵/提領 | `/rewards`、`/rewards/points-preview`、`/rewards/withdrawals`、`/rewards/verify-id`、`/rewards/id-photos`、`/rewards/upload-id-photos`、`/rewards/withdraw`、`/rewards/withdrawals/:id/confirm`、`/rewards/history` |
 | 10 | 推薦網絡 | `/referrals/network/overview`、`/children`、`/search`、`/attention` |

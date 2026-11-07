@@ -44,9 +44,45 @@ export const setCachedCoords = (next: Coords) => {
   coords = next;
 };
 
+/** 上次離開首頁時畫面用的排序：返回（POP）沿用，不因離開期間才到的座標而重排。 */
+export type HomeOrderMode = 'distance' | 'latest';
+let orderMode: HomeOrderMode | null = null;
+export const getOrderMode = () => orderMode;
+export const setOrderMode = (next: HomeOrderMode) => {
+  orderMode = next;
+};
+
 export const getCachedFilters = () => filters;
 export const setCachedFilters = (next: HomeFilters) => {
   filters = next;
+};
+
+// 換篇脈絡（W5-26）：首頁點卡片的當下凍結畫面上的有序 id，詳情頁換篇只看這份——座標晚到、
+// 背景重驗都不會讓進行中的瀏覽順序在使用者手下重排。版本＝模組載入時的隨機 nonce＋遞增計數：
+// history.state 會跨重新整理保留，只用計數的話重整後歸零，舊條目的 ctx 可能碰巧吻合新凍結。
+export type BrowseContextSnapshot = { ids: string[]; entryId: string; version: string };
+
+const versionNonce =
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+let versionCounter = 0;
+let browseContext: BrowseContextSnapshot | null = null;
+// 換過篇之後最後看的那一篇：返回首頁時把它捲到畫面中央（W5-28）。
+let lastViewedId: string | null = null;
+
+/** 凍結目前畫面順序；回傳要放進 history.state 的 ctx 版本。 */
+export function freezeBrowseContext(ids: string[], entryId: string): string {
+  versionCounter += 1;
+  const version = `${versionNonce}-${versionCounter}`;
+  browseContext = { ids: [...ids], entryId, version };
+  lastViewedId = null;
+  return version;
+}
+export const getBrowseContext = () => browseContext;
+export const getLastViewedId = () => lastViewedId;
+export const setLastViewedId = (id: string | null) => {
+  lastViewedId = id;
 };
 
 export const getSavedScrollY = () => scrollY;
@@ -62,6 +98,8 @@ export const saveScrollY = (y: number) => {
 export function resetHomeView() {
   filters = DEFAULT_HOME_FILTERS;
   scrollY = 0;
+  lastViewedId = null;
+  orderMode = null;
 }
 
 /** 回到冷啟動狀態：登出時由 App 呼叫（換帳號不沿用前一人的檢視狀態），測試也用它重置。 */
@@ -70,4 +108,7 @@ export function resetHomeListingsCache() {
   coords = null;
   scrollY = 0;
   filters = DEFAULT_HOME_FILTERS;
+  browseContext = null;
+  lastViewedId = null;
+  orderMode = null;
 }

@@ -399,7 +399,13 @@ describe('AuthPage 暫時性故障與帳號資料異常（T1-B）', () => {
   const profileReturns = (status: number) =>
     fetchMock.mockImplementation(async (url: string | URL | Request) => {
       const href = String(url);
-      if (/\/(auth\/)?profile(\?|$)/.test(href)) return json(status, { registrationStep: 3 });
+      if (/\/(auth\/)?profile(\?|$)/.test(href)) {
+        // 零列 404 帶 PROFILE_MISSING 碼（R4 P2-5）；不帶碼的 404 是閘道層、歸暫時性。
+        return json(
+          status,
+          status === 404 ? { error: { code: 'PROFILE_MISSING' } } : { registrationStep: 3 },
+        );
+      }
       if (href.endsWith('/auth/check-email')) return json(200, { exists: true });
       throw new Error(`unexpected ${href}`);
     });

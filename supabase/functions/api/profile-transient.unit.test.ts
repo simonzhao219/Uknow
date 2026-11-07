@@ -13,12 +13,13 @@
 // ============================================================
 import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1';
 import { ensureEdgeFunctionEnv } from './test-helpers.ts';
-import { PROFILE_UNAVAILABLE } from '../_shared/api-contract.ts';
+import { PROFILE_MISSING, PROFILE_UNAVAILABLE } from '../_shared/api-contract.ts';
 
 ensureEdgeFunctionEnv();
 
 const {
   authenticate,
+  authFailureResponse,
   buildProfileResponse,
   loadProfileOrError,
   makeProfileHandler,
@@ -218,7 +219,9 @@ Deno.test('buildProfileResponse：非重試的 step 3 → 跑 repair', async () 
   assertEquals(s.calls.repair, 1);
 });
 
-Deno.test('buildProfileResponse：retry 的 step 3 → 不跑 repair，旗標仍重設為 false', async () => {
+// S6（pay P1-4）：step 3 不再把旗標蓋成 false——續費者（非 active）有已付款待開通的單時旗標為
+// true，守衛才不會把付了錢的人送回結帳頁。retry 不跑 repair 的契約不變。
+Deno.test('buildProfileResponse：retry 的 step 3 → 不跑 repair，非 active 有已付款單時旗標為 true', async () => {
   const s = spies();
   const paid = { data: [{ transaction_id: 'T1', payuniStatus: 'SUCCESS' }], error: null };
   const p = await buildProfileResponse(
@@ -228,7 +231,8 @@ Deno.test('buildProfileResponse：retry 的 step 3 → 不跑 repair，旗標仍
     { ...s, retry: true },
   );
   assertEquals(s.calls.repair, 0);
-  assertEquals(p?.paidAwaitingActivation, false);
+  assertEquals(p?.paidAwaitingActivation, true);
+  assertEquals(p?.lastTradeNo, 'T1');
 });
 
 Deno.test('buildProfileResponse：retry 的已付款待開通 → 不跑 heal，回未自癒的 step 2', async () => {
@@ -257,7 +261,11 @@ Deno.test('loadProfileOrError：讀取失敗（ProfileReadError）→ 回 503 PR
 
 Deno.test('loadProfileOrError：零列 null → 404；其他例外照常拋出', async () => {
   const r = await loadProfileOrError(() => Promise.resolve(null));
-  assertEquals(r, { ok: false, status: 404, body: { error: '用戶不存在' } });
+  assertEquals(r, {
+    ok: false,
+    status: 404,
+    body: { error: { code: PROFILE_MISSING, message: '用戶不存在' } },
+  });
   await assertRejects(
     () => loadProfileOrError(() => Promise.reject(new TypeError('x'))),
     TypeError,
@@ -340,12 +348,20 @@ Deno.test('原始碼：三個 buildProfileResponse 呼叫者都經 loadProfileOr
   );
 });
 
-Deno.test('原始碼：requireAuth 本體與其餘端點的呼叫數不變（只有 /profile 改用 authenticate）', async () => {
+Deno.test('原始碼：requireAuth 本體與其餘端點的呼叫數不變（/profile 改用 authenticate）', async () => {
   assert(indexSrc.includes('return error || !user ? null : user;'), 'requireAuth 本體被改動');
   const count = (src: string) => (src.match(/requireAuth\(/g) ?? []).length;
   const read = (f: string) => Deno.readTextFile(new URL(f, import.meta.url));
-  // index.ts：定義 1 ＋ 46 個呼叫點（T1-B 前 47 個，/profile 移出）。
-  assertEquals(count(indexSrc), 47);
+  // index.ts：定義 1 ＋ 45 個呼叫點（T1-B 前 47 個：/profile 改用 authenticate；cancel-signup 後來整支退場，W5-12）。
+  assertEquals(count(indexSrc), 46);
   assertEquals(count(await read('./listing-photos.ts')), 2);
   assertEquals(count(await read('./referral-invite.ts')), 1);
+});
+
+Deno.test('authFailureResponse：Auth 暫時性故障 → 503，Auth 判無效 → 401', () => {
+  const c = fakeContext('https://x/profile', 't');
+  const t: any = authFailureResponse(c, 'transient');
+  assertEquals(t.status, 503);
+  const u: any = authFailureResponse(c, 'unauthorized');
+  assertEquals(u.status, 401);
 });

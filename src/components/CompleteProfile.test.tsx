@@ -63,6 +63,10 @@ vi.mock('./notifications/NotificationContext', () => ({
 
 vi.mock('./LegalDialog', () => ({ LegalDialog: () => null }));
 
+// 稍後註冊＝登出（W5-12）：與頁首共用 useFunnelLogout，這裡只驗「有走它」。
+const funnelLogout = { logout: vi.fn(async () => {}), isLoggingOut: false };
+vi.mock('../hooks/useFunnelLogout', () => ({ useFunnelLogout: () => funnelLogout }));
+
 // 只換掉發請求的 apiRequestJson(上面的 getSession 永不 resolve,真的走
 // apiClient 會卡在取 token);buildApiUrl 照用真的,斷言才看得到實際路徑。
 const apiRequestJson = vi.fn();
@@ -561,6 +565,83 @@ describe('編輯模式載入時已是 step 3', () => {
   });
 });
 
+// 第 5 波 S2（auth P0-1、P1-2）：register 改走 validate_referral_code。驗證後、送出前推薦人被停權
+// 或碼失效時，後端回 400——欄位要回到「未驗證」並標錯，不能留著「推薦人：○○」又跳碼無效的 toast。
+// 查碼暫時失敗回 503 REFERRAL_CHECK_UNAVAILABLE＝**未寫入**：停原頁、草稿保留、可重送。
+describe('送出時後端拒絕推薦碼（400）或暫時無法驗證（503）', () => {
+  const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
+
+  function stubRegister(status: number, body: unknown) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/auth/register')
+          ? new Response(JSON.stringify(body), { status })
+          : new Response('{}', { status: 500 }),
+      ),
+    );
+  }
+
+  async function submitWithVerifiedCode() {
+    apiRequestJson.mockResolvedValue({
+      valid: true,
+      referrer: { userName: '陳推薦', listingName: null },
+    });
+    renderForm();
+    fillValidForm();
+    fireEvent.change(code(), { target: { value: '8048876' } });
+    fireEvent.click(screen.getByRole('button', { name: '驗證' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('referral-code-status').textContent).toBe('推薦人：陳推薦'),
+    );
+    fireEvent.click(screen.getByTestId('profile-submit-button'));
+    const confirmation = showNotification.mock.calls
+      .map(([arg]) => arg)
+      .find((arg) => arg.details?.includes('推薦人：陳推薦'));
+    confirmation.onConfirm();
+  }
+
+  beforeEach(() => {
+    getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
+  });
+
+  it('400 推薦碼失效時欄位標錯、推薦人消失，不跳錯誤 toast', async () => {
+    stubRegister(400, { error: '推薦碼不存在或已失效' });
+    await submitWithVerifiedCode();
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('推薦碼不存在或已失效'),
+    );
+    expect(screen.queryByTestId('referral-code-status')).toBeNull();
+    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
+    expect(loadProfileDraft().name).toBe('王小明');
+  });
+
+  it('400 填了自己的推薦碼時同樣標在推薦碼欄位', async () => {
+    stubRegister(400, { error: '不能使用自己的推薦碼' });
+    await submitWithVerifiedCode();
+    await waitFor(() =>
+      expect(screen.getByRole('alert').textContent).toContain('不能使用自己的推薦碼'),
+    );
+    expect(screen.queryByTestId('referral-code-status')).toBeNull();
+  });
+
+  it('503 REFERRAL_CHECK_UNAVAILABLE 時提示稍後再試、不顯示 [object Object]、草稿保留', async () => {
+    stubRegister(503, {
+      error: { code: 'REFERRAL_CHECK_UNAVAILABLE', message: '推薦碼暫時無法驗證，請稍後再試' },
+    });
+    await submitWithVerifiedCode();
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('推薦碼暫時無法驗證，請稍後再試', 'error'),
+    );
+    expect(showToast).not.toHaveBeenCalledWith('[object Object]', expect.anything());
+    expect(screen.queryByTestId('profile-saved-unconfirmed')).toBeNull();
+    expect(screen.getByTestId('profile-submit-button').getAttribute('aria-disabled')).not.toBe(
+      'true',
+    );
+    expect(loadProfileDraft().name).toBe('王小明');
+  });
+});
+
 describe('推薦碼驗證', () => {
   const code = () => screen.getByLabelText('推薦碼 (選填)') as HTMLInputElement;
 
@@ -715,13 +796,12 @@ describe('邀請帳號的推薦碼後備預填', () => {
   });
 });
 
-// 「稍後註冊」會刪掉帳號（cancel-signup）。頁首另有不刪帳號的「登出」，兩顆並存容易誤按：
-// 先跳確認框說出後果並指向登出（業主裁決 W3-12，Q7）。只有「確定刪除」才刪；返回、Esc 都不刪。
-describe('稍後註冊的刪除確認', () => {
+// W5-12（業主 2026-11-04）：「稍後註冊」不再刪帳號，等同頁首「登出」——帳號、資料與草稿都保留，
+// 下次登入接回原步驟。可逆又無傷 → 不收確認框（ui-ux §11.3），按鈕是次要動作（§12.11）。
+// 自助刪帳號（DELETE /auth/cancel-signup）退場：它與付款並行時會「錢收了、帳號沒了」（auth P1-4）。
+describe('稍後註冊＝登出', () => {
   /** session 可用、/profile 回 404（新註冊者）、其餘請求記下 URL 並回 200。 */
-  function wireSession(
-    cancel: () => Promise<Response> = async () => new Response('{}', { status: 200 }),
-  ) {
+  function wireSession() {
     const urls: string[] = [];
     getSession.mockImplementation(() =>
       Promise.resolve({ data: { session: { access_token: 'tok', user: { id: 'u1' } } } }),
@@ -730,155 +810,86 @@ describe('稍後註冊的刪除確認', () => {
       'fetch',
       vi.fn(async (url: string) => {
         urls.push(String(url));
-        if (/\/profile$/.test(String(url))) return new Response('{}', { status: 404 });
-        if (String(url).endsWith('/auth/cancel-signup')) return cancel();
+        if (/\/profile$/.test(String(url))) {
+          return new Response(JSON.stringify({ error: { code: 'PROFILE_MISSING' } }), {
+            status: 404,
+          });
+        }
         return new Response('{}', { status: 200 });
       }),
     );
     return urls;
   }
-  const deleted = (urls: string[]) => urls.some((u) => u.endsWith('/auth/cancel-signup'));
 
-  it('按稍後註冊先跳確認框說明會刪除帳號並指向右上角登出，尚未刪除', async () => {
+  beforeEach(() => {
+    funnelLogout.logout.mockClear();
+    funnelLogout.isLoggingOut = false;
+  });
+
+  it('按稍後註冊不跳確認框，走與頁首相同的 useFunnelLogout', async () => {
     const urls = wireSession();
     renderForm();
     fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    const dialog = await screen.findByRole('alertdialog');
-    expect(dialog.textContent).toContain(
-      '稍後註冊會刪除目前的帳號資料。只是想先離開，請用右上角『登出』，資料會保留。',
-    );
-    expect(deleted(urls)).toBe(false);
-    expect(signOut).not.toHaveBeenCalled();
+    await waitFor(() => expect(funnelLogout.logout).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(urls.some((u) => u.includes('/auth/cancel-signup'))).toBe(false);
   });
 
-  it('預設焦點在返回', async () => {
+  it('稍後註冊是次要按鈕，不是破壞性紅框字', () => {
     wireSession();
     renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    await screen.findByRole('alertdialog');
-    await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole('button', { name: '返回' })),
+    expect(screen.getByRole('button', { name: '稍後註冊' }).className).not.toMatch(
+      /text-destructive/,
     );
   });
 
-  it('按返回時關閉確認框、不刪帳號也不登出', async () => {
-    const urls = wireSession();
-    renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '返回' }));
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(deleted(urls)).toBe(false);
-    expect(signOut).not.toHaveBeenCalled();
-  });
-
-  it('按 Esc 時關閉確認框、不刪帳號', async () => {
-    const urls = wireSession();
-    renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    const dialog = await screen.findByRole('alertdialog');
-    fireEvent.keyDown(dialog, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(deleted(urls)).toBe(false);
-    expect(signOut).not.toHaveBeenCalled();
-  });
-
-  it('按確定刪除才刪帳號並登出', async () => {
-    const urls = wireSession();
-    renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
-    await waitFor(() => expect(deleted(urls)).toBe(true));
-    await waitFor(() => expect(signOut).toHaveBeenCalled());
-  });
-
-  it('刪除成功時如實告知已刪除、可用同一個 Email 重新註冊', async () => {
+  it('登出進行中稍後註冊鈕停用，不會重複送出', () => {
     wireSession();
+    funnelLogout.isLoggingOut = true;
     renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith(
-        '已刪除帳號資料，之後可以用同一個 Email 重新註冊',
-        'info',
-      ),
-    );
+    const btn = screen.getByRole('button', { name: '稍後註冊' }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
   });
 
-  it('刪除失敗時顯示後端原因、停在原頁、不登出', async () => {
-    const urls = wireSession(
-      async () =>
-        new Response(
-          JSON.stringify({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }),
-          {
-            status: 400,
-          },
-        ),
-    );
+  // R4 P2-4：冷載入時 bootstrap 的 8 秒逾時請求不能併進這裡沒逾時的在飛請求。
+  it('冷載入讀 /profile 時帶逾時 signal', async () => {
+    const urls = wireSession();
     renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith(
-        '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服',
-        'error',
-      ),
+    await waitFor(() => expect(urls.some((u) => /\/profile$/.test(u))).toBe(true));
+    const calls = (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock
+      .calls;
+    const call = calls.find(([u]) => /\/profile$/.test(String(u)));
+    expect(call?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+// T1-B 未修：getSession 因 Auth 暫時性錯誤回 session:null 不是「未登入」，不能導 /login。
+describe('冷載入 getSession 的暫時性錯誤', () => {
+  function renderWithLogin() {
+    return render(
+      <MemoryRouter initialEntries={['/auth/complete-profile']}>
+        <Routes>
+          <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+          <Route path="/login" element={<p>登入頁</p>} />
+        </Routes>
+      </MemoryRouter>,
     );
-    expect(deleted(urls)).toBe(true);
-    expect(signOut).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '稍後註冊' })).toBeTruthy();
+  }
+
+  it('回 session:null 且為暫時性錯誤時留在本頁，不導登入頁', async () => {
+    getSession.mockImplementation(() =>
+      Promise.resolve({ data: { session: null }, error: { name: 'AuthRetryableFetchError' } }),
+    );
+    renderWithLogin();
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('登入頁')).toBeNull();
+    expect(showToast).not.toHaveBeenCalledWith('請先登入', 'error');
   });
 
-  it('刪除請求進行中兩顆鈕停用並顯示處理中，不會重複送出', async () => {
-    let finish!: () => void;
-    const urls = wireSession(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = () => resolve(new Response('{}', { status: 200 }));
-        }),
-    );
-    renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
-    const busy = await screen.findByRole('button', { name: '處理中…' });
-    expect((busy as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '下一步' }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    fireEvent.click(busy);
-    expect(urls.filter((u) => u.endsWith('/auth/cancel-signup'))).toHaveLength(1);
-    finish();
-    await waitFor(() => expect(signOut).toHaveBeenCalled());
-  });
-
-  it('刪除回 401（帳號已不存在）時清本機並登出，不顯示失敗', async () => {
-    wireSession(async () => new Response('{}', { status: 401 }));
-    renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
-    await waitFor(() => expect(signOut).toHaveBeenCalled());
-    expect(showToast).not.toHaveBeenCalledWith(expect.anything(), 'error');
-  });
-
-  it('刪除請求斷線時提示稍後再試、不登出', async () => {
-    wireSession(async () => {
-      throw new TypeError('Failed to fetch');
-    });
-    renderForm();
-    fireEvent.click(screen.getByRole('button', { name: '稍後註冊' }));
-    fireEvent.click(await screen.findByRole('button', { name: '確定刪除' }));
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith('暫時無法刪除帳號資料，請稍後再試', 'error'),
-    );
-    expect(signOut).not.toHaveBeenCalled();
-  });
-
-  it('觸發鈕是破壞性的紅框字，確認鈕是紅實心', async () => {
-    wireSession();
-    renderForm();
-    const trigger = screen.getByRole('button', { name: '稍後註冊' });
-    expect(trigger.className).toMatch(/text-destructive/);
-    fireEvent.click(trigger);
-    const confirm = await screen.findByRole('button', { name: '確定刪除' });
-    expect(confirm.className).toMatch(/bg-destructive/);
+  it('乾淨回 null（真的沒登入）時照舊導登入頁', async () => {
+    getSession.mockImplementation(() => Promise.resolve({ data: { session: null }, error: null }));
+    renderWithLogin();
+    expect(await screen.findByText('登入頁')).toBeTruthy();
   });
 });

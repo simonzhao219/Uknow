@@ -37,7 +37,9 @@ Deno.test('system-alerts/recent：minutes 缺漏、非整數、超界回 400', a
 Deno.test('system-alerts/recent：只回時間窗內的 error 列，且不含 context', async () => {
   const client = adminClient();
   const marker = `recent-alerts-test-${crypto.randomUUID()}`;
-  const now = new Date().toISOString();
+  // 「時間窗內」的列放在窗口最前緣（59 分鐘前）：端點依 created_at 由舊到新取前 20 筆，
+  // 共用測試 DB 裡其他測試剛寫的 error 告警（例如重複付款告警）不會把這幾列擠出前 20。
+  const now = new Date(Date.now() - 59 * 60_000).toISOString();
   const old = new Date(Date.now() - 3 * 3600_000).toISOString();
   try {
     const { error } = await client.from('system_alerts').insert([

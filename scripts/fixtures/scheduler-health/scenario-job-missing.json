@@ -1,0 +1,47 @@
+{
+  "description": "cron.job 沒有對帳排程列",
+  "health": {
+    "generatedAt": "2026-11-20T01:37:03Z",
+    "jobs": {
+      "reconcile": {
+        "cronJobPresent": false,
+        "cronJobActive": false,
+        "lastCompletedAt": "2026-11-20T01:07:41Z",
+        "lastCompletedStatus": "succeeded",
+        "lastCompletedTrigger": "pg_cron",
+        "lastPgCronCompletedAt": "2026-11-20T01:07:41Z",
+        "lastPgCronRowAt": "2026-11-20T01:07:41Z",
+        "lastPgCronErrorCode": null,
+        "counts24h": {
+          "succeeded": 24,
+          "failed": 0,
+          "skipped": 0,
+          "abandoned": 0
+        },
+        "lastPurgeDryRun": null
+      },
+      "purge-photos": {
+        "cronJobPresent": true,
+        "cronJobActive": true,
+        "lastCompletedAt": "2026-11-19T19:17:20Z",
+        "lastCompletedStatus": "succeeded",
+        "lastCompletedTrigger": "pg_cron",
+        "lastPgCronCompletedAt": "2026-11-19T19:17:20Z",
+        "lastPgCronRowAt": "2026-11-19T19:17:20Z",
+        "lastPgCronErrorCode": null,
+        "counts24h": {
+          "succeeded": 1,
+          "failed": 0,
+          "skipped": 0,
+          "abandoned": 0
+        },
+        "lastPurgeDryRun": false
+      }
+    },
+    "pgNet6h": {
+      "non2xx": 0,
+      "timedOut": 0,
+      "lastStatusCodes": []
+    }
+  }
+}

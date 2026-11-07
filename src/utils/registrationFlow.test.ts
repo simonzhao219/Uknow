@@ -21,6 +21,7 @@ import {
   funnelCtaLabel,
   FUNNEL_ROUTES,
   isFunnelRoute,
+  isCheckoutBlockedBySuspension,
   type GateProfile,
 } from './registrationFlow';
 import { resolveMembershipRedirect } from '../components/RequireMembershipRoute';
@@ -670,5 +671,16 @@ describe('FUNNEL_ROUTES／isFunnelRoute', () => {
     expect(isFunnelRoute('/payment')).toBe(false);
     expect(isFunnelRoute('/payment/result-x')).toBe(false);
     expect(isFunnelRoute('/dashboard')).toBe(false);
+  });
+});
+
+describe('isCheckoutBlockedBySuspension', () => {
+  it('profile 標示停權時擋下付款', () => {
+    expect(isCheckoutBlockedBySuspension({ suspended: true })).toBe(true);
+  });
+  it('未停權、欄位缺漏或沒有 profile 時不擋', () => {
+    expect(isCheckoutBlockedBySuspension({ suspended: false })).toBe(false);
+    expect(isCheckoutBlockedBySuspension({})).toBe(false);
+    expect(isCheckoutBlockedBySuspension(null)).toBe(false);
   });
 });

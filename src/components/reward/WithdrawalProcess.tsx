@@ -38,6 +38,7 @@ import {
   validateBankAccount,
   isValidIdNumberFormat,
 } from '../../utils/withdrawalValidation';
+import { privateClass } from '../../utils/analytics/privacy';
 
 interface WithdrawalProcessProps {
   availableRewards: number;
@@ -664,7 +665,7 @@ export function WithdrawalProcess({
             )}
 
             {/* 身分證字號 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label htmlFor="idNumber">身分證字號 *</Label>
               <div className="relative">
                 <Input
@@ -691,7 +692,7 @@ export function WithdrawalProcess({
             </div>
 
             {/* 收款銀行代號 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label htmlFor="bankCode">收款銀行代號 *</Label>
               <Select
                 value={personalData.bankCode}
@@ -709,7 +710,7 @@ export function WithdrawalProcess({
                       : '請選擇銀行'}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={privateClass()}>
                   {TAIWAN_BANKS.map((bank) => (
                     <SelectItem key={bank.code} value={bank.code}>
                       {bank.code} - {bank.name}
@@ -721,10 +722,11 @@ export function WithdrawalProcess({
             </div>
 
             {/* 收款銀行帳號 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label htmlFor="bankAccount">收款銀行帳號 *</Label>
               <Input
                 id="bankAccount"
+                inputMode="numeric"
                 value={personalData.bankAccount}
                 {...bankAccountImeProps}
                 placeholder="請輸入完整銀行帳號"
@@ -734,7 +736,7 @@ export function WithdrawalProcess({
             </div>
 
             {/* 上傳身分證正面照 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label>上傳身分證正面照 *</Label>
 
               {/* ✅ 單一區塊設計：有照片顯示縮圖+X按鈕，沒照片顯示上傳區域 */}
@@ -772,7 +774,7 @@ export function WithdrawalProcess({
             </div>
 
             {/* 上傳身分證背面照 */}
-            <div className="space-y-2">
+            <div className={privateClass('space-y-2')}>
               <Label>上傳身分證背面照 *</Label>
 
               {/* ✅ 單一區塊設計：有照片顯示縮圖+X按鈕，沒照片顯示上傳區域 */}

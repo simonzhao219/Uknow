@@ -21,9 +21,19 @@ const ASSETS = 'build/assets';
 // entry chunk（index-*.js）是「開啟任何一頁都要先下載完」的那一塊，
 // 唯一真正影響首屏的數字。其餘 chunk 都是路由層 lazy 載入的。
 const BUDGET = {
-  entryRawKB: 1000,
-  entryGzipKB: 312, // 原 310；H1 hotfix 時 develop 已貼著 310.0，期限與清除邏輯進 entry 約 +0.2 kB
-  totalRawKB: 1600,
+  // S4（PostHog 監控）分項：entry 實測 raw +1.9 kB／gzip +0.8 kB（facade、gate、
+  // 排程、pageview hook），故在 S7 的 W5-30 額度之外另加 raw +2、gzip +1.0。
+  // 誰後合併，誰在 PR 內文寫明兩項合計值（S7 另有 gzip +3 的專用額度）。
+  // S6（續約路徑潛伏組）：結帳頁在 entry 內，續費身分確認、建單拒絕的內嵌狀態、新約確認框
+  // 文案（freshRenewalCopy）實測 raw +3.1 kB／gzip +1.2 kB（gzip 仍在 313 內，不調）。
+  // 業主 2026-11-06 01:16 互動選項核准 raw 1002→1005。
+  // S7（刊登換篇＋區級距離排序，W5-30／W5-43）：entry 必含首頁排序／凍結脈絡／卡片連結與詳情頁
+  // 換篇控制，手勢與鍵盤、座標表已拆動態 chunk；額度 gzip +3、raw 依約 1:3.2 同比例 +10，疊在上面各項之上。
+  entryRawKB: 1015, // 原 1000；S4 +2；S6 +3；S7 +10
+  entryGzipKB: 316, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3
+  // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
+  // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。
+  totalRawKB: 1950, // 原 1600；S4 +350
 };
 
 const kb = (bytes) => Math.round((bytes / 1024) * 10) / 10;
@@ -61,8 +71,25 @@ for (const [label, actual, budget] of checks) {
   console.log(`${over ? '✗' : '✓'} ${label}  ${actual} kB / ${budget} kB  (${pct}%)`);
 }
 
+// 監控預設關閉的建置證據（S4）：CI 建置沒有 CF_PAGES_BRANCH，PostHog key 一律不注入，
+// bundle 裡只該有佔位前綴（phc_PLACEHOLDER）。出現其他 phc_ 字樣＝key 漏進非 Pages 建置。
+const leakedKeys = new Set();
+for (const f of files) {
+  const text = readFileSync(join(ASSETS, f), 'utf8');
+  for (const m of text.matchAll(/phc_[A-Za-z0-9_]+/g)) {
+    if (!m[0].startsWith('phc_PLACEHOLDER')) leakedKeys.add(`${f}: ${m[0]}`);
+  }
+}
+if (leakedKeys.size > 0) {
+  failed = true;
+  console.error('\n✗ 建置產物含有 PostHog key（CI 建置應為關閉態，只允許 phc_PLACEHOLDER 前綴）：');
+  for (const k of leakedKeys) console.error(`  ${k}`);
+} else {
+  console.log('✓ 監控關閉態  建置產物不含 PostHog key');
+}
+
 if (failed) {
-  console.error('\n✗ 超出 bundle 預算。先確認這些位元組是必要的，再考慮調整');
+  console.error('\n✗ 超出 bundle 預算或檢查失敗。先確認這些位元組是必要的，再考慮調整');
   console.error('  scripts/check-bundle-budget.mjs 的 BUDGET（並在 PR 說明理由）。');
   process.exit(1);
 }

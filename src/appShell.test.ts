@@ -199,13 +199,14 @@ describe('登入狀態（T1 auth-state-trust）契約', () => {
   // signOut 網路失敗時 SIGNED_OUT 不一定觸發；這兩處自清本機狀態時要一併清提示。
   // T1-B：無效 session 的清理收斂到 endInvalidSession（內含 clearAuthHint），呼叫它等價於
   // 直接清提示——守的行為不變（無效 session 一定清提示），只是多認一個收斂後的入口。
-  it('apiClient 的 session 過期、取消註冊與 AuthPage 清理無效 session 都會清提示', () => {
+  // W5-12：稍後註冊改走 useFunnelLogout（不再刪帳號），由它清提示；CompleteProfile 不再自清。
+  it('apiClient 的 session 過期、註冊中途登出與 AuthPage 清理無效 session 都會清提示', () => {
     expect(readFileSync(join(SRC, 'utils/endInvalidSession.ts'), 'utf8')).toMatch(
       /clearAuthHint\(/,
     );
     for (const rel of [
       'utils/apiClient.ts',
-      'components/CompleteProfile.tsx',
+      'hooks/useFunnelLogout.ts',
       'components/AuthPage.tsx',
     ]) {
       expect(readFileSync(join(SRC, rel), 'utf8'), rel).toMatch(
@@ -404,5 +405,50 @@ describe('Cloudflare Pages 服務模式契約', () => {
         return code !== undefined && !supported.has(code);
       });
     expect(offenders).toEqual([]);
+  });
+});
+
+// PostHog 監控（S4）：SDK 與設定屬於動態 chunk，entry 只能靜態引用極小的 facade／gate。
+describe('analytics 載入契約', () => {
+  const nonTestSources = (): Array<{ rel: string; text: string }> => {
+    const out: Array<{ rel: string; text: string }> = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+          out.push({ rel: full.slice(SRC.length + 1), text: readFileSync(full, 'utf8') });
+        }
+      }
+    };
+    walk(SRC);
+    return out;
+  };
+
+  it('posthog-js 只允許動態 import（型別 import 除外）', () => {
+    const offenders = nonTestSources()
+      .filter(
+        ({ text }) =>
+          /^import\s+(?!type\b)[^;]*?from\s+'posthog-js'/m.test(text) ||
+          /^import\s+'posthog-js'/m.test(text),
+      )
+      .map((s) => s.rel);
+    expect(offenders).toEqual([]);
+  });
+
+  it('analyticsConfig 不得被靜態 import（它跟 SDK 同屬動態 chunk）', () => {
+    const offenders = nonTestSources()
+      .filter(({ text }) => /from\s+'[^']*analyticsConfig'/.test(text))
+      .map((s) => s.rel);
+    expect(offenders).toEqual([]);
+  });
+
+  it('main.tsx 用 scheduleAnalytics 啟動，且 redirect 時不啟動', () => {
+    expect(main).toMatch(/scheduleAnalytics\(/);
+    expect(main).toMatch(/isRedirecting/);
+  });
+
+  it('App 掛 usePageview', () => {
+    expect(app).toMatch(/usePageview\(\)/);
   });
 });

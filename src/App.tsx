@@ -13,7 +13,7 @@ import { BottomNav } from './components/BottomNav';
 import { Footer } from './components/Footer';
 import { MaintenanceBanner } from './components/MaintenanceBanner';
 import { HomePage } from './components/HomePage';
-import { ServiceProviderDetail } from './components/ServiceProviderDetail';
+import { ServiceProviderDetailRoute } from './components/ServiceProviderDetailRoute';
 import { AuthPage } from './components/AuthPage';
 import { OTPVerificationPage } from './components/OTPVerificationPage';
 import { CompleteProfile } from './components/CompleteProfile';
@@ -35,6 +35,8 @@ import { importWithRetry } from './utils/lazyWithRetry';
 import { clearPendingInviteToken } from './utils/referralInvite';
 import { useRevalidateOnFocus } from './hooks/useRevalidateOnFocus';
 import { useAuthBootstrap } from './hooks/useAuthBootstrap';
+import { usePageview } from './hooks/usePageview';
+import { PrivateRegion } from './components/common/PrivateRegion';
 import { clearInflight, fetchProfile } from './utils/fetchProfile';
 import { clearAccountLocalState } from './utils/clearAccountLocalState';
 import { resetHomeListingsCache } from './utils/homeListingsCache';
@@ -152,6 +154,7 @@ export const UserContext = React.createContext<{
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
+  usePageview();
   const { clearCache } = useDataCache(); // ✅ 新增：使用資料快取
   const clearAccountState = () => {
     clearCache();
@@ -302,7 +305,7 @@ function AppContent() {
                 <Suspense fallback={<RouteLoader />}>
                   <Routes>
                     <Route path="/" element={<HomePage />} />
-                    <Route path="/service-providers/:id" element={<ServiceProviderDetail />} />
+                    <Route path="/service-providers/:id" element={<ServiceProviderDetailRoute />} />
                     {/* Authentication Routes */}
                     <Route path="/login" element={<AuthPage />} />
                     <Route path="/register" element={<AuthPage />} />
@@ -399,26 +402,32 @@ function AppContent() {
                     <Route
                       path="/payment/checkout"
                       element={
-                        <ProtectedRoute>
-                          <PaymentCheckout />
-                        </ProtectedRoute>
+                        <PrivateRegion>
+                          <ProtectedRoute>
+                            <PaymentCheckout />
+                          </ProtectedRoute>
+                        </PrivateRegion>
                       }
                     />
                     <Route
                       path="/payment/result"
                       element={
-                        <ProtectedRoute>
-                          <PaymentResult />
-                        </ProtectedRoute>
+                        <PrivateRegion>
+                          <ProtectedRoute>
+                            <PaymentResult />
+                          </ProtectedRoute>
+                        </PrivateRegion>
                       }
                     />
                     {/* Admin Routes */}
                     <Route
                       path="/admin"
                       element={
-                        <AdminRoute>
-                          <AdminDashboard />
-                        </AdminRoute>
+                        <PrivateRegion>
+                          <AdminRoute>
+                            <AdminDashboard />
+                          </AdminRoute>
+                        </PrivateRegion>
                       }
                     />
                     {/* 舊網址：管理員很可能把它加在手機主畫面。轉址本身不守門

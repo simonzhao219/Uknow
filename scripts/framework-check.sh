@@ -217,6 +217,16 @@ if [ -f scripts/purge-listing-photos-request.py ]; then
   fi
 fi
 
+# 10f. pg_cron 排程的 GitHub 看門狗決策（補跑、LINE 分級與 6 小時節流）。
+#      決策在純函式裡，表格案例讀 scripts/fixtures/scheduler-health/ 的同一份
+#      shape.json 與情境檔——那份 shape 也是 Deno scheduler-health.test.ts 的契約。
+if [ -f scripts/scheduler-watchdog.py ]; then
+  if ! python3 scripts/scheduler-watchdog.py --self-test; then
+    echo "FAIL: 排程看門狗的決策表格案例未過（scripts/scheduler-watchdog.py）"
+    fail=1
+  fi
+fi
+
 # 11. Context 預算與讀取成本。其餘各軌驗「設定寫對了沒」，這一軌驗「這個
 #     repo 對 agent 來說貴不貴」——啟動固定成本、單檔讀取成本（軟警戒）、
 #     以及 rule 的 paths 是否真的匹配得到檔案（匹配不到＝宣告了但永遠不

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { ListingLink } from './ListingLink';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import type { PublicListingRow } from '../../types/listing';
 
@@ -16,8 +16,8 @@ import type { PublicListingRow } from '../../types/listing';
 //     Safari 上較容易卡頓 / 破圖）。
 export function MobilePhotoWallCard({ serviceProvider }: { serviceProvider: PublicListingRow }) {
   return (
-    <Link
-      to={`/service-providers/${serviceProvider.id}`}
+    <ListingLink
+      id={serviceProvider.id}
       className="relative block aspect-square overflow-hidden bg-muted"
     >
       <ImageWithFallback
@@ -37,6 +37,6 @@ export function MobilePhotoWallCard({ serviceProvider }: { serviceProvider: Publ
           {serviceProvider.name}
         </h3>
       </div>
-    </Link>
+    </ListingLink>
   );
 }

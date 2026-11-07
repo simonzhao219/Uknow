@@ -25,10 +25,20 @@ import {
   recentConsecutiveFailureUsers,
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
+import { type ReconcileSummary, runScheduledReconcile } from './reconcile-handler.ts';
+import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
+  ACCOUNT_SUSPENDED,
   DEFAULT_NETWORK_SORT,
+  PAYMENT_PENDING_ACTIVATION,
+  PROFILE_MISSING,
   PROFILE_UNAVAILABLE,
+  REFERRAL_CHECK_UNAVAILABLE,
+  REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
+  REFERRAL_CODE_SELF_MESSAGE,
+  REFERRAL_CYCLE,
+  RENEWAL_MODE_REQUIRED,
   RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
 import type {
@@ -247,6 +257,46 @@ async function readAccountStatus(
   );
 }
 
+// 新約未填碼時會套用的預設推薦人（§7.4 A10／A11）。prepare 的 default 分支與
+// /subscriptions/status 的 freshDefaultReferrerAvailable 共用（單一真相）：碼取自
+// reward_config.default_referrer_code，合法性唯一判準是 validate_referral_code
+// （停權／失效都在裡面），另有自我推薦護欄與環判定（W5-59：預設推薦人在本人推薦樹內＝
+// 付款時會記 keep，與付款端 0d 同一判準 referral_would_cycle）。讀取失敗回 read_failed，
+// 由呼叫端決定 fail-closed（status）或 A11 不阻斷金流（prepare）。
+type FreshDefaultReferrer =
+  | { ok: true; referrerUserId: string; code: string }
+  | {
+    ok: false;
+    reason: 'unset' | 'code_not_applicable' | 'self_referral' | 'cycle' | 'read_failed';
+    code?: string;
+  };
+async function resolveFreshDefaultReferrer(
+  client: any,
+  userId: string,
+): Promise<FreshDefaultReferrer> {
+  const { data: cfgRow, error: cfgErr } = await client
+    .from('reward_config')
+    .select('default_referrer_code')
+    .eq('id', true)
+    .maybeSingle();
+  if (cfgErr) return { ok: false, reason: 'read_failed' };
+  const code = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
+  if (!code) return { ok: false, reason: 'unset' };
+  const { data: codeRows, error: codeErr } = await client
+    .rpc('validate_referral_code', { p_code: code });
+  if (codeErr) return { ok: false, reason: 'read_failed', code };
+  if (!codeRows || codeRows.length === 0) return { ok: false, reason: 'code_not_applicable', code };
+  const referrerUserId = codeRows[0].referrer_user_id;
+  if (referrerUserId === userId) return { ok: false, reason: 'self_referral', code };
+  const { data: cycles, error: cycleErr } = await client.rpc('referral_would_cycle', {
+    p_referee: userId,
+    p_new_referrer: referrerUserId,
+  });
+  if (cycleErr) return { ok: false, reason: 'read_failed', code };
+  if (cycles === true) return { ok: false, reason: 'cycle', code };
+  return { ok: true, referrerUserId, code };
+}
+
 // ============================================================
 // 工具：從 Authorization header 取得已驗證 user
 // ============================================================
@@ -276,6 +326,10 @@ const CHECK_EMAIL_RATE_WINDOW_SECONDS = 5 * 60;
 // 個資收集。人工掃描一次至少兩三秒，30 次／分鐘碰不到；換 IP 沒有意義。
 const MEMBER_VERIFY_RATE_MAX = 30;
 const MEMBER_VERIFY_RATE_WINDOW_SECONDS = 60;
+// /referrals/network/search：per 使用者。前端 debounce 300ms，正常一次查詢 3～5 次；
+// 防的是用單字逐一試探、還原二、三代被遮罩的字元（W5-6 的第二道防線，第一道是只比對遮罩名）。
+const NETWORK_SEARCH_RATE_MAX = 30;
+const NETWORK_SEARCH_RATE_WINDOW_SECONDS = 60;
 // /referrals/validate/:code：per 使用者、雙窗，依序計數。短窗容得下合法的連續
 // 重試（驗證＋送出前再驗、付款頁換碼、打錯重試，一輪約 5～8 次）；日窗只計
 // 「短窗放行的實際查詢」，讓單一帳號 24 小時內最多查 50 個碼——推薦碼是流水號、
@@ -469,6 +523,16 @@ export async function authenticate(
   }
 }
 
+/**
+ * 分類式驗證失敗的回應：Auth 回不來 → 503（帳號狀態未知，呼叫端不得當成「帳號已不存在」），
+ * Auth 判無效 → 401。需要區分兩者的端點共用。
+ */
+export function authFailureResponse(c: any, error: 'unauthorized' | 'transient'): any {
+  return error === 'transient'
+    ? c.json({ error: '暫時無法處理，請稍後再試' }, 503)
+    : c.json({ error: '未授權' }, 401);
+}
+
 function isTransientAuthError(error: { name?: string; status?: number }): boolean {
   if (error.name === 'AuthRetryableFetchError') return true;
   const status = error.status ?? 0;
@@ -504,7 +568,11 @@ export async function loadProfileOrError(
 ): Promise<{ ok: true; data: any } | { ok: false; status: 404 | 503; body: unknown }> {
   try {
     const data = await build();
-    return data ? { ok: true, data } : { ok: false, status: 404, body: { error: '用戶不存在' } };
+    return data ? { ok: true, data } : {
+      ok: false,
+      status: 404,
+      body: { error: { code: PROFILE_MISSING, message: '用戶不存在' } },
+    };
   } catch (err) {
     if (err instanceof ProfileReadError) {
       console.error('[profile] 讀取失敗:', err.read);
@@ -525,7 +593,7 @@ export function makeProfileHandler(deps: {
     if ('error' in auth) {
       return auth.error === 'transient'
         ? c.json(PROFILE_UNAVAILABLE_BODY, 503)
-        : c.json({ error: '未授權' }, 401);
+        : authFailureResponse(c, 'unauthorized');
     }
     // 前端逾時後的重試帶 ?retry=1：第一個請求可能仍在伺服器端跑，跳過 heal／repair。
     const retry = c.req.query('retry') === '1';
@@ -591,14 +659,17 @@ export async function buildProfileResponse(
   // 見 migration 0007）。前端守衛靠這個旗標把「付了錢等開通」跟
   // 「還沒付錢」區分開，不會把已付款的人送回結帳頁造成重複付款。
   const paidOrder = (pendingOrders ?? []).find((o: any) => o.payuniStatus === 'SUCCESS');
-  let paidAwaitingActivation = !!paidOrder;
+  // S6（pay P1-4）：不依 step 決定——續費者 step 恆為 3，舊版在 step 3 一律蓋成 false，
+  // 守衛就把付了錢在開通中的續費者送回結帳頁、可能再付一次。active 者的 SUCCESS pending
+  // 是重複付款的殘單，守衛本來就先判 active，旗標為 false。
+  const paidAwaitingActivation = !!paidOrder && acct?.status !== 'active';
 
   // 自癒：PayUni 已說 SUCCESS 但訂單還卡在 pending → 立刻補完，並有界
   // 重入一次重算整份 profile——使用者這一次載入就直接拿到 step 3 +
   // active，不需要再重新整理。特意 await（isolate 終止問題，同下方
   // repair 的註解）；補不完（例如金額不符待人工）就維持旗標讓前端顯示
   // 「開通處理中」。
-  if (registrationStep === 2 && paidAwaitingActivation && !alreadyHealed && !retry) {
+  if (paidAwaitingActivation && !alreadyHealed && !retry) {
     const healed = await heal(userId);
     if (healed) {
       return buildProfileResponse(client, userId, email, { ...opts, alreadyHealed: true });
@@ -612,9 +683,8 @@ export async function buildProfileResponse(
   // response 回傳後就終止這個 isolate，沒 await 完成的背景工作不保證
   // 會真的跑完。對已經修復好的使用者，repair 內部的偵測查詢應該找不到
   // 任何候選、開銷很小。
-  if (registrationStep === 3) {
-    if (!retry) await repair(userId);
-    paidAwaitingActivation = false;
+  if (registrationStep === 3 && !retry) {
+    await repair(userId);
   }
 
   return {
@@ -629,8 +699,10 @@ export async function buildProfileResponse(
     registrationStep,
     // 待開通時優先指向「已付款成功」的那筆訂單，讓前端守衛導去的
     // 結果頁顯示正確的訂單；否則維持最新一筆 pending 的舊語意。
-    lastTradeNo: registrationStep === 2
-      ? (paidOrder?.transaction_id ?? pendingOrders?.[0]?.transaction_id ?? null)
+    lastTradeNo: paidAwaitingActivation
+      ? paidOrder.transaction_id
+      : registrationStep === 2
+      ? (pendingOrders?.[0]?.transaction_id ?? null)
       : null,
     paidAwaitingActivation,
     referralCode: code?.code ?? null,
@@ -855,19 +927,33 @@ app.post('/auth/register', async (c) => {
 
   const client = sb();
 
-  // 若有填推薦碼，先查出推薦人 user_id
+  // 推薦碼（auth P0-1、P1-2＝ref P1-1）：與 /referrals/validate、prepare fresh 走同一支
+  // validate_referral_code（排除停權推薦人與失效碼）。查詢失敗回 503 不寫入——吞成
+  // 「沒填碼」會在付款時被預設推薦人覆寫（錯綁、靜默）；查無／停權／失效一律 400 同形。
+  if (referralCode != null && typeof referralCode !== 'string') {
+    return c.json({ error: '推薦碼格式錯誤' }, 400);
+  }
   let referrerUserId: string | null = null;
   // NFKC 先摺全形再轉小寫——全形數字對 toLowerCase() 是 identity，
   // 少了它，全形碼在後端與「查無此碼」同形（前端已同步正規化）。
   const cleanCode = referralCode?.normalize('NFKC').toLowerCase().trim() || null;
   if (cleanCode) {
-    const { data: rc } = await client
-      .from('referral_codes')
-      .select('user_id')
-      .eq('code', cleanCode)
-      .eq('status', 'active')
-      .single();
-    referrerUserId = rc?.user_id ?? null;
+    const { data: codeRows, error: codeErr } = await client
+      .rpc('validate_referral_code', { p_code: cleanCode });
+    if (codeErr) {
+      console.error('[register] validate_referral_code 失敗:', codeErr);
+      return c.json(
+        { error: { code: REFERRAL_CHECK_UNAVAILABLE, message: '推薦碼暫時無法驗證，請稍後再試' } },
+        503,
+      );
+    }
+    if (!codeRows || codeRows.length === 0) {
+      return c.json({ error: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE }, 400);
+    }
+    referrerUserId = codeRows[0].referrer_user_id;
+    if (referrerUserId === user.id) {
+      return c.json({ error: REFERRAL_CODE_SELF_MESSAGE }, 400);
+    }
   }
 
   // 「註冊已完成就拒絕」與寫入在同一個交易、同一把 profiles 列鎖下進行
@@ -901,54 +987,6 @@ app.post('/auth/register', async (c) => {
 
   const r = await loadProfileOrError(() => buildProfileResponse(client, user.id, user.email));
   return r.ok ? c.json(r.data) : c.json(r.body, r.status);
-});
-
-// ============================================================
-// DELETE /auth/cancel-signup
-// CompleteProfile「我晚點再填」：刪除尚未完成的帳號。
-// 守衛：已完成付款、已付款待開通（pending 且 PayUni SUCCESS）或有提領紀錄
-// 的會員不得自助刪除——schema 全面 on delete cascade，刪 auth user 會連鎖
-// 抹除 payment_orders / withdrawals / referral_edges，金流稽核紀錄與推薦樹
-// 對帳從此消失（與 /auth/reset-registration 的「已完成付款無法重置」同一
-// 原則）。守衛讀取失敗一律 500、不刪（fail-closed）。
-// ============================================================
-app.delete('/auth/cancel-signup', async (c) => {
-  const user = await requireAuth(c);
-  if (!user) return c.json({ error: '未授權' }, 401);
-
-  const client = sb();
-  const [
-    { data: completedOrder, error: orderErr },
-    { data: paidPendingOrder, error: paidPendingErr },
-    { data: withdrawal, error: withdrawalErr },
-  ] = await Promise.all([
-    client.from('payment_orders').select('id')
-      .eq('user_id', user.id).eq('status', 'completed').limit(1).maybeSingle(),
-    // 已付款待開通：PayUni 已回 SUCCESS、訂單還在 pending（金額不符時維持
-    // pending 交人工）。錢已收，刪帳號會連訂單與 PayUni 回應一起抹掉。
-    client.from('payment_orders').select('id')
-      .eq('user_id', user.id).eq('status', 'pending')
-      .eq('payuni_response->>Status', 'SUCCESS').limit(1).maybeSingle(),
-    client.from('withdrawals').select('id')
-      .eq('user_id', user.id).limit(1).maybeSingle(),
-  ]);
-  // 讀不到就不刪（fail-closed）：把讀取失敗當成「沒有付款紀錄」，會在資料庫
-  // 抖動時刪掉已付款會員、連鎖抹除金流稽核資料，且不可逆。
-  const guardErr = orderErr ?? paidPendingErr ?? withdrawalErr;
-  if (guardErr) {
-    console.error('[cancel-signup] 守衛讀取失敗:', guardErr);
-    return c.json({ error: '暫時無法處理，請稍後再試' }, 500);
-  }
-  if (completedOrder || paidPendingOrder || withdrawal) {
-    return c.json({ error: '已完成付款的帳號無法取消註冊，如需刪除帳號請聯繫客服' }, 400);
-  }
-
-  const { error } = await client.auth.admin.deleteUser(user.id);
-  if (error) {
-    console.error('[cancel-signup] 刪除失敗:', error);
-    return c.json({ error: '刪除失敗' }, 500);
-  }
-  return c.json({ success: true });
 });
 
 // ============================================================
@@ -1077,7 +1115,7 @@ app.get('/referrals/validate/:code', async (c) => {
     return c.json({ valid: false, error: { message: '服務暫時無法使用' } }, 503);
   }
   if (!data || data.length === 0) {
-    return c.json({ valid: false, error: { message: '推薦碼不存在或已失效' } });
+    return c.json({ valid: false, error: { message: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE } });
   }
 
   const row = data[0];
@@ -2012,6 +2050,29 @@ app.post('/admin-setup/set-self-admin', async (c) => {
   return c.json({ success: true, message: '您已成為平台管理員' });
 });
 
+/** 停權者付款的 403 回應（W5-5）。前端依 code 切到停權說明，不當一般錯誤。 */
+function accountSuspendedBody() {
+  return {
+    success: false,
+    error: { code: ACCOUNT_SUSPENDED, message: '帳號已停權，請聯絡客服' },
+  };
+}
+
+// S6：prepare 的新拒絕，形狀同停權 403（PrepareErrorBodySchema）。
+const renewalModeRequiredBody = () => ({
+  success: false,
+  error: { code: RENEWAL_MODE_REQUIRED, message: '請選擇續約或新約' },
+});
+const referralCycleBody = () => ({
+  success: false,
+  error: { code: REFERRAL_CYCLE, message: '此推薦碼屬於您的推薦網絡成員，無法作為推薦人' },
+});
+const paymentPendingActivationBody = (lastTradeNo: string) => ({
+  success: false,
+  error: { code: PAYMENT_PENDING_ACTIVATION, message: '付款已完成，開通處理中' },
+  lastTradeNo,
+});
+
 // ============================================================
 // POST /payuni/prepare
 // 建立付款訂單，回傳加密表單資料供前端送出給 PayUni
@@ -2033,11 +2094,22 @@ app.post('/payuni/prepare', async (c) => {
   const renewalMode: 'extend' | 'fresh' | null =
     body?.renewalMode === 'extend' || body?.renewalMode === 'fresh' ? body.renewalMode : null;
 
+  let hasSubscription = false;
   // 建單前守衛：三道讀取全部在任何寫入之前，任一讀取失敗即回 500、不建單
   // （fail-closed，見 must()）。先前防重複讀失敗就當「非 active」放行，有效會員
   // 可再付一次；extend 讀失敗回 400「請選擇新約」，把故障說成業務拒絕，還把人
   // 導向會清空帳本的新約。
   try {
+    // W5-5（pay P2-9＝auth P2-1）：停權者不得付款，擋在任何寫入之前（含下方 fresh
+    // 換線的 profiles 寫入）。建單 RPC 在鎖內會再查一次（防讀完才被停權）。
+    const me = must(
+      await client.from('profiles').select('suspended_at').eq('id', user.id).maybeSingle(),
+      'profiles',
+    ) as { suspended_at: string | null } | null;
+    if (me?.suspended_at) {
+      return c.json(accountSuspendedBody(), 403);
+    }
+
     // 防重複：只擋「目前仍在效期內」的會員（active）。已失效（expired）
     // 才可以付款——這正是續訂（到期後接續）或重新訂閱的唯一入口
     // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
@@ -2046,22 +2118,30 @@ app.post('/payuni/prepare', async (c) => {
       return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
     }
 
+    const lastSub = must(
+      await client
+        .from('subscriptions')
+        .select('end_date')
+        .eq('user_id', user.id)
+        .order('end_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      'subscriptions',
+    ) as { end_date: string | null } | null;
+    hasSubscription = !!lastSub;
+
+    // S6（pay P1-1）：曾訂閱者必須選續約或新約——null 只對首購有意義，否則會變成
+    // 「付款日起算＋不清帳本＋不換線」的混合語意，繞過補繳與新約清帳。建單 RPC 鎖內再判一次。
+    if (renewalMode === null && hasSubscription) {
+      return c.json(renewalModeRequiredBody(), 400);
+    }
+
     if (renewalMode === 'extend') {
       // 補繳制（A1-A3）：extend 永遠可選，不因過期多久而消失。一筆一年
       // 從前期迄日隔天字面接續，算出來仍在過去也照建單——使用者重複付款
       // 直到迄日回到未來（process_successful_payment 不做 greatest(now())
       // 補救，正是補繳制要的行為）。唯一保留的擋：從未有訂閱紀錄的人
       // 沒有可接續的效期。
-      const lastSub = must(
-        await client
-          .from('subscriptions')
-          .select('end_date')
-          .eq('user_id', user.id)
-          .order('end_date', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        'subscriptions',
-      ) as { end_date: string | null } | null;
       if (!lastSub?.end_date) {
         return c.json({ success: false, error: '沒有可接續的訂閱紀錄，請選擇新約' }, 400);
       }
@@ -2082,42 +2162,44 @@ app.post('/payuni/prepare', async (c) => {
     return c.json({ success: false, error: '暫時無法建立訂單，請稍後再試' }, 500);
   }
 
-  // 新約可換推薦人：驗證新推薦碼並更新推薦來源。付款成功時
-  // apply_referral_side_effects 會把推薦邊 rewire 到新推薦人（0008），
-  // 之後的推薦獎勵歸新推薦人；舊推薦人的歷史獎勵不受影響。
+  // 新約可換推薦人（S6，ref P0-1）：這裡只算出換線意圖（新推薦人、碼、source），交給建單
+  // RPC 存在**該張訂單**上；付款成功時 process_successful_payment 0d 才寫 profiles 並 rewire
+  // （付款當下重驗碼與成環，W5-56、W5-49②）。建單不動 profiles——棄單後改付續約不會換線，
+  // RPC 回 active／suspended 也不會留下半套換線（S2 已知限制）。首購者（沒有訂閱紀錄）
+  // 不帶意圖：推薦人來自註冊（§7.4 首購路徑）。
   const referredByCode: string = typeof body?.referredByCode === 'string'
     ? body.referredByCode.normalize('NFKC').toLowerCase().trim()
     : '';
-  if (renewalMode === 'fresh' && referredByCode) {
+  let intent:
+    | { userId: string | null; code: string | null; source: 'code' | 'default' | 'keep' }
+    | null = null;
+  if (renewalMode === 'fresh' && hasSubscription && referredByCode) {
     const { data: codeRows, error: codeErr } = await client
       .rpc('validate_referral_code', { p_code: referredByCode });
     if (codeErr || !codeRows || codeRows.length === 0) {
-      return c.json({ success: false, error: '推薦碼不存在或已失效' }, 400);
+      return c.json({ success: false, error: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE }, 400);
     }
     const referrerUserId = codeRows[0].referrer_user_id;
     if (referrerUserId === user.id) {
-      return c.json({ success: false, error: '不能使用自己的推薦碼' }, 400);
+      return c.json({ success: false, error: REFERRAL_CODE_SELF_MESSAGE }, 400);
     }
-    // referred_by_is_default 一併重置：使用者親自填碼換線 = 非自動來源。
-    // 這裡是 referred_by_* 的第二個寫入點（不經 apply_referral_side_effects），
-    // 漏掉會讓旗標永久卡 true，前端把使用者自己選的推薦人也一起隱藏。
-    const { error: refErr } = await client
-      .from('profiles')
-      .update({
-        referred_by_code: referredByCode,
-        referred_by_user_id: referrerUserId,
-        referred_by_is_default: false,
-      })
-      .eq('id', user.id);
-    if (refErr) {
-      console.error('[prepare] 更新推薦人失敗:', refErr);
-      return c.json({ success: false, error: '更新推薦人失敗' }, 500);
+    // ref P0-2：新推薦人在自己的推薦樹內（任何深度，W5-49③）→ 成環。預檢只為提早失敗，
+    // 建單 RPC 鎖內再判一次（以 RPC 為準）。讀取失敗 fail-closed。
+    const { data: cycles, error: cycleErr } = await client.rpc('referral_would_cycle', {
+      p_referee: user.id,
+      p_new_referrer: referrerUserId,
+    });
+    if (cycleErr) {
+      console.error('[prepare] referral_would_cycle 失敗:', cycleErr);
+      return c.json({ success: false, error: '暫時無法建立訂單，請稍後再試' }, 500);
     }
-  } else if (renewalMode === 'fresh') {
+    if (cycles === true) return c.json(referralCycleBody(), 400);
+    intent = { userId: referrerUserId, code: referredByCode, source: 'code' };
+  } else if (renewalMode === 'fresh' && hasSubscription) {
     // A10：選新約 = 離開原本的樹；未填碼不等於「維持原狀」，而是比照
     // 首購未填碼的既有語意——套用平台預設推薦碼，referred_by_is_default
     // = true（前端據此隱藏這個碼，使用者視角就是「沒有上一代」）。
-    // A11：任一步失敗 → 維持原上代不變 + 告警，**絕不阻斷金流**。
+    // A11：任一步失敗 → 意圖記 keep（付款時維持原上代）＋告警，**絕不阻斷金流**。
     // 碼的合法性唯一判準仍是 validate_referral_code（停權/失效都在裡面），
     // 不複製 resolve_default_referrer 的分類。
     const alertDefaultUnavailable = (reason: string, extra: Record<string, unknown> = {}) =>
@@ -2126,36 +2208,17 @@ app.post('/payuni/prepare', async (c) => {
         { user_id: user.id, reason, ...extra },
         'default_referrer_unavailable_on_fresh',
       );
-    const { data: cfgRow } = await client
-      .from('reward_config')
-      .select('default_referrer_code')
-      .eq('id', true)
-      .maybeSingle();
-    const defaultCode = (cfgRow?.default_referrer_code ?? '').toLowerCase().trim();
-    if (!defaultCode) {
-      await alertDefaultUnavailable('unset');
+    intent = { userId: null, code: null, source: 'keep' };
+    const resolved = await resolveFreshDefaultReferrer(client, user.id);
+    if (resolved.ok) {
+      // 預設推薦人在本人樹內已由 resolve 判成 cycle（W5-59）；建單 RPC 鎖內仍再判一次。
+      intent = { userId: resolved.referrerUserId, code: resolved.code, source: 'default' };
     } else {
-      const { data: codeRows, error: codeErr } = await client
-        .rpc('validate_referral_code', { p_code: defaultCode });
-      if (codeErr || !codeRows || codeRows.length === 0) {
-        // 不存在、已失效、推薦人停權都落在這裡（validate 的職責）。
-        await alertDefaultUnavailable('code_not_applicable', { code: defaultCode });
-      } else if (codeRows[0].referrer_user_id === user.id) {
-        // 預設碼主人就是本人（例如平台帳號自己續約）：自我推薦護欄。
-        await alertDefaultUnavailable('self_referral', { code: defaultCode });
-      } else {
-        const { error: refErr } = await client
-          .from('profiles')
-          .update({
-            referred_by_code: defaultCode,
-            referred_by_user_id: codeRows[0].referrer_user_id,
-            referred_by_is_default: true,
-          })
-          .eq('id', user.id);
-        if (refErr) {
-          await alertDefaultUnavailable('profile_update_failed', { error: refErr.message });
-        }
-      }
+      // 未設、不存在／已失效／推薦人停權（validate 的職責）、本人（自我推薦護欄）、成環、讀取失敗。
+      await alertDefaultUnavailable(
+        resolved.reason === 'read_failed' ? 'code_not_applicable' : resolved.reason,
+        resolved.code ? { code: resolved.code } : {},
+      );
     }
   }
 
@@ -2164,23 +2227,43 @@ app.post('/payuni/prepare', async (c) => {
   // 建單先行（原本在加密之後）：tradeNo 會被烘進 EncryptInfo，不能事後
   // 再改——所以撞 payment_orders 唯一鍵（CSPRNG 下機率 ~1/2×10⁹）時要在
   // 「組加密 payload 之前」重產一次再試，拿到最終 tradeNo 才往下走。
+  // 建單走 prepare_payment_order（20261111000002，S6 六參數版 20261113000002）：停權與 active 在 profiles 列鎖下重查
+  // 後才 INSERT，與付款完成序列化（pay P1-2）。撞 tradeNo 唯一鍵時重產再試一次。
   let tradeNo = generateTradeNo();
   {
-    const orderRow = () => ({
-      user_id: user.id,
-      amount: 1200,
-      status: 'pending',
-      payment_method: 'payuni',
-      transaction_id: tradeNo,
-      renewal_mode: renewalMode,
-    });
-    let { error: insertErr } = await client.from('payment_orders').insert(orderRow());
-    if (insertErr && insertErr.code === '23505') {
+    // 六參數版（20261113000002）：換線意圖存在訂單上；回 jsonb { outcome, trade_no? }。
+    const createOrder = () =>
+      client.rpc('prepare_payment_order', {
+        p_user_id: user.id,
+        p_trade_no: tradeNo,
+        p_renewal_mode: renewalMode,
+        p_referrer_user_id: intent?.userId ?? null,
+        p_referrer_code: intent?.code ?? null,
+        p_referrer_source: intent?.source ?? null,
+      });
+    let { data: result, error: orderErr } = await createOrder();
+    if (!orderErr && result?.outcome === 'duplicate_trade_no') {
       tradeNo = generateTradeNo();
-      ({ error: insertErr } = await client.from('payment_orders').insert(orderRow()));
+      ({ data: result, error: orderErr } = await createOrder());
     }
-    if (insertErr) {
-      console.error('[prepare] insert payment_orders 失敗:', insertErr);
+    if (orderErr) {
+      console.error('[prepare] prepare_payment_order 失敗:', orderErr);
+      return c.json({ success: false, error: '建立訂單失敗' }, 500);
+    }
+    const outcome = result?.outcome;
+    if (outcome === 'suspended') return c.json(accountSuspendedBody(), 403);
+    if (outcome === 'active') {
+      return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
+    }
+    if (outcome === 'not_found') return c.json({ success: false, error: '用戶不存在' }, 404);
+    // pay P1-4：已付款待開通——不建新單，交前端導結果頁（W5-50②：修不好的單客服人工開通）。
+    if (outcome === 'paid_pending' && typeof result?.trade_no === 'string') {
+      return c.json(paymentPendingActivationBody(result.trade_no), 409);
+    }
+    if (outcome === 'mode_required') return c.json(renewalModeRequiredBody(), 400);
+    if (outcome === 'cycle') return c.json(referralCycleBody(), 400);
+    if (outcome !== 'ok') {
+      console.error('[prepare] prepare_payment_order 回傳未預期的值:', result);
       return c.json({ success: false, error: '建立訂單失敗' }, 500);
     }
   }
@@ -2688,17 +2771,31 @@ async function resolveOrderFromPayUni(
 // 欄位時，「沒問到」與「問到了、交易未付款」同形，迴圈無從告警——滿天數
 // 的卡單會被靜默標 expired（issue #395）。
 type QueryResult =
-  | { stillProcessing: true; queryFailure?: { status: string; message: string } }
+  | {
+    stillProcessing: true;
+    queryFailure?: { status: string; message: string };
+    unknownStatus?: {
+      tradeStatus: string;
+      reason: 'unknown_code' | 'missing_field' | 'no_matching_trade' | 'incomplete_too_long';
+    };
+    incomplete?: true;
+  }
   | { stillProcessing: false; data: Record<string, string> };
+
+/** unknown_trade_status 告警給人看的原因（reason 是給程式用的代碼，留在 context）。 */
+const UNKNOWN_STATUS_LABEL = {
+  unknown_code: 'PayUni 回了待確認或碼表外的狀態',
+  missing_field: 'PayUni 回應缺少交易狀態',
+  no_matching_trade: 'PayUni 回應裡找不到這張單',
+  incomplete_too_long: 'PayUni 超過 4 天仍回「處理中未完整」',
+} as const;
 
 export async function reconcilePendingOrders(
   client: any,
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
   resolveFn: typeof resolveOrderFromPayUni,
   opts: { thresholdMinutes: number; limit: number; expireAfterDays?: number },
-): Promise<
-  { checked: number; resolved: number; stillPending: number; expired: number; queryErrors: number }
-> {
+): Promise<ReconcileSummary> {
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
   // 殭屍單終態門檻：建單後棄付的訂單 PayUni 永遠查無此單（stillProcessing），
   // 沒有終態會累積在掃描視窗最前端（created_at ascending + limit），把真正
@@ -2713,10 +2810,14 @@ export async function reconcilePendingOrders(
   // 再被 queryPayUniTradeStatus 的佔位錯誤重複告警一次。
   const { data: stuck, error } = await client
     .from('payment_orders')
-    .select('id, transaction_id, user_id, created_at')
+    .select('id, transaction_id, user_id, created_at, reconcile_unknown_at')
     .eq('status', 'pending')
     .or('payuni_response.is.null,payuni_response->>Status.neq.SUCCESS')
     .lt('created_at', cutoff)
+    // 被標過 unknown 的單排到後段、彼此輪流（最久沒看的先）：一輪 50 張被未知單
+    // 塞滿時，真卡單仍排在前面。nullsFirst 一定要寫——Postgres 升冪預設 NULLS
+    // LAST，漏寫會靜默反過來。
+    .order('reconcile_unknown_at', { ascending: true, nullsFirst: true })
     .order('created_at', { ascending: true })
     .limit(opts.limit);
 
@@ -2728,14 +2829,71 @@ export async function reconcilePendingOrders(
     stillPending: 0,
     expired: 0,
     queryErrors: 0,
+    queryFailures: 0,
+    expireErrors: 0,
+    unknownStatus: 0,
+    incomplete: 0,
   };
 
   for (const order of stuck ?? []) {
     try {
-      const result = await queryFn(order.transaction_id!);
+      let result = await queryFn(order.transaction_id!);
+      if (result.stillProcessing && result.incomplete) {
+        const tooLong = order.created_at && new Date(order.created_at).getTime() < expireCutoffMs;
+        if (!tooLong) {
+          // DataSource＝B（W5-42）：本輪不下結論，不標 expired、不告警，下一輪再查。
+          summary.incomplete++;
+          continue;
+        }
+        // W5-44：持續回 B 超過 expire 天數就轉 unknown 交人工，免得付了錢的單永遠沒人知道。
+        result = {
+          stillProcessing: true,
+          unknownStatus: { tradeStatus: '', reason: 'incomplete_too_long' },
+        };
+      }
+      if (result.stillProcessing && result.unknownStatus) {
+        // pay P1-3：不確定的狀態不論天數都不標 expired，按訂單號告警交人工
+        // （去重到 resolve 為止，單子在視窗後段輪流時不會重複告警）。
+        const { tradeStatus, reason } = result.unknownStatus;
+        summary.unknownStatus++;
+        await logSystemAlertOnce(
+          'reconcile-pending-payments',
+          { reason: 'unknown_trade_status', tradeNo: order.transaction_id! },
+          { tradeStatus, statusReason: reason },
+          `【對帳】訂單 ${order.transaction_id} 的 PayUni 狀態無法判讀（${
+            UNKNOWN_STATUS_LABEL[reason]
+          }${
+            tradeStatus ? ` ${tradeStatus}` : ''
+          }），已停止自動處理、不會標過期。請到 PayUni 商店後台確認是否已付款，人工處理後標記已處理。`,
+          'error',
+        );
+        const { error: flagErr } = await client.from('payment_orders')
+          .update({ reconcile_unknown_at: new Date().toISOString() }).eq('id', order.id);
+        if (flagErr) {
+          await logSystemAlert('reconcile-pending-payments', {
+            tradeNo: order.transaction_id,
+            error: `記錄 reconcile_unknown_at 失敗: ${flagErr.message}`,
+          });
+        }
+        continue;
+      }
+      if (order.reconcile_unknown_at && !(result.stillProcessing && result.queryFailure)) {
+        // 之前判讀不了、這輪查得到可判讀的結果：清回 null，回到視窗前段。
+        // 查詢層一時失敗（queryFailure）不算可判讀，保留原標記。
+        const { error: clearErr } = await client.from('payment_orders')
+          .update({ reconcile_unknown_at: null }).eq('id', order.id);
+        if (clearErr) {
+          await logSystemAlert('reconcile-pending-payments', {
+            tradeNo: order.transaction_id,
+            error: `清除 reconcile_unknown_at 失敗: ${clearErr.message}`,
+          });
+        }
+      }
       if (result.stillProcessing) {
         const failure = result.queryFailure;
         if (failure) {
+          // 查詢層非 SUCCESS 另計：不算進全滅（classifyReconcileOutcome），棄付單也走這裡。
+          summary.queryFailures++;
           // 去重鍵用 PayUni 的 Status＋Message 而非訂單號：參數錯這類系統層
           // 故障會讓整批卡單撞同一組，只該留一筆；各訂單的後果由下方 expire
           // 紀錄按訂單號記。Message 也進鍵：碼表未經 sandbox 驗證，同一
@@ -2753,7 +2911,13 @@ export async function reconcilePendingOrders(
             'error',
           );
         }
-        if (order.created_at && new Date(order.created_at).getTime() < expireCutoffMs) {
+        // 標過 unknown 的單（W5-41／W5-44）只有查到可判讀的結果（上面已清回 null）才可能
+        // 走到 expire；這輪只是查詢層失敗時標記仍在，永不自動標 expired（審查 P1-2）。
+        const stillFlagged = Boolean(order.reconcile_unknown_at) && Boolean(failure);
+        if (
+          !stillFlagged && order.created_at &&
+          new Date(order.created_at).getTime() < expireCutoffMs
+        ) {
           // 查詢層失敗下標的是「沒驗證過」的終態，可能是實付但 webhook 漏接
           // 的單 → 標之前先告警（轉移條件不變）。查詢成功且確認未付款是常態
           // 的棄付收尾，不告警：status='expired' 本身就是可查紀錄，每張留一
@@ -2774,7 +2938,8 @@ export async function reconcilePendingOrders(
             .eq('id', order.id)
             .eq('status', 'pending');
           if (expireErr) {
-            summary.queryErrors++;
+            // 寫入失敗不是 PayUni 查詢失敗，另計，不混進全滅判準的 queryErrors。
+            summary.expireErrors++;
             await logSystemAlert('reconcile-pending-payments', {
               tradeNo: order.transaction_id,
               error: `標記 expired 失敗: ${expireErr.message}`,
@@ -2874,20 +3039,48 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   );
 
   // 結果可能是 Result（JSON 陣列字串）或平鋪欄位——兩種都接。
+  // 同號比對（pay P1-3）：只取 MerTradeNo 相同的那筆；舊行為 `?? list[0]` 會拿到
+  // 別張單的狀態。比對一律 String().trim()（數字型也對得上）。只有一筆且沒帶
+  // MerTradeNo 時照舊接受，避免已付款單因欄位缺漏永遠收斂不了。
+  const sameTrade = (t: Record<string, unknown>) =>
+    String(t.MerTradeNo ?? '').trim() === merTradeNo.trim();
+  const noMatch: QueryResult = {
+    stillProcessing: true,
+    unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' },
+  };
   let trade: Record<string, unknown> = decrypted;
   if (decrypted.Result) {
     try {
       const list = JSON.parse(decrypted.Result);
       if (Array.isArray(list) && list.length) {
-        trade = list.find((t: any) => t?.MerTradeNo === merTradeNo) ?? list[0];
+        const match = list.find((t: any) => t && typeof t === 'object' && sameTrade(t));
+        if (match) {
+          trade = match;
+        } else if (list.length === 1 && list[0] && !('MerTradeNo' in list[0])) {
+          trade = list[0];
+        } else {
+          return noMatch;
+        }
       }
     } catch { /* Result 不是 JSON → 沿用平鋪欄位 */ }
   }
+  if (trade === decrypted && 'MerTradeNo' in trade && !sameTrade(trade)) return noMatch;
 
   const flat: Record<string, string> = {};
   for (const [k, v] of Object.entries(trade)) flat[k] = String(v ?? '');
-  const tradeStatus = flat.TradeStatus ?? '';
+  // 同號比對已成立（或單筆缺 MerTradeNo 照舊接受）：交給 resolveOrderFromPayUni 的單號
+  // 一律用請求的值。沿用原值時，缺鍵會回 missing MerTradeNo、帶空白會對不到單，
+  // 兩者都會發出誤導的「錢已收、找不到訂單」告警（審查 P2）。
+  flat.MerTradeNo = merTradeNo;
+  const tradeStatus = (flat.TradeStatus ?? '').trim();
 
+  // PayUni 官方碼表（docs.payuni.com.tw「單筆交易查詢 Ver 2.0」，2026-11-05 查證）：
+  //   0＝取號成功、9＝未付款、4＝交易逾期 → 確認未付款（照舊 4 天後由對帳標 expired）
+  //   1＝已付款；2＝付款失敗、3＝付款取消；8＝訂單待確認
+  // DataSource＝B（處理中未完整，官方建議 10 分鐘後再查）→ 不論狀態，本輪不下結論
+  // （業主 2026-11-05 互動選項「B 一律本輪不下結論」）：資料不完整時收斂，可能拿不到
+  // 付款時間，會籍起算日會錯。
+  if ((flat.DataSource ?? '').trim() === 'B') return { stillProcessing: true, incomplete: true };
   if (tradeStatus === '1') {
     return { stillProcessing: false, data: { ...flat, Status: 'SUCCESS' } };
   }
@@ -2895,7 +3088,15 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
     // 付款失敗 / 付款取消 → 讓 resolveOrderFromPayUni 標 failed
     return { stillProcessing: false, data: { ...flat, Status: `FAILED_${tradeStatus}` } };
   }
-  return { stillProcessing: true };
+  if (tradeStatus === '0' || tradeStatus === '4' || tradeStatus === '9') {
+    return { stillProcessing: true };
+  }
+  // 8（待確認）、碼表外、缺欄位：不確定的資料絕不拿來標記訂單（業主 2026-11-05
+  // 互動選項「當未知交人工」）——對帳迴圈不會標 expired，改寫 error 告警。
+  return {
+    stillProcessing: true,
+    unknownStatus: { tradeStatus, reason: tradeStatus ? 'unknown_code' : 'missing_field' },
+  };
 }
 
 // ============================================================
@@ -2912,31 +3113,51 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
     return c.json({ error: 'unauthorized' }, 401);
   }
 
+  // body 只用來讀 trigger（pg_cron／github，其餘記 manual）；舊版 workflow 不帶 body。
+  const body = await c.req.json().catch(() => null);
   try {
-    // 先跑自癒 pass：把「已存有 PayUni SUCCESS 回應」的卡單直接收斂成
-    // 訂閱（migration 0007），不需要 PayUni 查詢 API。補完的訂單會離開
-    // pending，下面的掃描自然不會再碰到。
-    const { data: healSummary, error: healError } = await sb()
-      .rpc('complete_paid_pending_orders', { p_user_id: null });
-    // ⚠️ 已知缺口(已評估、刻意延後,見 friction-log 2026-08-17 記債清單):
-    // 這裡只寫 console.error,而且執行會繼續、端點仍回 { success: true }——
-    // 對排程說謊:安全網的第一段靜默沒跑,reconcile-payments.yml 的回應形狀
-    // 斷言照樣過。沒有一併修的原因是要測「RPC 自己失敗」需要 DDL 級的
-    // fault injection,且改回應契約會動到錢的安全網的監控。
-    // 下一個做 console.error 掃描的人:這個坑已經被看過了,不用重新發現。
-    if (healError) console.error('[reconcile-pending-payments] heal pass 失敗:', healError);
-
-    const summary = await reconcilePendingOrders(
-      sb(),
-      queryPayUniTradeStatus,
-      resolveOrderFromPayUni,
-      { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
+    const response = await runScheduledReconcile(
+      scheduledRunDeps(sb),
+      parseScheduledTrigger(body),
+      {
+        heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
+        reconcile: () =>
+          reconcilePendingOrders(
+            sb(),
+            queryPayUniTradeStatus,
+            resolveOrderFromPayUni,
+            { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
+          ),
+        alertOnce: logSystemAlertOnce,
+        now: () => new Date(),
+        logError: (message, ...detail) => console.error(message, ...detail),
+      },
     );
-    return c.json({ success: true, data: { ...summary, heal: healSummary ?? null } });
+    // deno-lint-ignore no-explicit-any
+    return c.json(response.body, response.httpStatus as any);
   } catch (e) {
     console.error('[reconcile-pending-payments]', e);
     return c.json({ success: false, error: String(e) }, 500);
   }
+});
+
+// ============================================================
+// GET /internal/scheduler-health
+// 給 GitHub 看門狗（scripts/scheduler-watchdog.py）判斷 pg_cron 是否存活、要不要
+// 補跑。資料來自 scheduler_health() RPC；形狀由
+// scripts/fixtures/scheduler-health/shape.json 釘住。不回帳本明細。
+// ============================================================
+app.get('/internal/scheduler-health', async (c) => {
+  const secret = Deno.env.get('RECONCILE_SECRET');
+  if (!secret || !(await timingSafeEqual(c.req.header('x-internal-secret') ?? '', secret))) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+  const { data, error } = await sb().rpc('scheduler_health');
+  if (error) {
+    console.error('[internal/scheduler-health] 查詢失敗:', error);
+    return c.json({ success: false, error: { message: '查詢排程狀態失敗' } }, 500);
+  }
+  return c.json({ success: true, data });
 });
 
 // ============================================================
@@ -3179,6 +3400,11 @@ app.get('/subscriptions/status', async (c) => {
         sb().from('task_progress').select('total_referrals').eq('user_id', user.id).maybeSingle()
           .then((r) => must(r, 'task_progress')),
       ]);
+      // S6（W5-51）：新約留空時會不會綁預設推薦人——確認框依此分句；讀取失敗整支 500。
+      const freshDefault = await resolveFreshDefaultReferrer(sb(), user.id);
+      if (!freshDefault.ok && freshDefault.reason === 'read_failed') {
+        throw new Error('default referrer 查詢失敗');
+      }
 
       // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
       // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
@@ -3214,6 +3440,7 @@ app.get('/subscriptions/status', async (c) => {
         paidBackfillAmount: paidBackfillCount * 1200,
         freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
         freshForfeitReferrals: tp?.total_referrals ?? 0,
+        freshDefaultReferrerAvailable: freshDefault.ok,
       };
     }
 
@@ -4002,8 +4229,13 @@ function parseSortMode(raw: string | undefined): NetworkSortMode {
     ? (raw as NetworkSortMode)
     : DEFAULT_NETWORK_SORT;
 }
+// 使用者在畫面上看得到的名字：一代真名、二三代遮罩名。搜尋與 name_* 排序都以此為鍵，
+// 否則比對結果與順序會洩漏被遮掉的字元（W5-6）。
+function visibleName(net: Network, uid: string): string {
+  return maskNameByGen(net.profMap[uid]?.name, net.genOf.get(uid) ?? 0);
+}
 function sortNodeIds(net: Network, ids: string[], mode: NetworkSortMode): string[] {
-  const realName = (uid: string) => ((net.profMap[uid]?.name ?? '') as string).trim();
+  const realName = (uid: string) => visibleName(net, uid);
   const joinedMs = (uid: string) => Date.parse(net.joinedAtOf.get(uid) ?? '') || 0;
   // 自身加入時間升冪 → userId 字典序。一律升冪：升冪模式下每個比較鍵方向一致，
   // 降冪就是整體反轉，不會有單一個鍵偷偷反向（同名者的次序曾因此與主鍵相反）。
@@ -4139,9 +4371,9 @@ app.get('/referrals/network/children', async (c) => {
 
 // ============================================================
 // GET /referrals/network/search?q=&sort=
-// 伺服器以「真名」比對（伺服器才有未遮罩名），回傳遮罩後顯示名 +
-// 祖先路徑（一代 → 命中者本身），前端據此自動展開。深代下線因此搜得到，
-// 又不洩漏真名。
+// 一代比對真名；二、三代只比對「遮罩後」使用者看得到的字串（W5-6）——比對真名
+// 會讓人用單字試探還原被遮罩的字元。回傳遮罩後顯示名 + 祖先路徑
+// （一代 → 命中者本身），前端據此自動展開。
 // ============================================================
 app.get('/referrals/network/search', async (c) => {
   const user = await requireAuth(c);
@@ -4150,13 +4382,21 @@ app.get('/referrals/network/search', async (c) => {
   if (!q) return c.json({ error: { message: '缺少搜尋字串' } }, 400);
   const sort = parseSortMode(c.req.query('sort'));
 
+  const withinRate = await rateLimit(
+    `network-search:${user.id}`,
+    NETWORK_SEARCH_RATE_MAX,
+    NETWORK_SEARCH_RATE_WINDOW_SECONDS,
+  );
+  if (!withinRate) {
+    return c.json({ error: { code: 'rate_limited', message: '搜尋過於頻繁，請稍後再試' } }, 429);
+  }
+
   try {
     const net = await loadNetwork(sb(), user.id);
 
     const qLower = q.toLowerCase();
-    const hitIds = net.allIds.filter((uid) =>
-      ((net.profMap[uid]?.name ?? '') as string).toLowerCase().includes(qLower)
-    );
+    // 與畫面上看到的字串一致：maskNameByGen 對一代原樣回傳，所以不必另分支。
+    const hitIds = net.allIds.filter((uid) => visibleName(net, uid).toLowerCase().includes(qLower));
 
     const pathTo = (uid: string): string[] => {
       const path: string[] = [];
@@ -4584,6 +4824,10 @@ export function listingPhotoDeps() {
       warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
     },
     warn: (message: string, ...detail: unknown[]) => console.warn(message, ...detail),
+    scheduledRun: scheduledRunDeps(sb),
+    env: (key: string) => Deno.env.get(key),
+    alertOnce: logSystemAlertOnce,
+    now: () => new Date(),
   };
 }
 const listingPhotoHandlers = createListingPhotoHandlers(listingPhotoDeps());

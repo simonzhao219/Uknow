@@ -2,7 +2,7 @@ import type React from 'react';
 import { useContext, useEffect } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { UserContext } from '../App';
-import { StatusCallout } from './ui/status-callout';
+import { SuspendedNotice } from './SuspendedNotice';
 import { redirectForGate } from '../utils/registrationFlow';
 
 interface RequireMembershipRouteProps {
@@ -66,12 +66,7 @@ export function RequireMembershipRoute({ children, allowExpired }: RequireMember
   if (suspendedBlocked) {
     return (
       <div className="max-w-md mx-auto mt-16">
-        <StatusCallout
-          variant="destructive"
-          title="帳號已停權"
-          titleAs="h2"
-          description="您的帳號目前處於停權狀態，會員功能與刊登已暫停。 若有疑問請聯繫客服。"
-        />
+        <SuspendedNotice />
       </div>
     );
   }

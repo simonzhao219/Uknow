@@ -142,3 +142,36 @@ def test_home_skeleton_matches_the_loaded_layout(page, context, rest_mock, width
         f"{width}px／{view_mode} 下資料到位時這些量跳了（px）：{jumps}。"
         f"骨架 {skeleton}，載入後 {loaded}。結果列載入中要佔位、卡片骨架要跟卡片同形。"
     )
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width", [375, 1280])
+def test_browse_controls_do_not_shift_the_detail_layout(page, rest_mock, service_provider_detail_page, width):
+    """詳情頁：有「‹ 3/12 ›」換篇控制（從首頁點進來）與沒有（直接開連結）時，各區塊位置一致。
+
+    控制放在頁首返回鈕同一列的右側，列高由 44px/36px 的圖示鈕決定、不新增列——這裡量它沒
+    把正方形照片以下的任何區塊往下推。（原規劃的「有脈絡的骨架同形」案例不成立：脈絡只在
+    首頁清單已進快取時才存在，那時詳情頁一律從快取即時渲染、不會出現骨架。）
+    """
+    other = build_public_listing(listing_id="22222222-2222-2222-2222-222222222222", name="另一位服務者")
+    page.set_viewport_size({"width": width, "height": 900})
+    rest_mock.set_public_listings([DETAIL_LISTING, other])
+    rest_mock.serve_public_listing_details([DETAIL_LISTING, other])
+
+    page.goto(f"/service-providers/{DETAIL_LISTING['id']}")
+    expect(service_provider_detail_page.name_heading(DETAIL_LISTING["name"])).to_be_visible()
+    expect(service_provider_detail_page.browse_nav()).to_have_count(0)
+    plain = page.evaluate(_DETAIL_BLOCKS_JS)
+
+    page.goto("/")
+    page.locator(f'a[href="/service-providers/{DETAIL_LISTING["id"]}"]:visible').first.click()
+    expect(service_provider_detail_page.browse_nav()).to_be_visible()
+    expect(service_provider_detail_page.name_heading(DETAIL_LISTING["name"])).to_be_visible()
+    browsed = page.evaluate(_DETAIL_BLOCKS_JS)
+
+    assert plain and browsed, "找不到 lg:grid-cols-2 的版面格線——結構探針過時了，不是版面問題"
+    shifts = {k: browsed[k] - plain[k] for k in plain if abs(browsed[k] - plain[k]) > TOLERANCE_PX}
+    assert not shifts, (
+        f"{width}px 下有換篇控制時這些區塊位移了（px，正值＝往下）：{shifts}。"
+        f"沒有控制 {plain}，有控制 {browsed}。控制要放在返回鈕同一列、不能新增列或增高。"
+    )
