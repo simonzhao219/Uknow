@@ -29,6 +29,7 @@ const OPEN_DIALOG = '[role="dialog"],[role="alertdialog"],[aria-modal="true"]';
 
 export function browseKeyDirection(event: BrowseKeyEvent): 'prev' | 'next' | null {
   if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return null;
+  if (event.repeat) return null; // 按住不放不連續換篇
   if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.defaultPrevented) {
     return null;
   }

@@ -5,7 +5,7 @@
  * 刊登依最近的服務區中心距離排序。只作排序近似，不是行政區判定。動態載入的獨立 chunk，不進 entry。
  *
  * 資料來源：內政部地政司「鄉鎮市區界線(TWD97經緯度)」（內政部國土測繪中心保管），
- *   版本 1140318（民國 114 年 3 月 18 日），政府資料開放平臺資料集 7441。
+ *   版本 1140318（民國 114 年 3 月 18 日），政府資料開放平臺資料集 7441（https://data.gov.tw/dataset/7441）。
  *   中介資料頁：https://www.tgos.tw/MDE/MetaData/CRUD/ViewMetaData?GUID=08cccb3b-2ac9-4459-a3f0-8db0af3c04fc&VIEW_TYPE=only&SOURCE=1
  * 取得：2026-11-07，業主以瀏覽器自 data.gov.tw 資料集 7441 下載後，在實作 session 對話中附檔提供。
  *   檔案「鄉(鎮、市、區)界線1140318.zip」SHA-256：c5dc6c0f9a8cc1aad6758a0a6fb81b203718b37f42c5aa8e684262ca24a7d9dd

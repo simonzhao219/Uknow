@@ -44,6 +44,14 @@ export const setCachedCoords = (next: Coords) => {
   coords = next;
 };
 
+/** 上次離開首頁時畫面用的排序：返回（POP）沿用，不因離開期間才到的座標而重排。 */
+export type HomeOrderMode = 'distance' | 'latest';
+let orderMode: HomeOrderMode | null = null;
+export const getOrderMode = () => orderMode;
+export const setOrderMode = (next: HomeOrderMode) => {
+  orderMode = next;
+};
+
 export const getCachedFilters = () => filters;
 export const setCachedFilters = (next: HomeFilters) => {
   filters = next;
@@ -91,6 +99,7 @@ export function resetHomeView() {
   filters = DEFAULT_HOME_FILTERS;
   scrollY = 0;
   lastViewedId = null;
+  orderMode = null;
 }
 
 /** 回到冷啟動狀態：登出時由 App 呼叫（換帳號不沿用前一人的檢視狀態），測試也用它重置。 */
@@ -101,4 +110,5 @@ export function resetHomeListingsCache() {
   filters = DEFAULT_HOME_FILTERS;
   browseContext = null;
   lastViewedId = null;
+  orderMode = null;
 }

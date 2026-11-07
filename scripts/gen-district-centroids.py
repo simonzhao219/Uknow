@@ -8,7 +8,7 @@
     python3 scripts/gen-district-centroids.py <鄉(鎮、市、區)界線1140318.zip> \\
         --retrieved 2026-11-07 --provided-by "業主以瀏覽器自 data.gov.tw 資料集 7441 下載後提供"
 
-輸入：政府資料開放平臺資料集 7441「鄉鎮市區界線(TWD97經緯度)」的 SHP 壓縮檔
+輸入：政府資料開放平臺資料集 7441（https://data.gov.tw/dataset/7441）「鄉鎮市區界線(TWD97經緯度)」的 SHP 壓縮檔
 （內政部地政司；內政部國土測繪中心保管，版本 1140318＝民國 114/03/18）。
 演算法：每區取多邊形質心（經緯度平面近似）；質心不在區界內（狹長、環狀、離島區）
 則取最大塊多邊形的界內代表點。座標取小數 3 位（約 110 公尺）。
@@ -100,7 +100,7 @@ def main() -> int:
  * 刊登依最近的服務區中心距離排序。只作排序近似，不是行政區判定。動態載入的獨立 chunk，不進 entry。
  *
  * 資料來源：內政部地政司「鄉鎮市區界線(TWD97經緯度)」（內政部國土測繪中心保管），
- *   版本 1140318（民國 114 年 3 月 18 日），政府資料開放平臺資料集 7441。
+ *   版本 1140318（民國 114 年 3 月 18 日），政府資料開放平臺資料集 7441（https://data.gov.tw/dataset/7441）。
  *   中介資料頁：https://www.tgos.tw/MDE/MetaData/CRUD/ViewMetaData?GUID=08cccb3b-2ac9-4459-a3f0-8db0af3c04fc&VIEW_TYPE=only&SOURCE=1
  * 取得：{args.retrieved}，{args.provided_by}。
  *   檔案「鄉(鎮、市、區)界線1140318.zip」SHA-256：{sha256}

@@ -63,6 +63,8 @@ import { MobilePhotoWallCard } from './home/MobilePhotoWallCard';
 import type { PublicListingRow } from '../types/listing';
 import {
   getCachedCoords,
+  getOrderMode,
+  setOrderMode,
   getCachedFilters,
   freezeBrowseContext,
   getBrowseContext,
@@ -186,8 +188,11 @@ export function HomePage() {
   // 原本寫死台北市政府座標，對非台北使用者的距離排序具誤導性；
   // 未授權 / 不支援時保留後端的最新排序（created_at desc），不假裝依距離。
   // 初值取快取座標：返回時首次渲染就是由近到遠，不會先 created_at 再跳成距離排序。
+  // 返回時若離開前畫面是最新序（座標當時還沒到），本次造訪就不採用座標：沿用離開前的順序，
+  // 否則返回後定位立刻命中瀏覽器快取，會在使用者眼前重排。PUSH 進首頁已由 resetHomeView 清掉。
+  const [keepLatestOrder] = useState(() => getOrderMode() === 'latest');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(() =>
-    getCachedCoords(),
+    getOrderMode() === 'latest' ? null : getCachedCoords(),
   );
 
   // 區中心座標表（動態 chunk，不進 entry；與清單 fetch、定位、permissions.query 在掛載時並行）。
@@ -230,7 +235,7 @@ export function HomePage() {
   const applyGeo = (next: { coords?: Coords; table?: DistrictTable }) => {
     // 已有座標（返回路徑的快取、或本次造訪已定位）就不再收新座標：新座標只會讓使用者眼前的
     // 順序靜默重排；首頁已卸載（使用者在詳情頁時才到）也不寫快取，否則返回時順序跟離開前不同。
-    if (next.coords && (coordsRef.current || !mountedRef.current)) return;
+    if (next.coords && (keepLatestOrder || coordsRef.current || !mountedRef.current)) return;
     const wasDistance = !!(coordsRef.current && tableRef.current);
     if (next.coords) {
       coordsRef.current = next.coords;
@@ -282,8 +287,9 @@ export function HomePage() {
       (pos) => {
         applyGeo({ coords: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
       },
-      // 失敗不清掉既有座標：排序沿用已經顯示的那一個，不為一次逾時就跳回最新排序
-      () => {},
+      // 失敗不清掉既有座標：排序沿用已經顯示的那一個，不為一次逾時就跳回最新排序；
+      // 也不再等（POSITION_UNAVAILABLE、快速逾時時不必白等滿 1.5 秒）。
+      () => setGeoWaiting(false),
       { timeout: 8000, maximumAge: 300000 },
     );
   }, []);
@@ -374,6 +380,10 @@ export function HomePage() {
   );
 
   displayedRef.current = !showSkeleton && filteredServiceProviders.length > 0;
+  const orderedByDistance = !!(userCoords && districtTable);
+  useEffect(() => {
+    if (!showSkeleton) setOrderMode(orderedByDistance ? 'distance' : 'latest');
+  }, [showSkeleton, orderedByDistance]);
 
   // 座標晚到造成的重排：套用新順序後做 FLIP，並維持視窗內第一張可見卡的視覺位置（W5-29）。
   useLayoutEffect(() => {
