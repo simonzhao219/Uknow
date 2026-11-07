@@ -44,6 +44,7 @@ const kaohsiung: PublicListingRow = {
 const SKELETON = { name: '載入服務者資料中' };
 
 let geoCallbacks: Array<() => void> = [];
+let geoErrors: Array<() => void> = [];
 const animate = vi.fn();
 const scrollBy = vi.fn();
 let permission: 'granted' | 'prompt' | 'denied' | 'absent' = 'granted';
@@ -80,6 +81,7 @@ beforeEach(() => {
   order.mockReset();
   order.mockResolvedValue({ data: [taipei, kaohsiung], error: null });
   geoCallbacks = [];
+  geoErrors = [];
   permission = 'granted';
   reduced = false;
   animate.mockReset();
@@ -102,7 +104,8 @@ beforeEach(() => {
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
     value: {
-      getCurrentPosition: (ok: (p: unknown) => void) => {
+      getCurrentPosition: (ok: (p: unknown) => void, err?: () => void) => {
+        if (err) geoErrors.push(err);
         geoCallbacks.push(() => ok({ coords: { latitude: 22.6273, longitude: 120.3014 } }));
       },
     },
@@ -258,5 +261,38 @@ describe('HomePage 座標只在首次定位時採用', () => {
     expect(names()[0]).toBe(kaohsiung.name);
     await grantLocation();
     expect(names()[0]).toBe(kaohsiung.name);
+  });
+});
+
+describe('HomePage 返回時的排序依據', () => {
+  it('離開前是最新序，離開期間座標才到，返回後定位再回來也不重排', async () => {
+    permission = 'prompt';
+    const first = await mountHome();
+    await flush();
+    expect(names()[0]).toBe(taipei.name);
+    first.unmount();
+    await grantLocation(); // 離開期間才到的座標
+
+    geoCallbacks = []; // 返回後新掛載的定位請求（瀏覽器快取會立刻回）
+    order.mockReturnValueOnce(new Promise(() => {}));
+    await mountHome();
+    await flush();
+    await grantLocation();
+    expect(names()[0]).toBe(taipei.name);
+    expect(animate).not.toHaveBeenCalled();
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+});
+
+describe('HomePage 定位失敗的等待', () => {
+  it('定位回報錯誤時立刻解除等待，以最新順序顯示', async () => {
+    await mountHome();
+    await flush();
+    expect(names()).toEqual([]);
+    await act(async () => {
+      for (const cb of geoErrors) cb();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(names()[0]).toBe(taipei.name);
   });
 });

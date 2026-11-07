@@ -9,6 +9,7 @@ export interface BrowseKeyEvent {
   altKey?: boolean;
   shiftKey?: boolean;
   defaultPrevented?: boolean;
+  repeat?: boolean;
 }
 
 const TEXT_FIELDS = 'input,textarea,select,[contenteditable=""],[contenteditable="true"]';

@@ -15,6 +15,10 @@ describe('browseKeyDirection', () => {
     expect(on(document.body, 'ArrowRight')).toBe('next');
   });
 
+  it('按住不放的重複按鍵不處理，避免連續換篇', () => {
+    expect(on(document.body, 'ArrowRight', { repeat: true })).toBeNull();
+  });
+
   it('其他按鍵不處理', () => {
     expect(on(document.body, 'ArrowUp')).toBeNull();
     expect(on(document.body, 'Enter')).toBeNull();
