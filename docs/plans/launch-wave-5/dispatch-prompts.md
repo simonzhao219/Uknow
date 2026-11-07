@@ -165,5 +165,17 @@ S2（#510）留下的已知限制：fresh 換線的 profiles 寫入發生在建�
 
 ## R5. 第 5 波審查（Opus，審查 session，唯讀；分支 `docs/wave5-review`）——晉升後才開
 
-（晉升後由主 session 依實際合併的 PR 補寫；格式比照 `git show 3a7f506:docs/plans/launch-wave-4/dispatch-prompts.md` 的 R4 段，兼做 `launch-wave-4/` 退場：
-依 R4 §6 升級表逐條處置，四份 audit 未修項確認已在 `launch-wave-5/plan.md` §5 或規格書 §14 後 `git rm -r docs/plans/launch-wave-4/`。）
+```text
+你是 Uknow 第 5 波的審查 session（每波一個）。主 session 是 session_01MQovbBpvF5cMi5BqUrAH86。三種 session 的分工見 docs/README.md〈慣例〉：審查 session 不改產品碼；**不要直接用 Supabase MCP**（會跳權限核准、無人按會卡住），正式站／develop 的唯讀 SQL 用 send_message 交主 session 代跑。
+先 `git fetch origin develop main claude/quirky-pasteur-hjb0pv` 並讀：`git show origin/claude/quirky-pasteur-hjb0pv:docs/plans/launch-wave-5/plan.md`（§0 裁決 W5-1～68、§2 工作分解、§4 晉升清單、§5 第 6 波候選、§8 進度；該分支若已合併就讀 develop 上同一檔）、docs/plans/launch-wave-4/review.md（上一波報告格式、§5 待辦與 §6 升級表）。
+審查範圍：`git log --first-parent 26c5ae8..f5a1ed8`（第 5 波晉升 #516，main=f5a1ed8）。程式 PR：#507 S5、#508 S3、#510 S2、#512 S1、#513 S8、#511 S4、#514 S6、#509 S7、#515（正式站 PostHog key）。行號引用 main f5a1ed8 的樹。#510、#511、#512、#514、#509 合併前已有獨立 Opus 審查（P0／P1 清零），報告摘要在各 PR 內文與 plan §8；你要找的是那幾輪沒看到的、跨 PR 的交互（例：S2 的 prepare_payment_order 與 S6 六參數版、S1 的排程帳本與 S6 W5-61 批次 try 鎖、S4 錄影遮罩與 S7 新頁面元件）。
+做法：
+1. 四視角（系統／架構／UIUX／需求）審全部程式變動；金流與推薦（S2、S6、S1）為重點：鎖序、子交易隔離、告警吞例外、冪等、migration 在正式站的資料面效果。每條發現附「具體輸入 → 錯誤結果」，再自己做一輪反駁，推翻或降級的另列。可派子 agent 平行，但結論由你核實。
+2. 未驗項核對：逐支讀 PR 內文「未驗／待真實觸發／偏離」，對照 plan §8 與 Actions，寫成 §2 表格（已知：S7 手機實測 W5-66 業主回報通過；PostHog 只在正式站、晉升前未在 develop 驗證 W5-68；W5-62 部署順序檢查仍靠人工）。
+3. 上線後現場：正式站部署 run 42365227288（含 /health sha）、deploy-smoke 42366062154、乙段 `invoke_internal_endpoint('reconcile')` 200、pg_cron 首輪。需要的查詢（scheduled_job_runs 的 unknownStatus／missing_field 計數 W5-44②、system_alerts 新增、referral_pair_history 18 列對照、king_round_base 告警）寫成唯讀 SQL send_message 給主 session。
+4. 流程：本波三種 session 的分工、框架摩擦寫進 friction-log 新節（至少收：容器重啟讓背景審查員結果遺失、RECONCILE_SECRET 四處同值難以核對（W5-67）、TGOS 對雲端 IP 回 403（W5-64）、PostHog 免費方案限 1 project（W5-68）、pre-commit 對 feat: 前綴＋改測試的 TDD 提示）。
+5. 兼做 `launch-wave-4/` 退場：依 launch-wave-4/review.md §6 升級表逐條處置；四份 audit（audit-{pay,ref,auth,ops}.md）未修項確認已在 launch-wave-5/plan.md §5 或規格書 §14，缺的補進第 6 波候選；然後 `git rm -r docs/plans/launch-wave-4/`，跑 python3 scripts/check-plans-scaffold.py。
+6. 報告寫 docs/plans/launch-wave-5/review.md：§1 發現（P0／P1／P2，P2 表格附檔案:行與建議）、§2 未驗項、§3 上線後現場、§4 流程、§5 給主 session／業主的待辦、§6 升級進長期文件表（launch-wave-5/ 退場依據，由第 6 波 R6 執行）。**P0 立刻 send_message 主 session**（會開 hotfix），不要等報告寫完。
+7. 分支 docs/wave5-review 從 origin/develop 切；PR 回 develop（draft，內文照 template），開完 subscribe_pr_activity，CI 綠轉 ready、不自己合併。commit 與 push 分兩次 Bash 呼叫。完成後 send_message 主 session：P0／P1／P2 數、需業主裁決的題目與你的建議。
+用語（W5-53）：寫給業主看的不用「下線／上線」，一律「推薦人／您推薦的會員／一代二代三代」。不寫模型名進 commit／PR。GitHub 留言結尾加 Claude Code 署名 footer。
+```
