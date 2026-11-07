@@ -3384,7 +3384,7 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **流程（一次學到）**：紅燈期改「既有測試期望」時要一次改齊同形斷言（漏一條就要走逃生口）；主 session 的同類掃描建議有效，後續階段
   在上鎖前一次改好、未再卡關。
 
-## 2026-11-02｜誤擋／漏網（流程、環境）｜第 4 波審查（`docs/plans/launch-wave-4/review.md`）
+## 2026-11-02｜誤擋／漏網（流程、環境）｜第 4 波審查（`git show e6c2835:docs/plans/launch-wave-4/review.md`）
 
 - **雲端 session 業主打不了 `! rm .claude/tdd-lock`**（誤擋，第 2 次出現）：T1-B 兩次（W4-20 參數期望；mock 隔離那次 #488 內文自稱「W4-21」，與 plan 的 W4-21〔pages.dev 導向〕撞號，裁決編號只該由主 session 發）、F1 一次（W4-10）
   都卡在「再由人解鎖」。實際做法收斂成：業主在**該** session 以互動選項授權 → Claude 代刪鎖 → 授權原話寫進 PR「偏離規劃」。
@@ -3466,3 +3466,33 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   可以一次拿授權。
 
 處置：第 1 條待下次框架整併；其餘為測試／規劃寫法教訓，不另立規則。
+
+## 2026-11-07｜誤擋／漏網（流程、環境）｜第 5 波審查（`docs/plans/launch-wave-5/review.md`）
+
+- **容器重啟讓背景審查員的結果遺失**（漏網，環境）：#509 的獨立 Opus 審查第一次派出後，主 session 的雲端 worker 重啟，
+  背景 agent 的回報沒有送達，只能重派（plan §8 11/07 14:20）。背景 agent 的結論只活在 session 記憶體裡，重啟就沒了；
+  重派的代價是整輪審查的牆鐘。候選：派審查員時要求它把結論先寫進 scratchpad 檔（或 PR 留言草稿）再回報，主 session
+  重啟後先讀 notifications 再找檔；〈慣例〉「重啟後先讀 notifications」已有，缺的是「背景工作的落地點」。
+- **RECONCILE_SECRET 四處同值、無從核對**（漏網，營運）：同一把密鑰要在 GitHub secret、正式站 Edge、develop Edge、
+  兩環境的 Vault（`uknow_internal_secret`）保持一致，平台都不讓讀回原值。develop 的 Vault 與 Edge 不一致時，pg_cron 連續
+  三輪拿 401（06:07～08:07 UTC），原值無人持有，只能整組換新（W5-67）。候選：Edge 提供只回雜湊前綴的指紋端點（受同一把
+  密鑰保護時就失去意義，改由 service_role 呼叫的 RPC 比對 Vault 與 Edge 的 HMAC 指紋）；換新腳本收進 `scripts/` 並在
+  `docs/supabase-setup-checklist.md` 寫明「四處」清單；兩環境分密鑰（W5-15 暫不分）時一起做。
+- **TGOS 對雲端 IP 回 403**（誤擋，環境）：`www.tgos.tw` 放行代理白名單、維護結束後仍對雲端機器回 HTTP 403（疑 WAF），
+  界線資料只能由業主用瀏覽器下載後附檔（W5-64）。教訓：政府資料站「白名單放行」不等於「拿得到」；外部資料依賴要在規劃期
+  就實測下載（不是只測首頁），拿不到就先排業主手動下載，並記 SHA-256／URL／日期。
+- **PostHog 免費方案只給 1 個 project**（漏網，規劃）：S4 規劃假設 develop、正式站各一個 project（W5-35），到晉升前才發現
+  第 2 個要綁卡升級，改成只給正式站、develop 不驗證（W5-68）——上線前少了一道在 develop 驗錄影遮罩的關卡，改靠上線當天
+  人工抽看（W5-39）。教訓：第三方服務的方案限制（project 數、保留期、事件額度）列進規劃的「外部依賴」段，規劃審查時就問。
+- **pre-commit 對「feat: 前綴＋改測試」給 TDD 紅燈提示**（誤擋，流程）：主 session 回報綠燈後補測試的 commit 被當成紅燈期
+  的情境提示，訊息指向 `touch .claude/tdd-lock`，對已在綠燈的執行 session 是誤導。R5 在 `scripts/git-hooks/pre-commit` 只找到
+  `npm run check` 未過時的固定提示（:91-92），沒找到依 commit 前綴分流的邏輯——出處待主 session 補（可能是 check 偶發紅
+  被誤讀成紅燈提示）。候選：提示只在「staged 有測試檔且 check 失敗在 vitest」時印，並先印失敗的測試名。
+- **三種 session 分工本波照〈慣例〉走**（流程）：主 session 沒寫產品碼（#515 只改 `config/posthogTarget.ts` 常數，屬設定）；
+  9 支程式 PR 都由執行 session 施工，其中 5 支合併前加派獨立審查員；裁決編號全由主 session 發，沒有再撞號。
+  審查 session 開在部署後約 1 小時（11/07 晉升當天），§3 的 pg_cron 首輪與 24 小時數字仍靠主 session 代跑。
+- **第 4 波裁決原文隨 `launch-wave-4/` 退場**：產品碼註解（約 30 檔）引用 W4-x 編號，裁決原文在
+  `git show e6c2835:docs/plans/launch-wave-4/plan.md` §0；四份稽核在同一 commit 的 `audit-{pay,ref,auth,ops}.md`。
+
+處置：第 1、2 條列入下次框架整併（第 2 條含 `scripts/` 換新腳本）；第 3、4 條為規劃寫法教訓，寫進下次 `/plan-feature`
+「外部依賴」檢查題；第 5 條待主 session 補出處後再定；第 6、7 條為紀錄。
