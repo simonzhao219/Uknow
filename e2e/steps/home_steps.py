@@ -27,6 +27,8 @@ def _parse_names(names: str):
 _CITY_COORDS = {
     "台北市": {"latitude": 25.0330, "longitude": 121.5654},
     "高雄市": {"latitude": 22.6273, "longitude": 120.3014},
+    # 區級排序用：高雄苓雅區中心附近
+    "高雄市苓雅區": {"latitude": 22.623, "longitude": 120.32},
 }
 
 
@@ -59,6 +61,15 @@ def directory_add_city_listing(rest_mock, directory, name, city):
     # Accumulates across steps, preserving insertion order (which HomePage keeps
     # as the default "most recent first" order until distance sort reorders it).
     row = build_public_listing(listing_id=_listing_id(len(directory) + 1), name=name, city=city)
+    directory[name] = row
+    rest_mock.set_public_listings(list(directory.values()))
+
+
+@given(parsers.parse('the public directory has a listing "{name}" in "{city}" serving "{district}"'))
+def directory_add_district_listing(rest_mock, directory, name, city, district):
+    row = build_public_listing(
+        listing_id=_listing_id(len(directory) + 1), name=name, city=city, districts=[district]
+    )
     directory[name] = row
     rest_mock.set_public_listings(list(directory.values()))
 
