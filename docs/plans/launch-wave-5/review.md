@@ -13,7 +13,7 @@ deploy-supabase run 42365227288 於 10:56 UTC 完成，含 `/health` sha 比對�
 PaymentCheckout 的 outcome 分支派一個子 agent；PR 未驗項與 Actions、第 4 波退場盤點各派一個子 agent。子 agent 的候選由本 session
 逐條讀碼核實後才收（§1.4 列推翻與降級）。
 
-**總結：P0 0、P1 0、P2 8。** 點名的三組交互都核實沒有問題（§1.1）。最值得先修的是 P2-1：PaymentCheckout 對 prepare 的
+**總結：P0 0、P1 0、P2 9。** 點名的三組交互都核實沒有問題（§1.1）。最值得先修的是 P2-1：PaymentCheckout 對 prepare 的
 「自己的推薦碼／碼已失效」400 沒有專屬處理，欄位仍顯示已驗證，使用者會一直重按。另有一條既有缺陷（P2-5）：批次自癒與線上付款的
 profiles 列鎖可以互鎖，W5-61 只修了 advisory 那一種。被選中的一方會漏發獎金、只留 warning，要等下次載入 `/profile` 才會自癒補發。
 
@@ -49,6 +49,7 @@ profiles 列鎖可以互鎖，W5-61 只修了 advisory 那一種。被選中的�
 | P2-6 | `20261113000003_referral_pair_history.sql:229` | 新約 source＝default：0d 用的是付款當下的 `reward_config.default_referrer_code`，不是單上記的碼。後台在建單到付款之間（最長 3 天）換了預設推薦碼 → `v_valid_user`（新預設）≠ `v_ref_user`（舊預設）→ 寫 error「被選的推薦碼在付款當下已停權或失效」並維持原推薦人。告警說錯原因，而且結果與使用者在確認框看到的不一致（確認框寫的是推薦人將改變） | 0d 驗 `v_ref_code`（prepare 已存進 `fresh_referrer_code`）；或保留現行語意，但把告警分成「預設碼已更換」與「失效」兩種 |
 | P2-7 | `supabase/functions/api/index.ts:2858`；`reconcile-handler.ts:18-28` | 帳本 summary 只有 `unknownStatus` 的總數，沒有分 `unknown_code`、`missing_field`、`incomplete_too_long`。W5-44② 要看的「missing_field 計數」只能從 `system_alerts.context->>'statusReason'` 反查，而且告警按訂單去重，同一張單連續多輪只算一次 | summary 加 `unknownByReason`；W5-44② 第一輪先用 §3 的告警查詢代替 |
 | P2-8 | `reconcile-handler.ts:70`、`:73` | heal pass 的結果（`failed`、`skipped_locked`、`amount_mismatch`）只出現在 HTTP 回應，沒寫進帳本 summary。看門狗與 `scheduler_health()` 都看不到「heal 連續失敗」或「連續被換線鎖跳過」。與 pay P2-14 同源（W5-18 已決定不收），但 plan §5 漏列 | 列進第 6 波候選（§6 補遺）；修的時候把 heal 摘要併進帳本 summary |
+| P2-9 | `supabase/migrations/20261112000001_scheduled_job_runs.sql`（`invoke_internal_endpoint` 固定送 `trigger: 'pg_cron'`） | 人工在 SQL Editor 跑 `invoke_internal_endpoint('reconcile')`（乙段驗證就是這樣跑的）→ 帳本記成 `trigger=pg_cron`（正式站 id 1，10:57 UTC）→ `scheduler_health()` 的 `lastPgCronCompletedAt` 被人工那輪刷新。真正的 pg_cron 若剛好在這時停擺，看門狗會晚最多 90 分鐘才發現；現場判讀「首輪」時也會誤認 | 函式加 `p_trigger text default 'pg_cron'` 參數，人工驗證帶 `'manual'`；短期先在晉升清單乙段註明「此列是人工驗證」 |
 
 ### 1.4 被反駁推翻或降級的
 
@@ -99,8 +100,21 @@ profiles 列鎖可以互鎖，W5-61 只修了 advisory 那一種。被選中的�
 - **乙段**（主 session，plan §8 18:58）：`select public.invoke_internal_endpoint('reconcile')` 回 HTTP 200，帳本新增 succeeded 列。
 - **GitHub 排程**：reconcile-payments 11/07 有 03:09（schedule）、08:43（主 session 手動）、10:38（schedule，含看門狗補跑）三支，都 success。
   purge-listing-photos 只有 00:21 一支（排程是 20:47，晚了約 3.5 小時），success。
-- **pg_cron 首輪與 DB 現場**：唯讀查詢已於 11:07 UTC 交主 session 代跑（帳本、cron／pg_net、部署後告警、配對名單來源差集、
-  訂單意圖欄）。**結果待回覆**，回來後補進本節；24～48 小時的數字照 W4-26 由主 session 寫進 plan §8。
+- **pg_cron 首輪與 DB 現場**（主 session 代跑，11:11 UTC）：
+  - **正式站**：
+    - 帳本：id 1（10:57，即乙段人工 invoke，帳本記成 pg_cron，見 P2-9）、id 2（**11:07，真正的 pg_cron 首輪**）兩列都是 succeeded。
+      checked、unknownStatus、incomplete、queryErrors、queryFailures、expired 全為 0，所以 W5-44② 的計數這輪是 0（窗內沒有 pending 單，屬零樣本）。
+    - cron：reconcile 11:07 succeeded；prune-rate-limits、purge-stale-referral-invites succeeded；prune-scheduled-job-runs 與
+      purge-orphan-listing-photos 還沒輪到；5 列都是 active。
+    - pg_net：兩筆都是 200，沒有逾時。
+    - 部署後 `system_alerts` 新增 0 列；無法判讀的單 0；king_round_base／fresh_*／duplicate_payment 等新 source 都是 0。
+    - `referral_pair_history` 18 列 = 來源配對 18；來源缺 0、表內多 0；`king_round_base` 非空 0 列（回填與 W5-8 都乾淨）。
+    - 11/04 之後的訂單 4 筆，都是 completed、首購（renewal_mode null）；沒有 pending。
+  - **develop**：08:34 之後每輪都 succeeded，數字全 0。更早的 01:07～05:07 是 vault_missing、06:07～08:07 是 401，這兩段都是 W5-67 換新前的狀態。
+    五支 job 都有成功紀錄。
+  - **待補**：照片清理首輪（19:17 UTC）的 `dryRun`，用來佐證 `PHOTO_PURGE_LIVE`（主 session 排在 19:25 UTC 檢查；業主口頭回報已設）；
+    部署後第一、二輪看門狗是否還在補跑。
+  - 結論：沒有回歸跡象。但新約、重複付款、unknown 單都還沒有真實樣本；24～48 小時的數字照 W4-26 由主 session 寫進 plan §8。
 
 ## 4. 流程
 
@@ -126,7 +140,7 @@ TDD 提示（出處待主 session 補）、W4-x 裁決原文的取回指令。
 | # | 事 | 給誰 | 建議 |
 |---|---|---|---|
 | 1 | 上線當天抽看 5～10 支錄影（W5-39），順手看 Network 面板（`/array/<key>/config`、`/flags` 不含 token、沒有 logs 端點請求）與 `/payment/*`、`/admin` 版面；回報 PostHog 專案端勾選（plan §6-6） | 業主 | 必做。develop 沒驗過（W5-68），這是錄影遮罩唯一的現場驗證 |
-| 2 | §3 唯讀查詢的結果；部署後第一、二輪看門狗是否還在補跑；今晚照片清理首輪的 `dryRun` 值（佐證 `PHOTO_PURGE_LIVE`） | 主 session | 結果貼回 R5 或直接寫 plan §8；`dryRun=true` 就請業主補設 |
+| 2 | 部署後第一、二輪看門狗是否還在補跑；今晚照片清理首輪的 `dryRun` 值（佐證 `PHOTO_PURGE_LIVE`） | 主 session | 結果貼回 R5 或直接寫 plan §8；`dryRun=true` 就請業主補設 |
 | 3 | P2-1～P2-4（PaymentCheckout 三條與確認框 portal）是否合成第 6 波一個 `/fix-bug` | 主 session／業主 | **建議合成一支 Sonnet `/fix-bug`**：同一個檔案、同一類「錯誤沒有專屬處理」，P2-1 會讓使用者卡在循環裡 |
 | 4 | 合併 #506：「裁決編號只由主 session 發」「hash 以 PR 內文為準」（`docs/README.md`）與「F1 草稿在 session 失效時也清」（`multi-step-flow-recovery.md`）目前只在 #506 | 主 session | 本 PR 已刪 `launch-wave-4/`（R4 §6 的去處以 #506 為準），#506 要在本 PR 之前或同時合；兩支 PR 不撞檔 |
 | 5 | §6「第 6 波候選補遺」併進 plan §5 | 主 session | 本 PR 不改 plan.md，避免與 #506 衝突 |
@@ -173,7 +187,7 @@ TDD 提示（出處待主 session 補）、W4-x 裁決原文的取回指令。
 
 ### 6.3 第 6 波候選補遺（plan §5 漏列；主 session 併入 §5，§5-5）
 
-本報告：P2-1～P2-4 PaymentCheckout 錯誤分支與確認框 portal（§5-3）；P2-5 批次自癒互鎖；P2-6 新約 default 碼在付款當下重讀；
+本報告：P2-9 `invoke_internal_endpoint` 帶 trigger 參數；P2-1～P2-4 PaymentCheckout 錯誤分支與確認框 portal（§5-3）；P2-5 批次自癒互鎖；P2-6 新約 default 碼在付款當下重讀；
 P2-7 帳本 summary 分 reason；P2-8＝pay P2-14（heal pass 失敗不告警，W5-18 留第 6 波，但 §5 漏列）；三參數版 `prepare_payment_order` drop。
 
 PR 未驗與已知限制：S3（#508）同類掃描未修兩條（`getAccessToken` 出錯回 null；ResetPassword、AuthPage 的 getSession 直接導走）；
