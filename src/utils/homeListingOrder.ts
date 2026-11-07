@@ -1,17 +1,16 @@
 // 首頁清單的「篩選＋排序」純函式——HomePage 與（日後）換篇脈絡共用同一個來源。
 // 搜尋、類別、性別、地區篩選；有座標時由近到遠排序，沒座標保留輸入順序（created_at 倒序）。
 import type { PublicListingRow } from '../types/listing';
-import { calculateDistance, cityCoordinates } from './distance';
 import { listingMatchesDistricts } from './districtSelection';
 import type { Coords, HomeFilters } from './homeListingsCache';
-import type { DistrictTable } from './listingDistanceOrder';
+import { type DistrictTable, sortByDistance } from './listingDistanceOrder';
 import { listingMatchesSearch } from './listingSearch';
 
 export function filterAndSortListings(
   listings: PublicListingRow[],
   filters: HomeFilters,
   coords: Coords | null,
-  _table: DistrictTable | null,
+  table: DistrictTable | null,
 ): PublicListingRow[] {
   const { searchQuery, category, genders, districtsByCity } = filters;
   const selectedCities = Object.keys(districtsByCity);
@@ -38,18 +37,8 @@ export function filterAndSortListings(
     return true;
   });
 
-  // 僅在取得使用者真實定位後，才依「由近到遠」排序；未授權／不支援時保留
-  // 後端的最新（created_at desc）排序，不假裝依距離。
-  if (!coords) return filtered;
-  return [...filtered].sort((a, b) => {
-    const aCoords = cityCoordinates[a.city];
-    const bCoords = cityCoordinates[b.city];
-    if (!aCoords && !bCoords) return 0;
-    if (!aCoords) return 1;
-    if (!bCoords) return -1;
-    return (
-      calculateDistance(coords.lat, coords.lng, aCoords.lat, aCoords.lng) -
-      calculateDistance(coords.lat, coords.lng, bCoords.lat, bCoords.lng)
-    );
-  });
+  // 僅在取得使用者真實定位且座標表已載入後，才依「由近到遠」（區級）排序；
+  // 否則保留後端的最新（created_at desc）排序，不假裝依距離。
+  if (!coords || !table) return filtered;
+  return sortByDistance(filtered, coords, table);
 }

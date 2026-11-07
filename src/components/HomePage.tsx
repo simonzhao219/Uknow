@@ -39,6 +39,8 @@ import {
   type DistrictSelectionByCity,
 } from '../utils/districtSelection';
 import { filterAndSortListings } from '../utils/homeListingOrder';
+import { getLoadedDistrictTable, loadDistrictTable } from '../utils/districtTableLoader';
+import type { DistrictTable } from '../utils/listingDistanceOrder';
 import { readHomeViewMode, writeHomeViewMode, type HomeViewMode } from '../utils/homeViewMode';
 import { HomeViewToggle } from './home/HomeViewToggle';
 import { ListingLink, OpenListingContext } from './home/ListingLink';
@@ -168,6 +170,21 @@ export function HomePage() {
     getCachedCoords(),
   );
 
+  // 區中心座標表（動態 chunk，不進 entry；與清單 fetch、定位並行預載）。
+  // 載入失敗＝維持最新排序（靜默），不影響清單。
+  const [districtTable, setDistrictTable] = useState<DistrictTable | null>(() =>
+    getLoadedDistrictTable(),
+  );
+  useEffect(() => {
+    let alive = true;
+    loadDistrictTable()
+      .then((table) => alive && setDistrictTable(table))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // ✅ 获取所有活跃刊登
   useEffect(() => {
     fetchAllListings({ silent: getCachedListings() !== null });
@@ -260,9 +277,17 @@ export function HomePage() {
         serviceProviders,
         { searchQuery, category: selectedCategory, genders: selectedGenders, districtsByCity },
         userCoords,
-        null,
+        districtTable,
       ),
-    [serviceProviders, searchQuery, selectedCategory, selectedGenders, districtsByCity, userCoords],
+    [
+      serviceProviders,
+      searchQuery,
+      selectedCategory,
+      selectedGenders,
+      districtsByCity,
+      userCoords,
+      districtTable,
+    ],
   );
 
   // 點卡片時凍結「此刻畫面上的順序」給詳情頁換篇用（W5-26）。
