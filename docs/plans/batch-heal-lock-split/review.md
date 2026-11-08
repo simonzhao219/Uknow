@@ -98,4 +98,6 @@ P2 主要採納：migration 一檔多段且排在 S6 前、purge 鍵輸出 null�
 不在測試設 `deadlock_timeout`（superuser 參數）、階段 1 以訊息比對 deadlock、`skipped` 與 `skipped_locked` 混計寫明、truncated 計入 failed streak、
 原因對照常數、20 則上限知悉、W6-10 為對 S1 原文的擴大（§0 溯源）。
 
+主 session 親審 r3（7fc3a362，2026-11-08）：**通過**；W6-11 解讀確認（單筆開通失敗／金額不符的既有 error 告警照舊推 LINE）；W6-14 已補進第 6 波 plan S6；鎖序逐條核過無新環；P2：lock_timeout 還原改用預取前的 current_setting（已併入 plan）。業主開工授權以本 session 親打 `/tdd-implement` 為準。
+
 - [ ] 人審完成，裁決：□ 通過 □ 修訂後通過（豁免理由：） □ 退回重規劃
