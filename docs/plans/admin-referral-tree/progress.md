@@ -10,8 +10,8 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | `referral_award_chain` ＋ 與發獎等價 | ✅ 綠（CI fcdf06a9 run：9 支全過） | 7aa5503d（CI api-tests：9 failed／542 passed，皆為新測試「function does not exist」） | ff41f36b |
-| 2 | 樹節點／搜尋 RPC | 🟡 待 CI 確認綠 | fcdf06a9（CI api-tests：11 failed／551 passed，皆為階段 2 新測試） | （本 commit） |
-| 3 | 會員查帳 RPC（鏈、換線、成環） | ⬜ 未開始 | | |
+| 2 | 樹節點／搜尋 RPC | 🟡 待 CI 確認綠 | fcdf06a9（CI api-tests：11 failed／551 passed，皆為階段 2 新測試） | c5ecd3be |
+| 3 | 會員查帳 RPC（鏈、換線、成環） | 🔴 紅燈中 | （本 commit） | |
 | 4 | 付款查帳＋異常 RPC | ⬜ 未開始 | | |
 | 5 | Edge 端點＋契約＋守門 | ⬜ 未開始 | | |
 | 6 | 前端純函式 | ⬜ 未開始 | | |

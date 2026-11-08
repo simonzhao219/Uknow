@@ -1,6 +1,7 @@
 // ============================================================
 // 後台推薦樹查帳 RPC（第 6 波 S3a 階段 2～4）。
 //
+// 階段 3：admin_referral_member_audit（會員查帳詳情：欄位、往上鏈、換線紀錄、不一致、成環）。
 // 階段 2：admin_referral_tree_nodes（頂層／子層／無法接上推薦樹的會員群組、
 // 分頁與 total、穩定排序、ensureId→pinned、第 N 層）與
 // admin_referral_tree_search（姓名跳脫、推薦碼精確、收人口徑、ancestor_ids
@@ -352,6 +353,246 @@ Deno.test('admin_referral_tree：authenticated 與 anon 不得 EXECUTE 節點與
                has_function_privilege('anon', ${fn}, 'execute') as anon`;
       assertEquals([row.auth, row.anon], [false, false], fn);
     }
+  } finally {
+    await sql.end();
+  }
+});
+
+// ------------------------------------------------------------
+// 階段 3：admin_referral_member_audit（會員查帳詳情）
+// ------------------------------------------------------------
+
+type Audit = {
+  node: Node;
+  upline: { id: string; name: string; referral_code: string | null }[];
+  upline_status: string;
+  rewards: {
+    by_generation: Record<string, number>;
+    available: number;
+    total_earned: number;
+  };
+  tasks: {
+    month_key: string;
+    monthly_count: number;
+    threshold: number;
+    credits_unclaimed: number;
+    credits_claimed: number;
+  };
+  withdrawals: {
+    pending_amount: number;
+    awaiting_collection_amount: number;
+    completed_amount: number;
+  };
+  referrer_history: {
+    past_referrers: { id: string }[];
+    fresh_events: { completed_at: string; new_referrer_id: string; effective: string }[];
+  };
+  referrer_mismatch: boolean;
+  anomalies: string[];
+} & Record<string, unknown>;
+
+async function audit(sql: postgres.Sql, userId: string): Promise<Audit | null> {
+  const [row] = await sql`select public.admin_referral_member_audit(${userId}::uuid) as r`;
+  return row.r as Audit | null;
+}
+
+async function freshOrder(
+  sql: postgres.Sql,
+  userId: string,
+  opts: { referrer: string | null; source: string; completedAt: string },
+) {
+  await sql`
+    insert into public.payment_orders
+      (user_id, amount, status, transaction_id, renewal_mode,
+       fresh_referrer_user_id, fresh_referrer_source, completed_at)
+    values (${userId}, 1200, 'completed', ${'TREE-' + crypto.randomUUID()}, 'fresh',
+            ${opts.referrer}, ${opts.source}, ${opts.completedAt}::timestamptz)`;
+}
+
+Deno.test('admin_referral_member_audit：獎金、點數、提領與推薦計畫欄位 → 依帳本與提領單彙總', async () => {
+  await withSql(async (sql, track) => {
+    const [u, payer1, payer2] = await insertUsers(sql, [
+      '查帳 本人',
+      '查帳 付款人一',
+      '查帳 付款人二',
+    ]);
+    track([u, payer1, payer2]);
+    await subscribe(sql, u);
+    await sql`update public.profiles set referral_program_joined = true,
+              referral_program_joined_at = '2026-10-01T00:00:00Z' where id = ${u}`;
+    await sql`
+      insert into public.reward_transactions (user_id, type, amount, generation, referee_user_id, description)
+      values (${u}, 'referral_reward', 100, 1, ${payer1}, 't'),
+             (${u}, 'referral_reward', 100, 1, ${payer2}, 't'),
+             (${u}, 'referral_reward', 100, 2, ${payer1}, 't')`;
+    await sql`
+      insert into public.withdrawals (user_id, amount, status, fee)
+      values (${u}, 1000, 'pending', 15), (${u}, 2000, 'awaiting_collection', 15),
+             (${u}, 3000, 'completed', 15), (${u}, 4000, 'rejected', 15)`;
+
+    const a = (await audit(sql, u))!;
+    assertEquals(a.rewards.by_generation, { '1': 200, '2': 100, '3': 0 });
+    assertEquals(a.rewards.total_earned, 300);
+    assertEquals(a.withdrawals, {
+      pending_amount: 1000,
+      awaiting_collection_amount: 2000,
+      completed_amount: 3000,
+    });
+    assertEquals(a.node.referral_program_joined, true);
+    assert(String(a.node.referral_program_joined_at).startsWith('2026-10-01'));
+  });
+});
+
+Deno.test('admin_referral_member_audit：推薦王本月進度與 credit → 依 task_progress 與 credit 表', async () => {
+  await withSql(async (sql, track) => {
+    const [u, r1, r2] = await insertUsers(sql, ['查帳 任務', '查帳 任務 推1', '查帳 任務 推2']);
+    track([u, r1, r2]);
+    await subscribe(sql, u);
+    const [{ k }] = await sql`select to_char(now() at time zone 'Asia/Taipei', 'YYYY-MM') as k`;
+    await sql`
+      insert into public.task_progress (user_id, monthly_referrals, total_referrals)
+      values (${u}, jsonb_build_object(${k}::text, jsonb_build_array(${r1}::text, ${r2}::text)), 2)
+      on conflict (user_id) do update set monthly_referrals = excluded.monthly_referrals`;
+    await sql`
+      insert into public.referral_king_rewards (user_id, month_key, round_ordinal, status)
+      values (${u}, '2026-01', 1, 'unclaimed'), (${u}, '2026-02', 1, 'unclaimed')`;
+
+    const a = (await audit(sql, u))!;
+    assertEquals(a.tasks.month_key, k);
+    assertEquals(a.tasks.monthly_count, 2);
+    assert(a.tasks.threshold > 0, '門檻取自 reward_config');
+    assertEquals([a.tasks.credits_unclaimed, a.tasks.credits_claimed], [2, 0]);
+  });
+});
+
+Deno.test('admin_referral_member_audit：往上鏈 → 由近到遠列出推薦人並標 root', async () => {
+  await withSql(async (sql, track) => {
+    const [r, a, b] = await insertUsers(sql, ['查帳鏈 頂', '查帳鏈 一', '查帳鏈 本人']);
+    track([r, a, b]);
+    await subscribe(sql, r);
+    await link(sql, a, r);
+    await link(sql, b, a);
+
+    const res = (await audit(sql, b))!;
+    assertEquals(res.upline.map((u) => u.id), [a, r]);
+    assertEquals(res.upline[0].name, '查帳鏈 一');
+    assertEquals(res.upline_status, 'root');
+    assertEquals(res.anomalies, []);
+  });
+});
+
+Deno.test('admin_referral_member_audit：成環與自己推薦自己 → anomalies 與節點都標出', async () => {
+  await withSql(async (sql, track) => {
+    const [p, q, self] = await insertUsers(sql, ['查帳環 P', '查帳環 Q', '查帳 自推']);
+    track([p, q, self]);
+    for (const u of [p, q, self]) await subscribe(sql, u);
+    await link(sql, p, q);
+    await link(sql, q, p);
+    await sql`update public.profiles set referred_by_user_id = ${self} where id = ${self}`;
+
+    const cyc = (await audit(sql, p))!;
+    assertEquals(cyc.upline_status, 'cycle');
+    assert(cyc.anomalies.includes('cycle'));
+    const groupNode = located(await nodes(sql, { group: 'unplaceable', ensure: p }), p)!;
+    assert((groupNode.anomaly_kinds as string[]).includes('cycle'));
+
+    const s = (await audit(sql, self))!;
+    assert(s.anomalies.includes('self_referral'));
+    const topNode = located(await nodes(sql, { ensure: self }), self)!;
+    assert((topNode.anomaly_kinds as string[]).includes('self_referral'));
+  });
+});
+
+Deno.test('admin_referral_member_audit：往上超過 50 層 → 只列 50 位並標 truncated', async () => {
+  await withSql(async (sql, track) => {
+    const chain = await insertBulkUsers(sql, 52, '查帳深 ');
+    track(chain);
+    await subscribe(sql, chain[0]);
+    for (let i = 1; i < chain.length; i++) await link(sql, chain[i], chain[i - 1]);
+
+    const res = (await audit(sql, chain[51]))!;
+    assertEquals(res.upline.length, 50);
+    assertEquals(res.upline_status, 'truncated');
+    assertEquals(res.anomalies.includes('cycle'), false);
+  });
+});
+
+Deno.test('admin_referral_member_audit：換線紀錄 → 推薦人集合無序、新約事件排除 keep、只有最新一筆可確認', async () => {
+  await withSql(async (sql, track) => {
+    const [x, b, c, d] = await insertUsers(sql, ['換線 本人', '換線 B', '換線 C', '換線 D']);
+    track([x, b, c, d]);
+    await subscribe(sql, x);
+    // 回填形態：pair-history 的 created_at 全部相同，不能當順序。
+    await sql`
+      insert into public.referral_pair_history (referrer_user_id, referee_user_id, first_month_key, created_at)
+      values (${b}, ${x}, '2026-01', '2026-11-01T00:00:00Z'),
+             (${c}, ${x}, '2026-01', '2026-11-01T00:00:00Z')`;
+    await link(sql, x, d);
+    await freshOrder(sql, x, { referrer: c, source: 'code', completedAt: '2026-09-01T00:00:00Z' });
+    await freshOrder(sql, x, {
+      referrer: null,
+      source: 'keep',
+      completedAt: '2026-10-01T00:00:00Z',
+    });
+    await freshOrder(sql, x, {
+      referrer: d,
+      source: 'default',
+      completedAt: '2026-10-15T00:00:00Z',
+    });
+    await sql`update public.profiles set referred_by_changed_at = '2026-10-15T00:00:00Z' where id = ${x}`;
+
+    const res = (await audit(sql, x))!;
+    assertEquals(res.referrer_history.past_referrers.map((r) => r.id).sort(), [b, c, d].sort());
+    assertEquals(
+      res.referrer_history.fresh_events.map((e) => [e.new_referrer_id, e.effective]),
+      [[d, 'confirmed'], [c, 'unknown']],
+      '新到舊；keep 不列；只有最新一筆能確認',
+    );
+  });
+});
+
+Deno.test('admin_referral_member_audit：profiles 與 edges 推薦人不一致 → referrer_mismatch', async () => {
+  await withSql(async (sql, track) => {
+    const [x, y, ok, a, z] = await insertUsers(sql, [
+      '不一致 X',
+      '不一致 Y',
+      '一致',
+      '不一致 A',
+      '不一致 Z',
+    ]);
+    track([x, y, ok, a, z]);
+    for (const u of [x, y, ok]) await subscribe(sql, u);
+    await link(sql, x, z);
+    await sql`update public.profiles set referred_by_user_id = ${a} where id = ${x}`;
+    // profiles 有推薦人、edge 不存在。
+    await sql`update public.profiles set referred_by_user_id = ${a} where id = ${y}`;
+    await link(sql, ok, a);
+
+    assertEquals((await audit(sql, x))!.referrer_mismatch, true, 'profiles 與 edge 指向不同人');
+    assertEquals((await audit(sql, y))!.referrer_mismatch, true, 'profiles 有、edge 沒有');
+    assertEquals((await audit(sql, ok))!.referrer_mismatch, false);
+  });
+});
+
+Deno.test('admin_referral_member_audit：查無此人 → null；回應不含敏感欄位', async () => {
+  await withSql(async (sql, track) => {
+    assertEquals(await audit(sql, crypto.randomUUID()), null);
+    const [u] = await insertUsers(sql, ['查帳 個資']);
+    track([u]);
+    await subscribe(sql, u);
+    const json = JSON.stringify(await audit(sql, u));
+    for (const key of SENSITIVE_KEYS) assertEquals(json.includes(`"${key}"`), false, key);
+  });
+});
+
+Deno.test('admin_referral_member_audit：authenticated 與 anon 不得 EXECUTE', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    const fn = 'public.admin_referral_member_audit(uuid)';
+    const [row] = await sql`
+      select has_function_privilege('authenticated', ${fn}, 'execute') as auth,
+             has_function_privilege('anon', ${fn}, 'execute') as anon`;
+    assertEquals([row.auth, row.anon], [false, false]);
   } finally {
     await sql.end();
   }
