@@ -28,6 +28,12 @@ const BANNED = ['上線', '下線', '傳銷', '直銷'];
 function assertReadable(a: Alert) {
   const head = a.message.slice(0, 200);
   assert(head.includes('下一步'), `前 200 字要有下一步：${a.message}`);
+  // W6-23：下一步交給 Claude Code session 照 runbook 處理，不寫「通知工程人員」。
+  assert(
+    head.includes('下一步：開一個 Claude Code session，請它依 supabase/README〈補發漏發獎金〉核對'),
+    `下一步要指向 Claude Code session 與 runbook：${a.message}`,
+  );
+  assert(!a.message.includes('通知工程人員'), a.message);
   for (const w of BANNED) assert(!a.message.includes(w), `不得出現「${w}」：${a.message}`);
 }
 
@@ -314,7 +320,7 @@ Deno.test('apply_referral_side_effects：三代整批發獎擲錯 → error 告�
     assert(al!.message.includes('三代推薦獎金整批'), al!.message);
     assert(al!.message.includes(`第 1 代推薦人推薦碼 ${upCode}`), al!.message);
     assert(al!.message.includes('每代 100 點'), al!.message);
-    assert(al!.message.includes('人工核對三代並補發'), al!.message);
+    assert(al!.message.includes('核對三代並補發'), al!.message);
     assert(!al!.message.includes('injected batch failure'), al!.message);
     assertReadable(al!);
   } finally {
