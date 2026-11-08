@@ -63,6 +63,10 @@
 | W6-24 | #524 告警在 LINE 通道被截到 60 字（`reconcile-payments.yml` 每則 `message[:60]`），「下一步」看不到 | 把行動放進前 60 字（「【獎金未發・請開 Claude 依手冊補發】付款單 X 第N代 N點」），測試斷言 `slice(0,60)`；不改 workflow |
 | W6-25 | S3 bundle 總 raw 1950→1975 | 核准：新增全在 lazy 後台 chunk、entry 只 +0.1；與 #523 的 +1 疊加時以 rebase 後實測為準 |
 | W6-26 | S3 實作審查 P2 兩題 | 姓名搜尋做 NFKC；節點列只留到期日（已到期／停權用徽章），「剩 N 天」移到詳情；S3b 做（#521 合併後從 develop 另開分支） |
+| W6-27 | S6：建單後付款前後台換了預設碼，付款時綁誰 | **綁建單時單上記的舊預設**；舊碼失效才維持原推薦人＋告警分「預設碼已更換」「失效」（被推翻：綁付款當下新預設；不換線只修告警）（業主 2026-11-08） |
+| W6-28 | S6：現任推薦人即預設推薦人、新約留空的確認框 | **寫「推薦人維持不變」**；§7.4 寫明「不揭露」只管預設推薦人的姓名與碼（被推翻：改中性句）（業主 2026-11-08） |
+| W6-29 | S6：自己填碼剛好填到預設推薦人者，新約留空付款後標成預設帶入 | **接受**（被推翻：推薦人實際改變才設旗標）（業主 2026-11-08） |
+| W6-30 | S6 Q2／Q3／Q5／Q7 | drop wrapper（W6-14）延第 7 波，等正式站跑過 S1 的 Edge 一輪；#514 P2-3 競態本波不處理、規格書寫明；status 現任推薦人讀取失敗降級成欄位缺；workflow 規則 14＋timeout 都做 |
 
 ## 1. 時程
 
@@ -107,7 +111,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 ## 5. 第 7 波候選
 
-以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
 
 ## 6. 業主待辦
 
@@ -127,8 +131,9 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 ✅ 1bcc377 | 收工 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
-| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 | S3a 完工，獨立審查中 |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 ✅ 47cf195（S3a） | S3b 施工中 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
+| S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | — | 規劃 v2 修訂中 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -154,3 +159,6 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 14:55 | #521 獨立 Opus 審查：**P0 1**（unplaceable 群組 X↔Y 成環，展開狀態用全域 id → 無限遞迴、後台當掉；plan 有寫遇祖先即停但未實作）、**P1 2**（Sheet 關閉後焦點落 body；可判定閘門不看 edge 改線，舊流程棄單＋後來付款修 edge 會誤標「收獎人不符」）。主 session 代查正式站：profiles≠edge 0、有推薦人無 edge 2（未付款）、棄單 fresh 單 0 → 目前不命中。P1-2 處置：列已知殘留＋第 1／2 代那位 profiles≠edge 時改判無法判定。P2 六項本 PR 修；頂層 unplaceable 效能列第 7 波 | S3 修 → CI 綠 → 合 #521 |
 | 11/08 14:55 | S1 修 #524 獨立審查（紅 3d35e5dc／綠 35060de5：W6-24 前 60 字、deadlock 斷言改 sqlstate、lock_timeout 還原護欄、`claim_referral_king_reward` 升 error）；主 session 核 delta 通過。分支落後 develop（#523）→ S1 rebase | S1 rebase → CI 綠 → 合 #524 → 查 develop 函式定義 |
 | 11/08 15:45 | S1 rebase 到 77a87cb（只撞 friction-log），主 session 比對 supabase／src／scripts／.github 的 diff 與審過版本逐位元組相同、CI 全綠 → **#524 合進 develop（1bcc377）**，S1 收工。照 W6-2 開 **S6**（Opus，規劃） | 確認 develop 套用 `20261115000001`、部署後 dispatch reconcile 驗 heal 路徑 |
+| 11/08 18:00 | #524 develop 驗證：`20261114000001`、`20261115000001` 已套；新函式 `complete_paid_pending_order(uuid)`、`list_paid_pending_order_ids`、`invoke_internal_endpoint(p_job, p_trigger)` 在；develop pg_cron 08:07、09:07 UTC 兩輪 reconcile succeeded 且帳本 summary 有 `heal`、`unknownByReason`（07:07 那輪尚無）→ Edge 已是 S1 版本，heal 新路徑實跑無誤（未另 dispatch） | — |
+| 11/08 18:00 | S3 修 #521 獨立審查（P0 renderLayer 帶祖先路徑；P1 焦點回名稱鈕、profiles≠edge 判無法判定；P2 1～6；W6-26），rebase 到 1bcc377、CI 全綠；主 session 核 P0 修法 → **#521 合進 develop（47cf195）**。**本波必上四項（S1、S2、S3a、S5）全數合併**。bundle total 1977.1／1978、entry gzip 316／316 已頂上限 | S3b 施工；S6 規劃 v2；業主手機實測 S4、補設 PHOTO_PURGE_LIVE |
+| 11/08 18:00 | S6 交規劃（P0 0、P1 8、P2 15）。業主裁 **W6-27～29**；主 session 定 **W6-30**。代查：正式站 schema_migrations 91 支（缺的正是本波未晉升 6 支），develop 97 支與 repo 逐支相同 → 無歷史漂移；兩環境 pending fresh 單 0 | S6 修 plan v2 → 主 session 親審 → 業主親打 |
