@@ -18,7 +18,7 @@ const FINDING_TEXT: Record<Exclude<AdminReferralLedgerFindingKind, 'reset_delaye
   refund_missing: '退件的提領沒有恰好一筆正確金額的退款',
   refund_unexpected: '未退件的提領卻有退款',
   orphan_debit: '有帳本扣款對不上這位會員的提領單',
-  orphan_refund: '', // 紅燈 stub
+  orphan_refund: '有退款列指向別人的提領單',
   reset_amount: '新約清空的金額與清空前的餘額不符',
 };
 
@@ -98,7 +98,7 @@ export function LedgerSection({
     const k = f.kind as keyof typeof FINDING_TEXT;
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
-  const hasDelayed = ledger.findings.some((f) => f.kind === 'reset_delayed');
+  const delayedCount = ledger.findings.filter((f) => f.kind === 'reset_delayed').length;
 
   return (
     <section aria-labelledby={id} className="py-4">
@@ -144,7 +144,7 @@ export function LedgerSection({
                       </p>
                       {counts.has('reset_amount') ? (
                         <p className="mt-1 text-xs">
-                          清空當下若有別筆交易同時寫入，金額可能差一筆（多算或少算都有可能）；請先對照該時段的帳本再判斷。
+                          清空當下若有別筆交易同時寫入，金額可能差一筆（多算或少算都有可能），批次自癒期間的清空同樣可能有差；請先對照該時段的帳本再判斷。
                         </p>
                       ) : null}
                     </>
@@ -152,9 +152,10 @@ export function LedgerSection({
                 />
               </div>
             ) : null}
-            {hasDelayed ? (
+            {delayedCount > 0 ? (
               <p className="mb-2 text-xs text-muted-foreground">
-                有一筆延遲補沖的清空，金額以告警快照為準
+                有 {delayedCount} 筆延遲補沖的清空，金額以告警快照為準；快照遺失時補沖
+                0，請對照系統告警。
               </p>
             ) : null}
             {ledger.items.length === 0 ? (

@@ -10,6 +10,8 @@
 --   refund_missing     rejected 的單，帳本恰有一列 type='adjustment'＋withdrawal_id，
 --                      金額 +(amount＋fee)（admin_update_withdrawal_status）
 --   refund_unexpected  反向：非 rejected 的單不得有退款列
+--   orphan_refund      其他帶 withdrawal_id 的列（退款）指向別人的提領單（W6-18「無孤兒
+--                      withdrawal_id」；退款入錯人時收款人這邊也要標）
 --   orphan_debit       type='withdrawal' 但 withdrawal_id 為 null（提領被刪後 FK
 --                      on delete set null 留下的），或指向別人的提領。「指向不存在
 --                      的提領」在結構上不會發生，不另查
@@ -21,6 +23,7 @@
 -- 已知競態（寫在詳情的說明裡）：清空列的 created_at 是付款交易起點，sum 卻在交易中途
 -- 讀。別筆交易先開始、在 sum 之後才提交（該列早於清空卻沒被算進去），或在付款交易開始
 -- 之後才開始、在 sum 之前提交（被算進去卻晚於清空），兩個方向都會差一筆、被標 reset_amount。
+-- 批次自癒（complete_paid_pending_orders，單一交易內處理多筆）期間的清空同理。
 --
 -- admin_referral_ledger_audit(p_user, limit, offset)：帳本明細（新到舊）＋ findings。
 -- 異常 ledger_mismatch（點數跨表核對不符）加進節點與會員詳情：本檔重新定義
@@ -45,7 +48,12 @@ as $$
         is not true
   union all
   -- 2. 退件恰有一列正確金額的退款
-  select 'refund_missing', null::uuid, w.id, false
+  -- 有退款列但金額錯時帶上那一列（取最早一筆），讓明細上那列掛徽章。
+  select 'refund_missing',
+         (select rt.id from public.reward_transactions rt
+          where rt.user_id = p_user and rt.type = 'adjustment' and rt.withdrawal_id = w.id
+          order by rt.created_at, rt.id limit 1),
+         w.id, false
   from public.withdrawals w
   where w.user_id = p_user and w.status = 'rejected'
     and (select count(*) filter (where rt.amount = w.amount + w.fee) = 1 and count(*) = 1
@@ -66,6 +74,12 @@ as $$
   left join public.withdrawals w on w.id = rt.withdrawal_id
   where rt.user_id = p_user and rt.type = 'withdrawal'
     and (rt.withdrawal_id is null or w.user_id <> p_user)
+  union all
+  -- 3'. 其他帶 withdrawal_id 的列（退款）指向別人的提領單：退款入錯人時收款人這邊也要標
+  select 'orphan_refund', rt.id, rt.withdrawal_id, false
+  from public.reward_transactions rt
+  join public.withdrawals w on w.id = rt.withdrawal_id
+  where rt.user_id = p_user and rt.type <> 'withdrawal' and w.user_id <> p_user
   union all
   -- 4. 新約清空：延遲補沖只標資訊，其餘比金額
   select case when coalesce(r.description, '') like '%延遲補沖%' then 'reset_delayed'
@@ -131,7 +145,8 @@ begin
                'description', t.description,
                'generation', t.generation,
                'referee_id', t.referee_user_id,
-               'referee_name', rp.name,
+               -- 被推薦人不在了（帳號刪除）時用寫入當下的姓名快照
+               'referee_name', coalesce(rp.name, t.referee_name),
                'event_at', coalesce(po.completed_at, k.claimed_at),
                'withdrawal_id', t.withdrawal_id,
                'withdrawal_status', w.status,
