@@ -133,7 +133,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 ✅ 1bcc377 | 收工 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
-| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 ✅ 47cf195（S3a） | S3b 施工中 |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 ✅ 47cf195（S3a）、#525 ✅ 4d16618（S3b） | 收工 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
 | S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | — | 規劃 v2.1 親審通過，等業主親打 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
@@ -166,3 +166,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 18:00 | S6 交規劃（P0 0、P1 8、P2 15）。業主裁 **W6-27～29**；主 session 定 **W6-30**。代查：正式站 schema_migrations 91 支（缺的正是本波未晉升 6 支），develop 97 支與 repo 逐支相同 → 無歷史漂移；兩環境 pending fresh 單 0 | S6 修 plan v2 → 主 session 親審 → 業主親打 |
 | 11/08 18:25 | S6 plan v2.1（5726e4eb；第 2 輪四視角 P0 0、P1 2 皆處置）主 session 親審通過，定 **W6-31**；施工提醒：Management API migrations 端點要以 develop 真實回應驗證格式後才合 | 業主到 S6 親打 `/tdd-implement renewal-deploy-closeout` |
 | 11/08 19:00 | S3b 交 **#525**（CI 綠；階段 10 紅燈撞 setup-deno 504 無 CI 證據、已如實記錄；實作審查 P1 2 已修）。主 session 定 **W6-32**，派獨立 Opus 審查：**P0 0、P1 0、P2 8**（四條核對對照現行寫入函式核實、0005 對 0004 唯一差異 ledger_mismatch、突變會紅）。P2-1 批次自癒期間清空可能誤報 → 主 session 代查正式站 `reward_transactions` 無任何 ledger_reset／adjustment／withdrawal 列，只補說明；其餘 P2（孤兒擴到 adjustment、延遲補沖筆數、重複扣款與真寫入函式測試、姓名快照、退款列徽章、刪規劃檔）本 PR 修 | S3 修 → CI 綠 → 合 #525 |
+| 11/09 02:15 | S3 修 #525 獨立審查 P2 1～8（紅 c5e2991e：新增三支行為測試 3 紅／617 綠；綠 1398d7cf；b918751a 刪 `docs/plans/admin-referral-tree/`），主 session 核 delta、CI 全綠 → **#525 合進 develop（4d16618）**，S3 收工 | 剩 S6；業主 S4 手機實測、PHOTO_PURGE_LIVE |
