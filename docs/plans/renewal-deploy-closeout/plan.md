@@ -142,4 +142,4 @@ D（W6-14 drop `complete_paid_pending_orders`）依 W6-30 延第 7 波：main �
 - R2-6（架構 P2）輪詢上限以 `--max-wait 600` 引數傳入，workflow step 註解寫明 `timeout-minutes: 25`＝10（輪詢）＋3（部署重試）＋2（煙霧）＋餘裕。
 - R2-7（UI/UX P2）`aria-describedby`：平時＝hint id；invalid 時＝「錯誤 id hint id」（錯誤在前）。階段 2 兩種都斷言。checking／unavailable 文字的既有 a11y 債不在範圍。
 - R2-8（系統 P2）`fresh_referrer_missing` 的 context 碼不改（唯一差異原則，非本題）。
-- R2-9〔需人工裁決，見 review.md〕自動綁定者（`isAutoReferral`）手動填入恰好等於現任（＝預設）推薦人的碼 → 確認框寫「將改為 {姓名}」，與留空的「維持不變」不一致。要修就得讓前端知道「填的碼等於現任」，等於洩漏預設碼（與 W6-28 衝突）。建議：接受，記入 §6.2 不處理視窗旁一句。
+- R2-9（業主 11/08 18:23 接受）自動綁定者（`isAutoReferral`）手動填入恰好等於現任（＝預設）推薦人的碼 → 確認框寫「將改為 {姓名}」，與留空的「維持不變」不一致。要修就得讓前端知道「填的碼等於現任」，等於洩漏預設碼（與 W6-28 衝突）。建議：接受，記入 §6.2 不處理視窗旁一句。
