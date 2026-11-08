@@ -19,7 +19,7 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
   'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 type Sql = postgres.Sql;
-type Alert = { severity: string; message: string; context: Record<string, string> };
+type Alert = { severity: string; message: string; context: Record<string, unknown> };
 
 let seq = 0;
 const tradeNo = (tag: string) => `S1A-${tag}-${Date.now()}-${seq++}`;
@@ -98,7 +98,7 @@ Deno.test('pay_referral_generations：第 2 代插入擲錯 → error 告警帶�
         trade_no: al.context.trade_no,
         sqlstate: al.context.sqlstate,
       },
-      { generation: '2', beneficiary: a, trade_no: t, sqlstate: 'P0001' },
+      { generation: 2, beneficiary: a, trade_no: t, sqlstate: 'P0001' },
     );
 
     const paid = await sql`
