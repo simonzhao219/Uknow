@@ -1,6 +1,7 @@
 // ============================================================
 // 後台推薦樹查帳 RPC（第 6 波 S3a 階段 2～4）。
 //
+// 階段 4：admin_referral_payment_audit（付款與三代獎金的六種結果、節點付款異常）。
 // 階段 3：admin_referral_member_audit（會員查帳詳情：欄位、往上鏈、換線紀錄、不一致、成環）。
 // 階段 2：admin_referral_tree_nodes（頂層／子層／無法接上推薦樹的會員群組、
 // 分頁與 total、穩定排序、ensureId→pinned、第 N 層）與
@@ -13,7 +14,7 @@
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
-import { ensureEdgeFunctionEnv } from './test-helpers.ts';
+import { adminClient, ensureEdgeFunctionEnv, payForUser } from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
 
@@ -359,6 +360,7 @@ Deno.test('admin_referral_tree：authenticated 與 anon 不得 EXECUTE 節點與
 });
 
 // ------------------------------------------------------------
+// 階段 4：admin_referral_payment_audit（付款與三代獎金的六種結果、節點付款異常）。
 // 階段 3：admin_referral_member_audit（會員查帳詳情）
 // ------------------------------------------------------------
 
@@ -589,6 +591,223 @@ Deno.test('admin_referral_member_audit：authenticated 與 anon 不得 EXECUTE',
   const sql = postgres(DB_URL, { max: 1 });
   try {
     const fn = 'public.admin_referral_member_audit(uuid)';
+    const [row] = await sql`
+      select has_function_privilege('authenticated', ${fn}, 'execute') as auth,
+             has_function_privilege('anon', ${fn}, 'execute') as anon`;
+    assertEquals([row.auth, row.anon], [false, false]);
+  } finally {
+    await sql.end();
+  }
+});
+
+// ------------------------------------------------------------
+// 階段 4：admin_referral_payment_audit（付款與三代獎金）與付款相關異常
+// ------------------------------------------------------------
+
+type GenResult = {
+  generation: number;
+  result: string;
+  reason: string | null;
+  expected_id: string | null;
+  actual_id: string | null;
+  actual_amount: number | null;
+};
+type PaymentItem = {
+  kind: string;
+  event_id: string;
+  at: string;
+  subscription_id: string | null;
+  claim_id: string | null;
+  generations: GenResult[];
+};
+type PaymentAudit = { total: number; items: PaymentItem[] };
+
+async function paymentAudit(
+  sql: postgres.Sql,
+  userId: string,
+  limit = 50,
+  offset = 0,
+): Promise<PaymentAudit | null> {
+  const [row] = await sql`
+    select public.admin_referral_payment_audit(${userId}::uuid, ${limit}::int, ${offset}::int) as r`;
+  return row.r as PaymentAudit | null;
+}
+
+const results = (item: PaymentItem) => item.generations.map((g) => g.result);
+
+// 付款人 X 的推薦鏈 X→A→B→C，X 付款一次（走真的 process_successful_payment）。
+async function paidChain(sql: postgres.Sql, track: (ids: string[]) => void, tag: string) {
+  const [x, a, b, c] = await insertUsers(sql, [
+    `付查 ${tag} X`,
+    `付查 ${tag} A`,
+    `付查 ${tag} B`,
+    `付查 ${tag} C`,
+  ]);
+  track([x, a, b, c]);
+  for (const u of [a, b, c]) await subscribe(sql, u);
+  await link(sql, x, a);
+  await link(sql, a, b);
+  await link(sql, b, c);
+  const { error } = await payForUser(adminClient(), x);
+  assertEquals(error, null);
+  const item = (await paymentAudit(sql, x))!.items[0];
+  return { x, a, b, c, item };
+}
+
+Deno.test('admin_referral_payment_audit：三代都發 → 三代皆 paid 且列出實拿金額', async () => {
+  await withSql(async (sql, track) => {
+    const { a, b, c, item } = await paidChain(sql, track, '全發');
+    assertEquals(item.kind, 'payment');
+    assertEquals(results(item), ['paid', 'paid', 'paid']);
+    assertEquals(item.generations.map((g) => g.actual_id), [a, b, c]);
+    assert(item.generations.every((g) => (g.actual_amount ?? 0) > 0));
+  });
+});
+
+Deno.test('admin_referral_payment_audit：刪掉第 2 代那列 → missing，補發後回到 paid', async () => {
+  await withSql(async (sql, track) => {
+    const { x, item } = await paidChain(sql, track, '缺漏');
+    await sql`delete from public.reward_transactions
+              where referee_user_id = ${x} and generation = 2 and subscription_id = ${item.subscription_id}`;
+
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(results(after), ['paid', 'missing', 'paid']);
+    const node = located(
+      await nodes(sql, { parent: (await audit(sql, x))!.upline[0].id, ensure: x }),
+      x,
+    )!;
+    assert((node.anomaly_kinds as string[]).includes('missing_reward'));
+    const a = (await audit(sql, x))!;
+    assert(a.anomalies.includes('missing_reward'));
+    assertEquals((a.payment_summary as { missing_count: number }).missing_count, 1);
+
+    await sql`select public.pay_referral_generations(${x}::uuid, 100, ${item.subscription_id}::uuid, null, '')`;
+    assertEquals(
+      results((await paymentAudit(sql, x))!.items[0]),
+      ['paid', 'paid', 'paid'],
+      '自癒後缺漏消失',
+    );
+  });
+});
+
+Deno.test('admin_referral_payment_audit：收獎人不是 chain 的人 → recipient_mismatch', async () => {
+  await withSql(async (sql, track) => {
+    const { x, item } = await paidChain(sql, track, '不符');
+    const [other] = await insertUsers(sql, ['付查 不符 他人']);
+    track([other]);
+    await sql`update public.reward_transactions set user_id = ${other}
+              where referee_user_id = ${x} and generation = 1 and subscription_id = ${item.subscription_id}`;
+
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(after.generations[0].result, 'recipient_mismatch');
+    assertEquals(after.generations[0].actual_id, other);
+    assert((await audit(sql, x))!.anomalies.includes('recipient_mismatch'));
+  });
+});
+
+Deno.test('admin_referral_payment_audit：付款後祖先換線 → 三代 undeterminable 且照列實拿', async () => {
+  await withSql(async (sql, track) => {
+    const { x, a, item } = await paidChain(sql, track, '換線後');
+    await sql`update public.profiles set referred_by_changed_at = ${item.at}::timestamptz + interval '1 hour'
+              where id = ${a}`;
+
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(results(after), ['undeterminable', 'undeterminable', 'undeterminable']);
+    assertEquals(after.generations[0].reason, 'changed_after');
+    assert(after.generations.every((g) => g.actual_id !== null), '實拿照列');
+    assertEquals((await audit(sql, x))!.anomalies.includes('missing_reward'), false);
+  });
+});
+
+Deno.test('admin_referral_payment_audit：沒有推薦人與成環 → not_applicable 與 cycle_stopped', async () => {
+  await withSql(async (sql, track) => {
+    const [solo, x, a] = await insertUsers(sql, ['付查 無推薦人', '付查環 X', '付查環 A']);
+    track([solo, x, a]);
+    assertEquals((await payForUser(adminClient(), solo)).error, null);
+    assertEquals(results((await paymentAudit(sql, solo))!.items[0]), [
+      'not_applicable',
+      'not_applicable',
+      'not_applicable',
+    ]);
+
+    await subscribe(sql, a);
+    await link(sql, x, a);
+    await link(sql, a, x);
+    assertEquals((await payForUser(adminClient(), x)).error, null);
+    assertEquals(results((await paymentAudit(sql, x))!.items[0]), [
+      'paid',
+      'cycle_stopped',
+      'cycle_stopped',
+    ]);
+  });
+});
+
+Deno.test('admin_referral_payment_audit：任務續約用 claimed_at 與 claim 鍵、ledger_reset 不誤判', async () => {
+  await withSql(async (sql, track) => {
+    const { x, a, item } = await paidChain(sql, track, '續約');
+    const [claim] = await sql`
+      insert into public.referral_king_rewards
+        (user_id, month_key, round_ordinal, status, claimed_at, resulting_subscription_id)
+      values (${x}, '2026-01', 1, 'claimed', now(), ${item.subscription_id})
+      returning id`;
+    await sql`
+      insert into public.reward_transactions
+        (user_id, type, amount, generation, referee_user_id, source_claim_id, description)
+      values (${a}, 'referral_reward', 100, 1, ${x}, ${claim.id}, 't')`;
+    await sql`insert into public.reward_transactions (user_id, type, amount, description)
+              values (${a}, 'ledger_reset', -100, 't')`;
+
+    const res = (await paymentAudit(sql, x))!;
+    const claimItem = res.items.find((i) => i.kind === 'claim')!;
+    assertEquals(claimItem.claim_id, claim.id);
+    assertEquals(results(claimItem), ['paid', 'missing', 'missing']);
+    const payItem = res.items.find((i) => i.kind === 'payment')!;
+    assertEquals(results(payItem), ['paid', 'paid', 'paid'], 'ledger_reset 不刪獎勵列、不誤判');
+  });
+});
+
+Deno.test('admin_referral_payment_audit：付款單找不到訂閱 → undeterminable no_subscription', async () => {
+  await withSql(async (sql, track) => {
+    const [x, a] = await insertUsers(sql, ['付查 無訂閱 X', '付查 無訂閱 A']);
+    track([x, a]);
+    await subscribe(sql, a);
+    await link(sql, x, a);
+    await sql`
+      insert into public.payment_orders (user_id, amount, status, transaction_id, completed_at)
+      values (${x}, 1200, 'completed', ${'TREE-' + crypto.randomUUID()}, now())`;
+
+    const item = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(item.subscription_id, null);
+    assertEquals(results(item), ['undeterminable', 'undeterminable', 'undeterminable']);
+    assertEquals(item.generations[0].reason, 'no_subscription');
+  });
+});
+
+Deno.test('admin_referral_payment_audit：分頁新到舊、超過 50 筆時節點標 anomaly_scan_truncated', async () => {
+  await withSql(async (sql, track) => {
+    const [x] = await insertUsers(sql, ['付查 多筆']);
+    track([x]);
+    await subscribe(sql, x);
+    await sql`
+      insert into public.payment_orders (user_id, amount, status, transaction_id, completed_at)
+      select ${x}, 1200, 'completed', 'TREE-' || gen_random_uuid(), now() - (g || ' minutes')::interval
+      from generate_series(1, 60) as g`;
+
+    const page = (await paymentAudit(sql, x, 20, 0))!;
+    assertEquals(page.total, 60);
+    assertEquals(page.items.length, 20);
+    const ats = page.items.map((i) => Date.parse(i.at));
+    assertEquals(ats, [...ats].sort((p, q) => q - p), '新到舊');
+    const node = located(await nodes(sql, { ensure: x }), x)!;
+    assertEquals(node.anomaly_scan_truncated, true);
+  });
+});
+
+Deno.test('admin_referral_payment_audit：查無此人 → null；anon 與 authenticated 不得 EXECUTE', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    assertEquals(await paymentAudit(sql, crypto.randomUUID()), null);
+    const fn = 'public.admin_referral_payment_audit(uuid, int, int)';
     const [row] = await sql`
       select has_function_privilege('authenticated', ${fn}, 'execute') as auth,
              has_function_privilege('anon', ${fn}, 'execute') as anon`;
