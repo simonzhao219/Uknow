@@ -884,3 +884,247 @@ Deno.test('admin_referral_tree_search：姓名比對做 NFKC → 全形英數可
     assertEquals(res.matches.map((m) => m.id), [full]);
   });
 });
+
+// ------------------------------------------------------------
+// 階段 10（S3b）：admin_referral_ledger_audit（點數來源明細與跨表核對，規劃 §2.3）
+// ------------------------------------------------------------
+
+type LedgerItem = {
+  id: string;
+  at: string;
+  type: string;
+  source_category: string;
+  amount: number;
+  balance_after: number;
+  description: string | null;
+  referee_id: string | null;
+  event_at: string | null;
+  withdrawal_id: string | null;
+  withdrawal_status: string | null;
+  subscription_id: string | null;
+  finding: string | null;
+};
+type LedgerFinding = {
+  kind: string;
+  transaction_id: string | null;
+  withdrawal_id: string | null;
+  info: boolean;
+};
+type LedgerAudit = { total: number; items: LedgerItem[]; findings: LedgerFinding[] };
+
+async function ledger(
+  sql: postgres.Sql,
+  userId: string,
+  limit = 50,
+  offset = 0,
+): Promise<LedgerAudit | null> {
+  const [row] = await sql`
+    select public.admin_referral_ledger_audit(${userId}::uuid, ${limit}::int, ${offset}::int) as r`;
+  return row.r as LedgerAudit | null;
+}
+
+const mismatchKinds = (l: LedgerAudit) =>
+  l.findings.filter((f) => !f.info).map((f) => f.kind).sort();
+
+// 提領單＋（可選）扣款列。at 用來控制帳本先後。
+async function withdrawal(
+  sql: postgres.Sql,
+  userId: string,
+  opts: { amount: number; status: string; debit?: number | null; at: string },
+): Promise<string> {
+  const [w] = await sql`
+    insert into public.withdrawals (user_id, amount, status, fee, requested_at)
+    values (${userId}, ${opts.amount}, ${opts.status}, 15, ${opts.at}::timestamptz)
+    returning id`;
+  if (opts.debit !== null) {
+    await sql`
+      insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+      values (${userId}, 'withdrawal', ${opts.debit ?? -(opts.amount + 15)}, ${w.id}, '提領',
+              ${opts.at}::timestamptz)`;
+  }
+  return w.id as string;
+}
+
+async function credit(sql: postgres.Sql, userId: string, amount: number, at: string) {
+  await sql`
+    insert into public.reward_transactions (user_id, type, amount, description, created_at)
+    values (${userId}, 'adjustment', ${amount}, '測試入帳', ${at}::timestamptz)`;
+}
+
+Deno.test('admin_referral_ledger_audit：明細新到舊分頁、帶分類與餘額，推薦獎勵帶付款人與付款時點', async () => {
+  await withSql(async (sql, track) => {
+    const { x, a, item } = await paidChain(sql, track, '明細');
+    await withdrawal(sql, a, { amount: 1000, status: 'pending', at: '2099-01-01T00:00:00Z' });
+
+    const page1 = (await ledger(sql, a, 1, 0))!;
+    assertEquals(page1.total, 2);
+    assertEquals(page1.items.length, 1);
+    assertEquals(page1.items[0].source_category, 'withdrawal');
+    assertEquals(page1.items[0].withdrawal_status, 'pending');
+    const page2 = (await ledger(sql, a, 1, 1))!;
+    const reward = page2.items[0];
+    assertEquals(reward.source_category, 'referral_signup');
+    assertEquals(reward.referee_id, x);
+    assertEquals(new Date(reward.event_at!).getTime(), new Date(item.at).getTime());
+    assertEquals(page1.items[0].balance_after, reward.balance_after + page1.items[0].amount);
+    assertEquals(page1.findings, []);
+    assertEquals((await audit(sql, a))!.anomalies.includes('ledger_mismatch'), false);
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：提領扣款缺列、金額不符、兩列 → 都標 withdrawal_debit', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 扣款']);
+    track([u]);
+    await subscribe(sql, u);
+    await credit(sql, u, 50000, '2026-01-01T00:00:00Z');
+    await withdrawal(sql, u, { amount: 1000, status: 'pending', at: '2026-02-01T00:00:00Z' });
+    const none = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'pending',
+      debit: null,
+      at: '2026-02-02T00:00:00Z',
+    });
+    const wrong = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'completed',
+      debit: -1000,
+      at: '2026-02-03T00:00:00Z',
+    });
+    const twice = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'completed',
+      at: '2026-02-04T00:00:00Z',
+    });
+    await sql`insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+              values (${u}, 'withdrawal', -1015, ${twice}, '提領', '2026-02-04T00:00:01Z')`;
+
+    const l = (await ledger(sql, u))!;
+    const flagged = l.findings.filter((f) => f.kind === 'withdrawal_debit').map((f) =>
+      f.withdrawal_id
+    );
+    assertEquals(new Set(flagged), new Set([none, wrong, twice]));
+    assert((await audit(sql, u))!.anomalies.includes('ledger_mismatch'));
+    const node = located(await nodes(sql, { ensure: u }), u)!;
+    assert((node.anomaly_kinds as string[]).includes('ledger_mismatch'));
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：退件缺退款或金額不符、非退件卻有退款 → refund 兩種', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 退款']);
+    track([u]);
+    await subscribe(sql, u);
+    await credit(sql, u, 50000, '2026-01-01T00:00:00Z');
+    const ok = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'rejected',
+      at: '2026-02-01T00:00:00Z',
+    });
+    await sql`insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+              values (${u}, 'adjustment', 1015, ${ok}, '退件', '2026-02-01T01:00:00Z')`;
+    const missing = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'rejected',
+      at: '2026-02-02T00:00:00Z',
+    });
+    const wrong = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'rejected',
+      at: '2026-02-03T00:00:00Z',
+    });
+    await sql`insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+              values (${u}, 'adjustment', 1000, ${wrong}, '退件', '2026-02-03T01:00:00Z')`;
+    const extra = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'pending',
+      at: '2026-02-04T00:00:00Z',
+    });
+    await sql`insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+              values (${u}, 'adjustment', 1015, ${extra}, '退件', '2026-02-04T01:00:00Z')`;
+
+    const l = (await ledger(sql, u))!;
+    const byKind = (k: string) =>
+      l.findings.filter((f) => f.kind === k).map((f) => f.withdrawal_id);
+    assertEquals(new Set(byKind('refund_missing')), new Set([missing, wrong]));
+    assertEquals(byKind('refund_unexpected'), [extra]);
+    assertEquals(l.findings.some((f) => f.withdrawal_id === ok), false);
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：扣款列沒有提領單或指向別人的提領 → orphan_debit', async () => {
+  await withSql(async (sql, track) => {
+    const [u, other] = await insertUsers(sql, ['帳核 孤兒', '帳核 孤兒 他人']);
+    track([u, other]);
+    await subscribe(sql, u);
+    await credit(sql, u, 50000, '2026-01-01T00:00:00Z');
+    const [nullRow] = await sql`
+      insert into public.reward_transactions (user_id, type, amount, description, created_at)
+      values (${u}, 'withdrawal', -1015, '提領', '2026-02-01T00:00:00Z') returning id`;
+    const theirs = await withdrawal(sql, other, {
+      amount: 1000,
+      status: 'pending',
+      at: '2026-02-01T00:00:00Z',
+    });
+    const [crossRow] = await sql`
+      insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+      values (${u}, 'withdrawal', -1015, ${theirs}, '提領', '2026-02-02T00:00:00Z') returning id`;
+
+    const l = (await ledger(sql, u))!;
+    const orphans = l.findings.filter((f) => f.kind === 'orphan_debit').map((f) =>
+      f.transaction_id
+    );
+    assertEquals(new Set(orphans), new Set([nullRow.id, crossRow.id]));
+    const row = l.items.find((i) => i.id === nullRow.id)!;
+    assertEquals(row.finding, 'orphan_debit');
+    assertEquals(mismatchKinds((await ledger(sql, other))!), [], '別人那張單本身的扣款仍正確');
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：清空金額不符 → reset_amount；負餘額清 0 與同時間戳不誤報', async () => {
+  await withSql(async (sql, track) => {
+    const [bad, neg, same] = await insertUsers(sql, ['帳核 清空', '帳核 負餘額', '帳核 同時間']);
+    track([bad, neg, same]);
+    for (const u of [bad, neg, same]) await subscribe(sql, u);
+    await credit(sql, bad, 500, '2026-01-01T00:00:00Z');
+    await sql`insert into public.reward_transactions (user_id, type, amount, description, created_at)
+              values (${bad}, 'ledger_reset', -300, '新約重置：帳本清空', '2026-02-01T00:00:00Z')`;
+    await credit(sql, neg, -50, '2026-01-01T00:00:00Z');
+    await sql`insert into public.reward_transactions (user_id, type, amount, description, created_at)
+              values (${neg}, 'ledger_reset', 0, '新約重置：帳本清空', '2026-02-01T00:00:00Z')`;
+    await credit(sql, same, 500, '2026-01-01T00:00:00Z');
+    await sql`insert into public.reward_transactions (user_id, type, amount, description, created_at)
+              values (${same}, 'ledger_reset', -500, '新約重置：帳本清空', '2026-02-01T00:00:00Z'),
+                     (${same}, 'adjustment', 70, '同一交易', '2026-02-01T00:00:00Z')`;
+
+    assertEquals(mismatchKinds((await ledger(sql, bad))!), ['reset_amount']);
+    assertEquals(mismatchKinds((await ledger(sql, neg))!), []);
+    assertEquals(mismatchKinds((await ledger(sql, same))!), []);
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：延遲補沖的清空 → 只標資訊，不算不符', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 延遲補沖']);
+    track([u]);
+    await subscribe(sql, u);
+    await credit(sql, u, 500, '2026-01-01T00:00:00Z');
+    await sql`insert into public.reward_transactions (user_id, type, amount, description, created_at)
+              values (${u}, 'ledger_reset', -120, '新約重置：帳本清空（延遲補沖）', '2026-02-01T00:00:00Z')`;
+    const l = (await ledger(sql, u))!;
+    assertEquals(mismatchKinds(l), []);
+    assertEquals(l.findings.map((f) => [f.kind, f.info]), [['reset_delayed', true]]);
+    assertEquals((await audit(sql, u))!.anomalies.includes('ledger_mismatch'), false);
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：查無此人 → null；anon 與 authenticated 不得 EXECUTE', async () => {
+  await withSql(async (sql) => {
+    assertEquals(await ledger(sql, crypto.randomUUID()), null);
+    for (const role of ['anon', 'authenticated']) {
+      const [row] = await sql`
+        select has_function_privilege(${role}, 'public.admin_referral_ledger_audit(uuid, int, int)', 'execute') as ok`;
+      assertEquals(row.ok, false, role);
+    }
+  });
+});
