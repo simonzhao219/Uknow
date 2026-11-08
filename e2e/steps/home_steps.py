@@ -199,6 +199,89 @@ def go_previous_listing(service_provider_detail_page):
     service_provider_detail_page.browse_button("上一篇").click()
 
 
+# --- touch drag on the detail page (第 6 波 S4) --------------------------------
+# Real touch input through CDP so the page's `touch-pan-y`, passive listeners and
+# gesture thresholds are exercised, not a synthetic dispatchEvent.
+
+
+@pytest.fixture
+def touch_drag(page):
+    session = page.context.new_cdp_session(page)
+    session.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1})
+    return {"session": session, "end": None}
+
+
+def _touch(session, kind, x, y):
+    points = [] if kind == "touchEnd" else [{"x": x, "y": y}]
+    session.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": points})
+
+
+@given("the browser prefers reduced motion")
+def prefers_reduced_motion(page):
+    page.emulate_media(reduced_motion="reduce")
+
+
+@when(parsers.parse("I drag the detail page content left by {pixels:d} pixels without releasing"))
+def drag_detail_left(page, service_provider_detail_page, touch_drag, pixels):
+    heading = service_provider_detail_page.page.get_by_role("heading", level=1)
+    expect(heading).to_be_visible(timeout=5_000)
+    # Start in the right-hand column on the heading row: not a button, link or the photo carousel.
+    box = heading.bounding_box()
+    start_x, y = 900, box["y"] + box["height"] / 2
+    session = touch_drag["session"]
+    _touch(session, "touchStart", start_x, y)
+    steps = 6
+    for i in range(1, steps + 1):
+        _touch(session, "touchMove", start_x - pixels * i / steps, y)
+    touch_drag["end"] = (start_x - pixels, y)
+
+
+@when("I release the drag")
+def release_drag(touch_drag):
+    _touch(touch_drag["session"], "touchEnd", *touch_drag["end"])
+
+
+def _settled_transform(page):
+    # Two frames: the drag offset is written in requestAnimationFrame.
+    return page.evaluate(
+        """() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+            const el = document.querySelector('[data-browse-motion]');
+            resolve(el ? el.style.transform : null);
+        })))"""
+    )
+
+
+@then("the detail page content should be shifted to the left")
+def content_shifted_left(page):
+    transform = _settled_transform(page)
+    assert transform and transform.startswith("translateX(-"), transform
+
+
+@then("the detail page content should not be shifted")
+def content_not_shifted(page):
+    assert _settled_transform(page) == ""
+
+
+@then("the detail page container should keep room for focus rings")
+def container_keeps_ring_room(page):
+    # overflow-x: clip cuts the 3px focus ring of edge-hugging buttons unless the clip box extends
+    # past the content. Measure real pixels (no reliance on overflow-clip-margin, which Safari lacks):
+    # the back button sits at least 8px inside the clip layer's left edge.
+    gap = page.evaluate(
+        """() => {
+            const layer = document.querySelector('[data-browse-motion]').parentElement;
+            const back = layer.querySelector('button');
+            return back.getBoundingClientRect().left - layer.getBoundingClientRect().left;
+        }"""
+    )
+    assert gap >= 8, gap
+
+
+@then("the page should not scroll horizontally")
+def no_horizontal_scroll(page):
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 # --- Then ------------------------------------------------------------------
 
 
