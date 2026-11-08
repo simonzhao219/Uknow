@@ -77,6 +77,7 @@ import {
   setCachedFilters,
   setCachedListings,
 } from '../utils/homeListingsCache';
+import { prefersReducedMotion } from '../utils/motionPreference';
 
 // 把某張刊登卡捲到畫面中央。手機與桌機兩套版面同時在 DOM 裡（CSS 切換顯示），所以挑
 // 「看得見」的那個；找不到任何一張時回 false，呼叫端退回既有的捲動位置。
@@ -84,10 +85,10 @@ function scrollToListing(id: string): boolean {
   const matches = Array.from(document.querySelectorAll<HTMLElement>(`[data-listing-id="${id}"]`));
   const target = matches.find((el) => el.getClientRects().length > 0) ?? matches[0];
   if (!target) return false;
-  const reduced =
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
+  target.scrollIntoView({
+    block: 'center',
+    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+  });
   return true;
 }
 

@@ -7,7 +7,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | reduced-motion 收口(P2-a) | ⬜ 未開始 | | |
+| 1 | reduced-motion 收口(P2-a) | ✅ 綠 | 09ce2a86 | (本 commit) |
 | 2 | 純函式 browseDrag | ⬜ 未開始 | | |
 | 3 | 抽 hook useBrowseNav＋WAAPI 進場(P2-b) | ⬜ 未開始 | | |
 | 4 | 跟手與放開、手勢起點(P2-e) | ⬜ 未開始 | | |
@@ -17,6 +17,9 @@
 
 ## 目前位置與下一步
 
+階段 1 完成（紅 09ce2a86；守衛測試＝prefers-reduced-motion 字串只准出現在 motionPreference.ts）。**bundle 基線（階段 1 後，develop 現況）：entry raw 1012.3／gzip 315.5／總 raw 1947.1 kB**（預算 1015／316／1950）。下一步：階段 2 純函式 browseDrag.ts。
+
+舊記錄：
 規劃已依 /review-plan 與主 session 裁決 W6-20 修訂（review.md P1-1～11 已併入 plan.md），待主 session 親審後請業主在本 session 親打 `/tdd-implement listing-swipe-transition`。
 
 ## Blockers(逃生口紀錄)
