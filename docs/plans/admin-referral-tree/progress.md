@@ -13,9 +13,9 @@
 | 2 | 樹節點／搜尋 RPC | ✅ 綠（CI 3437af9b：含 in_scope 修正後全過） | fcdf06a9（CI api-tests：11 failed／551 passed，皆為階段 2 新測試） | c5ecd3be＋階段 3 綠燈 commit 的 in_scope 修正 |
 | 3 | 會員查帳 RPC（鏈、換線、成環） | ✅ 綠（CI 3437af9b） | 5c09b834（CI api-tests：階段 3 九支「function does not exist」） | a9dbcdb9 |
 | 4 | 付款查帳＋異常 RPC | ✅ 綠（CI ae25f1be） | 3437af9b（CI api-tests：9 failed／571 passed，皆為階段 4 新測試） | 3a91e5e9 |
-| 5 | Edge 端點＋契約＋守門（5a～5d） | 🟡 本機 unit 218 全綠；DB 側（5c）待 CI | ae25f1be（本機 unit：5a／5b 17 failed；CI api-tests：只有 5c 一支紅、581 passed） | （本 commit） |
-| 6 | 前端純函式 | ✅ 綠（本機 vitest 17 passed） | 894d070e（本機 vitest 16 failed／1 passed——「沒有說明」一支 stub 回 null 碰巧綠） | （本 commit） |
-| 7 | `AdminReferralTree` | ⬜ 未開始 | | |
+| 5 | Edge 端點＋契約＋守門（5a～5d） | 🟡 本機 unit 218 全綠；DB 側（5c）待 CI 682de3fb | ae25f1be（本機 unit：5a／5b 17 failed；CI api-tests：只有 5c 一支紅、581 passed） | d404f520（＋682de3fb 契約分檔，修 bundle 預算） |
+| 6 | 前端純函式 | ✅ 綠（本機 vitest 17 passed） | 894d070e（本機 vitest 16 failed／1 passed——「沒有說明」一支 stub 回 null 碰巧綠） | 96484797 |
+| 7 | `AdminReferralTree` | 🔴 紅燈中 | （本 commit；本機 vitest 12 failed） | |
 | 8 | `ReferralAuditSheet`＋次分頁＋私密 | ⬜ 未開始 | | |
 | 9 | 規格書＋e2e | ⬜ 未開始 | | |
 | 10 | S3b：點數來源與對帳 RPC | ⬜ 未開始 | | |
@@ -23,7 +23,7 @@
 
 ## 目前位置與下一步
 
-業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 4 綠燈與階段 5 紅燈一起推。
+業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 5／6 綠燈已推（682de3fb）；階段 7 紅燈中。
 
 **環境限制**：本容器 `supabase start` 拉不到映像（public.ecr.aws 的 CDN 被網路政策擋），DB 測試（`*.test.ts`）不能本機跑。階段 1～4、5c、5d 的紅綠證據以 CI api-tests 軌為準：紅燈 commit 單獨 push，確認 api-tests 在該測試上紅後才寫實作。deno 已以 `npm i -g deno` 安裝，`deno task check`、unit 測試可本機跑。
 
