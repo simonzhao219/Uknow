@@ -116,7 +116,7 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 
 ## 5. 第 7 波候選
 
-以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；**業主 11/09 新增 2**：電腦版與摺疊機展開態首頁卡片外框不對齊（同一列兩張卡片高度不同，底框參差；業主截圖）。主 session 讀碼初判：桌面網格 `HomePage.tsx` 的 `ServiceProviderCard` 外層 `<Card>` 沒有 `h-full`（手機版 `MobileServiceProviderCard` 有），`ListingLink` 也需撐滿格高；修法方向是卡片撐滿格、描述區固定行數；兩項可合一支 UX 工項；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
 
 ## 6. 業主待辦
 
