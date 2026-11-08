@@ -6,6 +6,11 @@ export interface BrowseGesturesProps {
   /** 照片區以外的滑動由這個容器接。 */
   containerRef: RefObject<HTMLElement | null>;
   onNavigate: (direction: 'prev' | 'next', via: 'key' | 'swipe') => void;
+  /** 跟手時被位移的元素（固定 wrapper，頁首列不在其內）。 */
+  dragTargetRef: RefObject<HTMLElement | null>;
+  /** 去向是否有鄰居：沒有的那一側阻尼加重、放開只播報不換篇。 */
+  hasPrev: boolean;
+  hasNext: boolean;
 }
 
 /**
@@ -15,7 +20,14 @@ export interface BrowseGesturesProps {
  * 照片區內的滑動不在這裡處理（起點在 [data-carousel-scroller] 內就略過）：那裡左右滑是
  * 換照片，滑到盡頭才由 PhotoCarousel 的 onEdgeSwipe 接續換篇。
  */
-export default function BrowseGestures({ containerRef, onNavigate }: BrowseGesturesProps) {
+export default function BrowseGestures({
+  containerRef,
+  onNavigate,
+  // 階段 3 stub：跟手尚未實作，先收下 props 讓型別過。
+  dragTargetRef: _dragTargetRef,
+  hasPrev: _hasPrev,
+  hasNext: _hasNext,
+}: BrowseGesturesProps) {
   const latest = useRef(onNavigate);
   latest.current = onNavigate;
 

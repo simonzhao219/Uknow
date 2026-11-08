@@ -155,7 +155,13 @@ export function ServiceProviderDetail({
   ) : null;
   const gestures = neighbors ? (
     <Suspense fallback={null}>
-      <BrowseGestures containerRef={gestureRef} onNavigate={goBrowse} />
+      <BrowseGestures
+        containerRef={gestureRef}
+        onNavigate={goBrowse}
+        dragTargetRef={motionRef}
+        hasPrev={neighbors.prevId !== null}
+        hasNext={neighbors.nextId !== null}
+      />
     </Suspense>
   ) : null;
   const gestureClass = neighbors ? 'touch-pan-y touch-pinch-zoom' : '';
