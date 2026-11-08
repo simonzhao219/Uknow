@@ -57,6 +57,7 @@
 | W6-14 | S1 舊 wrapper `complete_paid_pending_orders` 何時 drop | **交 S6 drop**；S1 保留並在註解寫明退場由 S6 |
 | W6-19 | S3 Q4～Q7 | 樹顯示「第 N 層」、查帳「第 1／2／3 代」、推薦人鏈「推薦人／往上第 N 位」；樹與搜尋只收曾訂閱過或有推薦對象者；S3a 不動 `pay_referral_generations`，以等價測試釘住；admin-gate 改自動列舉路由（順修 ops P2-4） |
 | W6-20 | S4 Q1～Q5 | WAAPI＋inline transform；手感數值照規劃起步、實測後微調；減少動態不保留淡入；bundle 超標授權 entry raw +2 kB／gzip +0.5 kB（PR 附實測）；手機實測三項列 PR 內文 |
+| W6-21 | S3 v3 的四題 | 推薦人鏈可點＋「在推薦樹中查看」保留；「推薦人資料兩處不一致」資訊提示保留；成環者在頂層樹最後放預設收合群組「無法接上推薦樹的會員（N）」（N=0 不顯示，屬樹的一部分、非異常清單）；§6 自決項同意，MemberDetailSheet 補 SENSITIVE_PORTALS 列第 7 波 |
 
 ## 1. 時程
 
@@ -121,7 +122,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | —（規劃已推） | 規劃 r3 親審通過，等業主親打 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
-| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃交件，等業主裁決 |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃 v3 親審通過，等業主親打 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | — | 規劃親審通過，等業主親打 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
@@ -138,3 +139,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 10:05 | S4 交規劃（/review-plan P0 0、P1 11 組、P2 9 組；純前端，WAAPI 進場、手勢跟手）。業主裁 **W6-10～13**（S1）、**W6-15～18**（S3）；主 session 定 W6-14、W6-19、W6-20（S4）。已轉達 S1、S3、S4 修訂 plan | S1、S3、S4 修訂 → 主 session 親審 → 業主親打 `/tdd-implement` |
 | 11/08 10:15 | S4 plan 修訂（da31fece）主 session 親審通過 | 業主到 S4 親打 `/tdd-implement listing-swipe-transition` |
 | 11/08 10:20 | S1 plan r3（7fc3a362；四視角重審 P0 0、P1 8 皆處置）主 session 親審通過：鎖序核過（heal 持 profiles 時 advisory 一律 try）；W6-11 解讀確認（單筆開通失敗的既有 error 告警照推）；P2：lock_timeout 還原原值。W6-14 補進 S6 列 | 業主到 S1 親打 `/tdd-implement batch-heal-lock-split` |
+| 11/08 10:25 | S3 plan v3（#521 82a72f98；三輪審查，第 3 輪需求／系統 P0 0、P1 0）主 session 親審通過，定 **W6-21** | 業主到 S3 親打 `/tdd-implement admin-referral-tree` |
