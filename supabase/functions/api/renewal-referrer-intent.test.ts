@@ -837,3 +837,159 @@ Deno.test('complete_paid_pending_order：推薦人 profiles 被占用 4 秒 → 
     await deleteTestUsers(client, ids);
   }
 });
+
+// ============================================================
+// 第 6 波 S6（R5 P2-6、W6-27）：source＝default 的新約單，0d 驗的是**單上記的碼**（建單時的預設碼），
+// 不是付款當下 reward_config 的預設碼。舊碼仍有效就綁舊預設推薦人；失效才維持原推薦人，告警依
+// 「預設碼已更換／預設機制已停用／未換」分句，context 帶 current_default_code。
+// ============================================================
+async function withDefault(
+  sql: Sql,
+  run: (set: (code: string | null) => Promise<void>) => Promise<void>,
+) {
+  const [cfg] = await sql`select default_referrer_code from public.reward_config where id = true`;
+  const original = cfg?.default_referrer_code ?? null;
+  const set = async (code: string | null) => {
+    await sql`update public.reward_config set default_referrer_code = ${code} where id = true`;
+  };
+  try {
+    await run(set);
+  } finally {
+    await set(original);
+  }
+}
+
+async function invalidAlert(sql: Sql, userId: string) {
+  return await sql`
+    select message, context from public.system_alerts
+    where source = 'fresh_referrer_invalid' and context->>'user_id' = ${userId}`;
+}
+
+// 原推薦人 y、建單時的預設推薦人 d1、之後換上的預設推薦人 d2；會員 m 在 y 底下、已到期、
+// 以 d1 的碼建 source＝default 的新約單。回傳各 id 與碼供各案改變付款前的狀態。
+async function defaultFreshOrder(client: Client, sql: Sql, ids: string[], tag: string) {
+  const y = await member(client, sql, ids, `${tag} 原推薦人`);
+  const d1 = await member(client, sql, ids, `${tag} 舊預設`);
+  const d2 = await member(client, sql, ids, `${tag} 新預設`);
+  const m = await member(client, sql, ids, `${tag} 會員`, y);
+  await expire(sql, m);
+  const d1Code = await getActiveReferralCode(client, d1);
+  const d2Code = await getActiveReferralCode(client, d2);
+  const t = tradeNo(tag);
+  return { y, d1, d2, m, d1Code, d2Code, t };
+}
+
+Deno.test('process_successful_payment：建單後換了預設碼、舊碼仍有效 → 綁單上的舊預設推薦人、不告警', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26CHG');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(o.d2Code);
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.d1, edge: o.d1 });
+    const [p] = await sql`select referred_by_code from public.profiles where id = ${o.m}`;
+    assertEquals(p.referred_by_code, o.d1Code);
+    assertEquals((await invalidAlert(sql, o.m)).length, 0);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：預設碼已更換且單上碼失效 → 維持原推薦人、告警寫已更換', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26CHGX');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(o.d2Code);
+      await sql`update public.profiles set suspended_at = now() where id = ${o.d1}`;
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.y, edge: o.y });
+    assertEquals(await ledgerResetCount(sql, o.m), 1);
+    const a = await invalidAlert(sql, o.m);
+    assertEquals(a.length, 1);
+    assert(a[0].message.includes('已被更換'), a[0].message);
+    assertEquals(a[0].context.current_default_code, o.d2Code);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：預設碼未換但單上碼失效 → 告警寫停權或失效、不提更換', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26SAME');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await sql`update public.profiles set suspended_at = now() where id = ${o.d1}`;
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.y, edge: o.y });
+    const a = await invalidAlert(sql, o.m);
+    assertEquals(a.length, 1);
+    assert(a[0].message.includes('已停權或失效'), a[0].message);
+    assert(!a[0].message.includes('更換') && !a[0].message.includes('停用'), a[0].message);
+    assertEquals(a[0].context.current_default_code, o.d1Code);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：建單後預設碼被清空、舊碼仍有效 → 仍綁單上的舊預設推薦人', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26UNSET');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(null);
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.d1, edge: o.d1 });
+    assertEquals((await invalidAlert(sql, o.m)).length, 0);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：預設碼被清空且單上碼失效 → 維持原推薦人、告警寫機制已停用', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26UNSETX');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(null);
+      await sql`update public.profiles set suspended_at = now() where id = ${o.d1}`;
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.y, edge: o.y });
+    const a = await invalidAlert(sql, o.m);
+    assertEquals(a.length, 1);
+    assert(a[0].message.includes('已停用'), a[0].message);
+    assertEquals(a[0].context.current_default_code, null);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
