@@ -30,6 +30,8 @@
 
 ## Blockers(逃生口紀錄)
 
+- 2026-11-08 S3b 階段 10：紅燈 4b6bbda5 的 CI（run 42469406061）在「安裝 Deno」撞 GitHub 下載 504，重跑一次仍 504，DB 測試沒跑到；紅燈無 CI 證據。該 commit 時 `admin_referral_ledger_audit` 不存在，新測試必然紅。之後的 commit 一起推上 CI 驗綠。
+
 - 2026-11-08 #521 獨立審查補強（逃生口 2；業主 2026-11-08 在本 session 授權只修下列兩支、由 Claude 刪鎖）：紅燈 666b6e0e 有兩支測試本身寫錯，實作無法也不該讓它們綠：
   1. `AdminReferralTree.test.tsx`「搜尋載入更多在途時停用…」：mock 寫成 `search(_q, offset)`，但實際呼叫是 `search({ q, limit, offset })`，offset 永遠讀不到，第二頁永遠立即回第一頁的資料。修法：mock 改讀 `params.offset`。
   2. `ReferralAuditSheet.test.tsx`「自癒提示只對付款的第 1 代缺漏」：前提來自獨立審查 P2-1，但現行 `repair_orphaned_payments`（20260807000001）在付款的任一代缺漏都會重跑發獎；只有任務續約要第 1 代缺漏才會補。實作依現行函式；測試要改成「付款第 2 代缺漏 → 自癒提示；任務續約只缺第 2 代 → 請回報」。
