@@ -24,8 +24,18 @@ export type ReconcileSummary = {
   queryFailures: number;
   expireErrors: number;
   unknownStatus: number;
+  /** R5 P2-7：unknownStatus 依原因分計（四者和＝unknownStatus）。 */
+  unknownByReason: Record<UnknownReason, number>;
   incomplete: number;
 };
+
+export const UNKNOWN_REASONS = [
+  'unknown_code',
+  'missing_field',
+  'no_matching_trade',
+  'incomplete_too_long',
+] as const;
+export type UnknownReason = typeof UNKNOWN_REASONS[number];
 
 export type ReconcileClassification = 'ok' | 'all_failed' | 'majority_failed';
 

@@ -167,6 +167,12 @@ function fakeHandlerDeps(
         queryFailures: 0,
         expireErrors: 0,
         unknownStatus: 0,
+        unknownByReason: {
+          unknown_code: 0,
+          missing_field: 0,
+          no_matching_trade: 0,
+          incomplete_too_long: 0,
+        },
         incomplete: 0,
         ...summary,
       };
