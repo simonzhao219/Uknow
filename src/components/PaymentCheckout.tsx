@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { createClient } from '../utils/supabase/client';
 import { useNotification } from './notifications/NotificationContext';
 import { buildApiUrl, extractApiErrorCode, extractApiErrorMessage } from '../utils/apiClient';
+import { privateClass } from '../utils/analytics/privacy';
 import { readSession } from '../utils/authErrors';
 import { fetchProfileForSession, PROFILE_FETCH_TIMEOUT_MS } from '../utils/fetchProfile';
 import { useFunnelLogout } from '../hooks/useFunnelLogout';
@@ -15,7 +16,10 @@ import { AuthDegradedNotice } from './AuthDegradedNotice';
 import { SuspendedNotice } from './SuspendedNotice';
 import {
   ACCOUNT_SUSPENDED,
+  ALREADY_ACTIVE_MESSAGE,
   PAYMENT_PENDING_ACTIVATION,
+  REFERRAL_CODE_NOT_APPLICABLE_MESSAGE,
+  REFERRAL_CODE_SELF_MESSAGE,
   REFERRAL_CYCLE,
   RENEWAL_MODE_REQUIRED,
 } from '@contract';
@@ -658,7 +662,8 @@ export function PaymentCheckout() {
           : {}),
       });
 
-      const result = await response.json();
+      // 502／504 的 HTML 閘道頁不是 JSON：解析失敗當 null，下面落到友善文案。
+      const result = await response.json().catch(() => null);
 
       // 快照過時、頁面上沒看到停權時的最後一道（W5-5）：切停權說明，不當一般錯誤。
       if (response.status === 403 && extractApiErrorCode(result) === ACCOUNT_SUSPENDED) {
@@ -693,7 +698,36 @@ export function PaymentCheckout() {
         return;
       }
 
-      if (result.success) {
+      // 驗證之後才被判定不可用（自己的碼、推薦人被停權或碼失效）：比照 CompleteProfile，
+      // 欄位改 invalid、清推薦人名、聚焦——不能留著「已驗證」讓使用者重按循環。
+      if (response.status === 400 && !result?.success) {
+        const rejected = extractApiErrorMessage(result, '');
+        if (
+          rejected === REFERRAL_CODE_NOT_APPLICABLE_MESSAGE ||
+          rejected === REFERRAL_CODE_SELF_MESSAGE
+        ) {
+          setNewCodeStatus('invalid');
+          setNewReferrerName(null);
+          setNewCodeInvalidMessage(rejected);
+          newCodeInputRef.current?.scrollIntoView?.({ block: 'center' });
+          newCodeInputRef.current?.focus();
+          return;
+        }
+        // 另一分頁已付完款，或建單 RPC 鎖內回 active：停在結帳頁、付款鈕仍可按沒有意義。
+        // 強制重抓會員資料後導 /dashboard。
+        if (rejected === ALREADY_ACTIVE_MESSAGE) {
+          showToast(rejected, 'info');
+          await fetchProfileForSession(session as any, {
+            force: true,
+            timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
+          }).catch(() => null);
+          refreshSubscription?.();
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+      }
+
+      if (result?.success) {
         // ✅ 啟動15秒倒計時
         setIsButtonLocked(true);
         setLockCountdown(15);
@@ -722,11 +756,14 @@ export function PaymentCheckout() {
         console.log('PaymentCheckout: Submitting form to PayUni:', result.data.mode);
         form.submit(); // 提交後會跳轉到 PayUni
       } else {
-        showToast(extractApiErrorMessage(result, '準備訂單失敗'), 'error');
+        showToast(
+          result ? extractApiErrorMessage(result, '準備訂單失敗') : '暫時無法建立訂單，請稍後再試',
+          'error',
+        );
       }
     } catch (error: any) {
       console.error('PaymentCheckout: PayUni payment error:', error);
-      showToast(error.message || '付款失敗', 'error');
+      showToast('暫時無法建立訂單，請稍後再試', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -777,7 +814,7 @@ export function PaymentCheckout() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => null);
         console.error('PaymentCheckout: Reset registration error:', errorData);
         throw new Error(extractApiErrorMessage(errorData, '重置註冊狀態失敗'));
       }
@@ -791,7 +828,12 @@ export function PaymentCheckout() {
       navigate('/auth/complete-profile', { state: { editing: true } });
     } catch (error: any) {
       console.error('PaymentCheckout: Error during edit:', error);
-      showToast(error.message || '編輯失敗，請稍後再試', 'error');
+      showToast(
+        error instanceof TypeError
+          ? '編輯失敗，請稍後再試'
+          : error.message || '編輯失敗，請稍後再試',
+        'error',
+      );
     }
   };
 
@@ -1373,7 +1415,7 @@ export function PaymentCheckout() {
 
           {/* AC-15：fresh 的二次確認——內容依情境組合清空數字與補繳警語。 */}
           <AlertDialog open={freshConfirmOpen} onOpenChange={setFreshConfirmOpen}>
-            <AlertDialogContent data-testid="fresh-confirm-dialog">
+            <AlertDialogContent data-testid="fresh-confirm-dialog" className={privateClass()}>
               <AlertDialogHeader>
                 <AlertDialogTitle>確定要以新約重新開始嗎？</AlertDialogTitle>
                 <AlertDialogDescription asChild>

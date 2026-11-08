@@ -65,4 +65,8 @@ export const PRIVATE_ROUTES = ['/payment/checkout', '/payment/result', '/admin']
  */
 export const SENSITIVE_PORTALS = [
   { file: 'components/reward/WithdrawalProcess.tsx', anchor: '<SelectContent' },
+  {
+    file: 'components/PaymentCheckout.tsx',
+    anchor: '<AlertDialogContent data-testid="fresh-confirm-dialog"',
+  },
 ];
