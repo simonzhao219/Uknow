@@ -47,7 +47,6 @@ import {
   REFERRAL_CODE_SELF_MESSAGE,
   REFERRAL_CYCLE,
   RENEWAL_MODE_REQUIRED,
-  RENEWAL_NOTICE_DAYS,
 } from '../_shared/api-contract.ts';
 import type {
   CurrentMonthReferralsResponse,
@@ -4090,7 +4089,7 @@ app.get('/rewards/history', async (c) => {
 //
 // 節點狀態：suspended 優先（正交，擋可見性）；否則兩態 active/expired；
 // active 且距 end_date ≤30 天 → expiring（RENEWAL_NOTICE_DAYS，與前端續訂提醒同一個
-// 契約常數）。
+// 契約常數）。實作在 node-status.ts（deriveNodeStatus，與後台推薦樹共用）。
 // ============================================================
 
 // 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
