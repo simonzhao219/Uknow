@@ -5,13 +5,13 @@
 // 回應通過 api-contract 的 runtime schema，以及查無此人 → 404。
 // ============================================================
 import { assertEquals } from 'jsr:@std/assert@1';
+import { assertShape } from '../_shared/api-contract.ts';
 import {
   AdminReferralMemberAuditResponseSchema,
   AdminReferralNodesResponseSchema,
   AdminReferralPaymentsResponseSchema,
   AdminReferralSearchResponseSchema,
-  assertShape,
-} from '../_shared/api-contract.ts';
+} from '../_shared/admin-referral-contract.ts';
 import {
   adminClient,
   createTestUser,

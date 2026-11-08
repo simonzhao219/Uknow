@@ -20,7 +20,7 @@ import type {
   AdminReferralNodesResponse,
   AdminReferralPaymentsResponse,
   AdminReferralSearchResponse,
-} from '../_shared/api-contract.ts';
+} from '../_shared/admin-referral-contract.ts';
 import { deriveNodeStatus } from './node-status.ts';
 
 export interface AdminReferralTreeDeps {

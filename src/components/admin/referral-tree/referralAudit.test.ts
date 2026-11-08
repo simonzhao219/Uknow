@@ -1,4 +1,4 @@
-import type { AdminReferralNode } from '@contract';
+import type { AdminReferralNode } from '@admin-referral-contract';
 import { describe, expect, it } from 'vitest';
 import {
   anomalyLabel,

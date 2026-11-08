@@ -7,13 +7,13 @@
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { Hono } from 'npm:hono@4';
+import { assertShape } from '../_shared/api-contract.ts';
 import {
   AdminReferralMemberAuditResponseSchema,
   AdminReferralNodesResponseSchema,
   AdminReferralPaymentsResponseSchema,
   AdminReferralSearchResponseSchema,
-  assertShape,
-} from '../_shared/api-contract.ts';
+} from '../_shared/admin-referral-contract.ts';
 import {
   type AdminReferralTreeDeps,
   createAdminReferralTreeHandlers,

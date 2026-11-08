@@ -7,7 +7,7 @@ import type {
   AdminReferralAnomalyKind,
   AdminReferralGeneration,
   AdminReferralNode,
-} from '@contract';
+} from '@admin-referral-contract';
 
 export type Tone = 'neutral' | 'muted' | 'warning';
 export interface Label {
