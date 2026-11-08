@@ -47,6 +47,7 @@
 | W6-16 | S3：換線紀錄 | **列可取得的**：曾有過的推薦人（無順序）＋新約付款單事件（有時間）；完整換線事件表列第 7 波候選（被推翻：本波加事件表） |
 | W6-17 | S3：異常清單入口 | **不做**，異常只標在節點與詳情（被推翻：做次要入口） |
 | W6-18 | S3b：點數對帳口徑 | **改跨表核對**：每筆提領在帳本有對應扣款／退款、無孤兒 `withdrawal_id`、`ledger_reset` 金額正確（被推翻：只做點數來源明細） |
+| W6-23 | S1：漏發獎金告警的「下一步」寫找誰 | **開一個 Claude Code session，請它依 supabase/README〈補發漏發獎金〉核對並補發**（被推翻：交指定工程師；維持「請通知工程人員」） |
 
 **主 session 定的**
 
@@ -103,7 +104,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 ## 5. 第 7 波候選
 
-以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）。
+以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）。
 
 ## 6. 業主待辦
 
@@ -121,7 +122,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | —（規劃已推） | 規劃 r3 親審通過，等業主親打 |
+| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 | 實作完成，獨立審查中 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
 | S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃 v3 親審通過，等業主親打 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 | 實作完成，修獨立審查 P1 |
@@ -142,3 +143,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 10:20 | S1 plan r3（7fc3a362；四視角重審 P0 0、P1 8 皆處置）主 session 親審通過：鎖序核過（heal 持 profiles 時 advisory 一律 try）；W6-11 解讀確認（單筆開通失敗的既有 error 告警照推）；P2：lock_timeout 還原原值。W6-14 補進 S6 列 | 業主到 S1 親打 `/tdd-implement batch-heal-lock-split` |
 | 11/08 10:25 | S3 plan v3（#521 82a72f98；三輪審查，第 3 輪需求／系統 P0 0、P1 0）主 session 親審通過，定 **W6-21** | 業主到 S3 親打 `/tdd-implement admin-referral-tree` |
 | 11/08 14:00 | S4 交 **#523**（7 階段紅綠＋審查修正，hash 以 PR 內文為準；/review-implementation P0 0、P1 3）。主 session 定 **W6-22**。獨立審查員：P0 0、**P1 1**（手勢 chunk 載入失敗走 `importWithRetry` 會整頁重載、換篇脈絡遺失，違反驗收 #8）；P2：REPLACE 閘無測試（mutation 實證）、touchstart 一律切斷進場、`overflow-clip-margin` Safari 相容性（未證實）、紅燈 commit 含產品修正（審查員已實證測試有效）→ 全數退回 S4 本 PR 修；斜拖手感列手機實測 | S4 修 → CI 綠 → 合 #523 → 業主手機實測 |
+| 11/08 14:15 | S1 交 **#524**（migration `20261115000001`；7 段紅綠，hash 以 PR 內文為準；本機 Deno api 764／0；實作審查 P0 0、P1 已修；偏離 9 項列 PR 內文）。業主裁 **W6-23**。主 session 派獨立 Opus 審查員 | 等審查、CI |
