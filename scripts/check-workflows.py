@@ -544,15 +544,23 @@ def scan() -> int:
 
 
 
-def _r14(gate_at: int | None, comment_only: bool = False, extra: str = "", suffix: str = "") -> str:
+def _r14(
+    gate_at: int | None,
+    comment_only: bool = False,
+    extra: str = "",
+    suffix: str = "",
+    gate_args: str = "--project-ref x --max-wait 600",
+    secrets_extra: str = "",
+    secrets_cmd: str = "supabase secrets set --project-ref x A=b",
+) -> str:
     """規則 14 案例用的 deploy workflow 片段。gate_at＝確認 step 插在第幾個敏感 step 之前
     (0＝secrets set 之前、1＝secrets set 之後 deploy 之前、None＝沒有)。"""
     gate = (
         "      - name: 確認 migration 已套用\n" + extra
-        + "        run: python3 scripts/check-remote-migrations.py --project-ref x --max-wait 600"
+        + "        run: python3 scripts/check-remote-migrations.py " + gate_args
         + suffix + "\n"
     )
-    secrets = "      - name: 寫入 sha\n        run: supabase secrets set --project-ref x A=b\n"
+    secrets = "      - name: 寫入 sha\n" + secrets_extra + "        run: " + secrets_cmd + "\n"
     if comment_only:
         secrets = "      # 之後要先跑 scripts/check-remote-migrations.py\n" + secrets
     deploy = (
@@ -923,6 +931,48 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
     (
         "deploy-supabase.yml:確認指令後接 || true → 違規",
         _r14(gate_at=0, suffix=" || true"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 ||true(無空格) → 違規",
+        _r14(gate_at=0, suffix=" ||true"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 || exit 0 → 違規",
+        _r14(gate_at=0, suffix=" || exit 0"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 ; true → 違規",
+        _r14(gate_at=0, suffix="; true"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令沒帶 --project-ref → 違規(不知道比對哪個環境)",
+        _r14(gate_at=0, gate_args="--max-wait 600"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令只跑 --self-test → 違規(沒有比對遠端)",
+        _r14(gate_at=0, gate_args="--self-test --project-ref x"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:敏感 step 帶 if: always() → 違規(確認失敗仍會寫 sha)",
+        _r14(gate_at=0, secrets_extra="        if: always()\n"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:旗標在子指令前的 secrets set 也算敏感 step → 違規",
+        _r14(gate_at=1, secrets_cmd="supabase --project-ref x secrets set A=b"),
         "deploy-supabase.yml",
         1,
     ),

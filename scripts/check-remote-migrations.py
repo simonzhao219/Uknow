@@ -56,7 +56,12 @@ OK, MISSING, UNREADABLE = 0, 1, 2
 
 
 class ReadError(Exception):
-    """讀不到遠端清單（任何原因）。訊息只放狀態或例外類別，不放 token 與回應內文。"""
+    """讀不到遠端清單（任何原因）。訊息只放狀態或例外類別，不放 token 與回應內文。
+    retryable＝暫時性（5xx、429、逾時、網路錯誤）：短退避重試；其餘（401／403／格式不符）立即失敗。"""
+
+    def __init__(self, message: str, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
 
 
 def repo_versions(filenames: list[str]) -> list[str]:
@@ -90,6 +95,7 @@ def check(
     sleep: Callable[[float], None],
     max_wait_s: float,
     interval_s: float,
+    now: Callable[[], float] = time.monotonic,
 ) -> tuple[int, str]:
     """輪詢到齊或逾時。讀取錯誤立即回 UNREADABLE，不輪詢。"""
     waited = 0.0
@@ -260,6 +266,81 @@ def self_test() -> int:
         code = run(["--project-ref", "ref"], {"SUPABASE_ACCESS_TOKEN": ""})
     if code != UNREADABLE or "SUPABASE_ACCESS_TOKEN" not in buf.getvalue():
         failures.append(f"空 token：期望退出碼 2 並點名變數，得到 {code}")
+
+    # 第 6 波 S6 獨立審查 P2-3／P2-4：暫時性讀取錯誤短退避重試；--max-wait 是牆鐘上限；缺版本訊息帶筆數。
+    class Clock:
+        def __init__(self) -> None:
+            self.t = 0.0
+
+        def now(self) -> float:
+            return self.t
+
+        def sleep(self, s: float) -> None:
+            self.t += s
+
+    def counting(*responses: object) -> tuple[Callable[[], object], list[int]]:
+        calls = [0]
+        inner = _fetcher(*responses)
+
+        def fetch() -> object:
+            calls[0] += 1
+            return inner()
+
+        return fetch, calls
+
+    clock = Clock()
+    fetch, calls = counting(ReadError("HTTP 503", retryable=True), _rows(*REPO))
+    code, _ = check(REPO, fetch, clock.sleep, 600, 30, now=clock.now)
+    if code != OK:
+        failures.append(f"暫時性 5xx 一次後恢復：期望 0，得到 {code}")
+
+    clock = Clock()
+    fetch, calls = counting(ReadError("HTTP 503", retryable=True))
+    code, _ = check(REPO, fetch, clock.sleep, 600, 30, now=clock.now)
+    if code != UNREADABLE or calls[0] != 3:
+        failures.append(f"暫時性錯誤連續三次：期望退出碼 2、共 3 次請求，得到 {code}、{calls[0]} 次")
+
+    clock = Clock()
+    fetch, calls = counting(ReadError("HTTP 401"))
+    code, _ = check(REPO, fetch, clock.sleep, 600, 30, now=clock.now)
+    if code != UNREADABLE or calls[0] != 1:
+        failures.append(f"401 不重試：期望退出碼 2、1 次請求，得到 {code}、{calls[0]} 次")
+
+    clock = Clock()
+    code, msg = check(REPO, _fetcher(_rows(*REPO[:2])), clock.sleep, 0, 30, now=clock.now)
+    if code != MISSING or "遠端 2 筆" not in msg or "repo 3 筆" not in msg:
+        failures.append(f"缺版本訊息要帶遠端與 repo 筆數：得到 {msg!r}")
+
+    clock = Clock()
+
+    def slow() -> object:
+        clock.t += 100  # 每次請求本身就耗 100 秒
+        return _rows(*REPO[:2])
+
+    code, _ = check(REPO, slow, clock.sleep, 600, 30, now=clock.now)
+    if code != MISSING or clock.t > 600 + 100 + 30:
+        failures.append(f"--max-wait 是牆鐘上限（含請求本身耗時）：結束時 t={clock.t}")
+
+    for exc, want_retry in [
+        (urllib.error.HTTPError("u", 503, "x", {}, None), True),  # type: ignore[arg-type]
+        (urllib.error.HTTPError("u", 429, "x", {}, None), True),  # type: ignore[arg-type]
+        (urllib.error.HTTPError("u", 403, "x", {}, None), False),  # type: ignore[arg-type]
+        (TimeoutError("t"), True),
+        (urllib.error.URLError("dns"), True),
+    ]:
+        original = urllib.request.urlopen
+
+        def boom(*_a, _e=exc, **_k):
+            raise _e
+
+        urllib.request.urlopen = boom  # type: ignore[assignment]
+        try:
+            http_fetch("ref", "t")()
+        except ReadError as e:
+            if e.retryable != want_retry:
+                failures.append(f"{type(exc).__name__}({getattr(exc, 'code', '')})：retryable 期望 {want_retry}")
+        finally:
+            urllib.request.urlopen = original  # type: ignore[assignment]
 
     if failures:
         print("check-remote-migrations self-test: FAIL")
