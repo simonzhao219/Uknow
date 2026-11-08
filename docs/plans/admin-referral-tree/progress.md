@@ -16,18 +16,20 @@
 | 5 | Edge 端點＋契約＋守門（5a～5d） | ✅ 綠（CI 682de3fb：api-tests、unit-tests、build-bundle 全過；static-checks 的 deno lint 由 3ad5764a 修） | ae25f1be（本機 unit：5a／5b 17 failed；CI api-tests：只有 5c 一支紅、581 passed） | d404f520（＋682de3fb 契約分檔，修 bundle 預算） |
 | 6 | 前端純函式 | ✅ 綠（本機 vitest 17 passed） | 894d070e（本機 vitest 16 failed／1 passed——「沒有說明」一支 stub 回 null 碰巧綠） | 96484797 |
 | 7 | `AdminReferralTree` | ✅ 綠（本機 vitest 12 passed） | 0222ab8b（本機 vitest 12 failed） | 2b1dc9ff |
-| 8 | `ReferralAuditSheet`＋次分頁＋私密 | ✅ 綠（本機 vitest admin＋analytics 690 passed） | 19d6c5a3（本機 vitest src/components/admin：17 failed／574 passed，皆新測試） | （本 commit） |
-| 9 | 規格書＋e2e | ⬜ 未開始 | | |
+| 8 | `ReferralAuditSheet`＋次分頁＋私密 | ✅ 綠（本機 vitest admin＋analytics 690 passed） | 19d6c5a3（本機 vitest src/components/admin：17 failed／574 passed，皆新測試） | 299e6f0a |
+| 9 | 規格書＋e2e | ✅ 綠（本機 e2e：admin_steps＋overflow sweep＋admin mobile layout 77 passed） | 不適用（逃生口 1，見 Blockers） | （本 commit） |
 | 10 | S3b：點數來源與對帳 RPC | ⬜ 未開始 | | |
 | 11 | S3b：端點＋UI＋異常 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 8 綠燈；下一步階段 9（規格書 §13、e2e mock、overflow sweep）。
+業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。S3a 九個階段全綠；下一步收尾：check:full、/review-implementation、PR 內文。
 
 **環境限制**：本容器 `supabase start` 拉不到映像（public.ecr.aws 的 CDN 被網路政策擋），DB 測試（`*.test.ts`）不能本機跑。階段 1～4、5c、5d 的紅綠證據以 CI api-tests 軌為準：紅燈 commit 單獨 push，確認 api-tests 在該測試上紅後才寫實作。deno 已以 `npm i -g deno` 安裝，`deno task check`、unit 測試可本機跑。
 
 ## Blockers(逃生口紀錄)
+
+- 2026-11-08 階段 9（逃生口 1）：e2e 情境與 overflow sweep 路由是在元件完成後才寫的驗收層，寫入即綠（本機 77 passed）。e2e 的 overflow sweep 只支援 375px（`MOBILE_VIEWPORT`），規劃 §4 寫的 1024／1280 寬度未另加 e2e 掃描——Sheet 內一律卡片、不靠視窗斷點，桌面寬度不會改變 Sheet 版面；記為偏離。
 
 - 2026-11-08 階段 5d（逃生口 1）：覆蓋斷言與補齊後的 ADMIN_ROUTES 同一個紅燈 commit 寫入，寫入即綠——4 條漏列端點若不在同 commit 補進清單，綠燈階段就得改測試檔，違反紅燈期鎖測試。新端點未註冊時守門 middleware 照樣回 401／403，所以 5d 沒有可紅的部分；5c（admin-referral-tree.test.ts）才是本階段 DB 側的紅燈。
 - 2026-11-08 階段 5a：`active 但沒有 end_date` 一支在 stub 下碰巧綠（stub 回 active／null），其餘 5 支紅。
@@ -35,6 +37,9 @@
 - 2026-11-08 階段 2：c5ecd3be 綠燈後 CI 仍有 2 支搜尋測試紅（`ancestor_ids 由頂層到父`、`成環與超過 50 層`）。根因在實作不在測試：`admin_referral_in_scope` 漏了「有 edge 指向自己」，自己沒訂閱的子節點搜不到，違反 plan §2.2「搜尋與樹收同一群人」。已 push 的 migration 不改，修正放在階段 3 的 migration（`create or replace admin_referral_in_scope`），測試未動。
 
 ## 框架摩擦
+
+- pre-commit 對 supabase/functions 只跑 deno fmt＋deno task check，不跑 deno lint；未用的 import 要到 CI static-checks 才紅（682de3fb）。
+- 本機 e2e：requirements 釘 playwright==1.56.0（chromium 1194），容器預裝的是 1243；以 sudo 把 1194 的 headless_shell 路徑 symlink 到 1243 才跑得動（只動拋棄式容器）。
 
 - `profile-transient.unit.test.ts` 以 `requireAuth(` 出現次數守 index.ts 的呼叫點總數；新端點的第二道守門若在 index.ts 直接呼叫會讓它紅。改比照 referral-invite 傳函式參照（`adminAuthorizer(requireAuth, isAdminUser)`），計數不變。這類「計數式守衛」對新增端點不友善，值得在 friction-log 討論改成白名單。
 

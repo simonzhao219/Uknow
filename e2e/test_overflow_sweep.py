@@ -32,7 +32,11 @@ from typing import Callable, Optional
 import pytest
 from playwright.sync_api import expect
 
-from mocks.admin_console_mock import build_worst_case_member_detail, route_admin_member_detail
+from mocks.admin_console_mock import (
+    build_worst_case_member_detail,
+    route_admin_member_detail,
+    route_admin_referral_tree,
+)
 from mocks.backend_api_mock import (
     build_admin_announcement,
     build_admin_member,
@@ -461,6 +465,12 @@ def _setup_admin(context, api_mock, rest_mock, *, alerts=None):
     )
 
 
+def _setup_admin_referral_tree(context, api_mock, rest_mock):
+    """後台推薦樹（第 6 波 S3a）：在 `_setup_admin` 之上補 /admin/referral-tree/* 的最壞測資。"""
+    _setup_admin(context, api_mock, rest_mock)
+    route_admin_referral_tree(context)
+
+
 def _setup_admin_alerts(context, api_mock, rest_mock):
     """系統告警 tab 的最壞但可達測資。message 與 context 都由後端寫入、
     長度無上限（context 是 jsonb），這串取自正式站實際出現過的
@@ -503,6 +513,29 @@ def _open_tab(name: str):
         page.get_by_role("tab", name=name).click()
 
     return go
+
+
+def _open_referral_tree(page):
+    """會員管理 → 推薦樹次分頁，展開第一個節點與「無法接上推薦樹的會員」群組。
+
+    子層與群組預設收合、不掛載，收合就是盲區：長姓名、多徽章、第 N 層都在展開後才畫得出來。
+    """
+    page.get_by_role("tab", name="會員管理").click()
+    page.get_by_role("tab", name="推薦樹").click()
+    settle(page)
+    page.get_by_role("button", name=re.compile("^展開")).first.click()
+    page.get_by_role("button", name=re.compile("無法接上推薦樹的會員")).click()
+    settle(page)
+
+
+def _open_referral_audit_sheet(page):
+    """推薦樹 → 打開第一個節點的詳情 Sheet（付款卡每代三行、換線紀錄、推薦人鏈）。"""
+    page.get_by_role("tab", name="會員管理").click()
+    page.get_by_role("tab", name="推薦樹").click()
+    settle(page)
+    page.get_by_role("button", name=re.compile("的推薦與查帳資訊$")).first.click()
+    page.get_by_text("已顯示 2 / 25 筆").wait_for()
+    settle(page)
 
 
 def _expand_alert_context(page):
@@ -852,6 +885,22 @@ ROUTES = [
         "/admin",
         tags=["members"],
         after_load=_open_tab("會員管理"),
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 推薦樹（展開子層與群組）",
+        _setup_admin_referral_tree,
+        "/admin",
+        tags=["referral-tree"],
+        after_load=_open_referral_tree,
+    ),
+    SweepRoute(
+        "/admin",
+        "平台管理 · 推薦樹詳情 Sheet",
+        _setup_admin_referral_tree,
+        "/admin",
+        tags=["referral-audit-sheet"],
+        after_load=_open_referral_audit_sheet,
     ),
     SweepRoute(
         "/admin",

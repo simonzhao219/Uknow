@@ -95,3 +95,27 @@ def withdrawal_list_settled(admin_dashboard_page):
     expect(admin_dashboard_page.withdrawal_list()).not_to_have_attribute(
         "aria-busy", "true", timeout=5_000
     )
+
+
+# --- 後台推薦樹（第 6 波 S3a）---------------------------------------------------
+
+
+@given("the referral tree has audit data")
+def referral_tree_audit_data(context):
+    # 推薦樹的端點不在 BackendApiMock 的 setter 裡；必須在 set_admin_members 之後註冊
+    # （見 admin_console_mock 的 docstring：後註冊的先贏）。
+    from mocks.admin_console_mock import route_admin_referral_tree
+
+    route_admin_referral_tree(context)
+
+
+@when("I open the referral tree sub-tab")
+def open_referral_tree_sub_tab(page):
+    page.get_by_role("tab", name="推薦樹").click()
+    expect(page.get_by_role("searchbox", name="搜尋姓名或推薦碼")).to_be_visible()
+
+
+@when("I open the first member in the referral tree")
+def open_first_referral_tree_member(page):
+    page.get_by_role("button", name="的推薦與查帳資訊").first.click()
+    expect(page.get_by_role("dialog")).to_be_visible()
