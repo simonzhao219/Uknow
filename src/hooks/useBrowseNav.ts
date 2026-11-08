@@ -15,7 +15,7 @@ type BrowseRouteState = { dir?: 'prev' | 'next'; via?: BrowseVia } | null;
  * 動畫：新實例（key={id} 重掛）在 layout effect 裡對固定 wrapper（motionRef）跑一次進場——
  * 從去向的對側 ENTER_OFFSET_PX 處淡入滑入。layout effect 在繪製前執行，不會先閃一幀原位。
  * 舊 DOM 在 navigate 的同一 commit 就消失，所以沒有退場動畫；不傳放開位移，state 也就沒有殘留問題。
- * 頭尾再換篇：按鈕與鍵盤對 wrapper 輕推 24px 再回原位，手勢由 BrowseGestures 從拖曳位移彈回；兩者共用 springTo。
+ * 頭尾再換篇：按鈕、鍵盤、輪播盡頭續滑對 wrapper 輕推再回原位；頁面手勢由 BrowseGestures 從拖曳位移彈回（sprung）；兩者共用 springTo。
  */
 export function useBrowseNav({
   neighbors,
@@ -51,14 +51,15 @@ export function useBrowseNav({
     return () => animation?.cancel?.();
   }, []);
 
-  const goBrowse = (direction: 'prev' | 'next', via: BrowseVia, _sprung = false) => {
+  const goBrowse = (direction: 'prev' | 'next', via: BrowseVia, sprung = false) => {
     if (!neighbors) return;
     const target = direction === 'next' ? neighbors.nextId : neighbors.prevId;
     if (!target) {
       onBrowseNotice?.(direction === 'next' ? '已是最後一篇' : '已是第一篇');
-      // 手勢的回彈已由 BrowseGestures 從拖曳位移彈回；按鈕與鍵盤才在這裡輕推 24px 再回原位。
+      // 頁面手勢已由 BrowseGestures 從拖曳位移彈回（sprung）；其餘（按鈕、鍵盤、輪播盡頭續滑）
+      // 在這裡輕推 NUDGE_PX 再回原位。
       const el = motionRef.current;
-      if (via !== 'swipe' && el) {
+      if (!sprung && el) {
         springTo(el, `translateX(${direction === 'next' ? -NUDGE_PX : NUDGE_PX}px)`);
       }
       return;

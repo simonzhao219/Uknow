@@ -100,9 +100,13 @@ export default function BrowseGestures({
       if (scheduled) frameId = id;
     };
     const springBack = () => {
+      // 快速放開時最後一幀位移可能還沒寫入：先補上，彈回才有正確的起點。
+      const hadPending = scheduled;
       cancelFrame();
       const target = dragTargetRef.current;
-      if (target) springTo(target, target.style.transform);
+      if (!target) return;
+      if (hadPending) target.style.transform = `translateX(${pendingOffset}px)`;
+      springTo(target, target.style.transform);
     };
     const abort = () => {
       start = null;
@@ -128,7 +132,8 @@ export default function BrowseGestures({
         start = null;
         return;
       }
-      // 上一段進場／彈回動畫還在跑：先取消，跟手一律從 0 起算。
+      // 上一段進場／彈回動畫還在跑：先取消；殘留的位移也清掉，跟手一律從 0 起算。
+      clearTransform();
       for (const animation of dragTargetRef.current?.getAnimations?.() ?? []) animation.cancel();
       start = { x, y: touch.clientY, axis: null, abandoned: false };
     };
@@ -185,7 +190,7 @@ export default function BrowseGestures({
       springBack();
       // 去向沒有鄰居：仍通知呼叫端，由它播報「已是最後一篇／第一篇」。
       const intent = swipeIntent(input);
-      if (intent) latest.current(intent, 'swipe');
+      if (intent) latest.current(intent, 'swipe', true);
     };
     const onTouchCancel = () => abort();
     const onVisibilityChange = () => {

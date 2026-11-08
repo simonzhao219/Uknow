@@ -24,6 +24,8 @@
 
 ## Blockers(逃生口紀錄)
 
+- 2026-11-08 審查修正的紅燈 commit d65c3af3：測試〈輪播盡頭續滑在最後一篇時，內容區輕推再回原位並播報〉（`ServiceProviderDetailRoute.test.tsx`）夾具寫錯——把最後一篇 C 換成單張照片版 `solo`，但背景重驗的 `singleFor` 仍回三張照片版，輪播起點不在盡頭，所以不會觸發盡頭續滑（與 #509 同類的夾具錯誤；既有單張照片測試用 `singleFor.mockResolvedValue({ data: solo, error: null })` 處理）。修法只是在該測試加那一行。實作本身已就緒（其餘 3 條新測試與全部既有測試綠）。逃生口 2：停手等人工裁決，授權後由本 session 解鎖修測試。
+
 ## 框架摩擦
 
 - 本機跑 e2e：pinned playwright 1.56 要 chromium 1194，容器只有 1243；以 symlink `/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向 1243 的 headless shell 即可（環境級 hack，未入庫）。
