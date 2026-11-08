@@ -237,22 +237,6 @@ Deno.test('prepare_payment_order：曾訂閱者不帶續費模式 → mode_requi
   }
 });
 
-Deno.test('prepare_payment_order：舊三參數版也套新檢查 → 曾訂閱者不帶模式回 mode_required', async () => {
-  const client = adminClient();
-  const sql = postgres(DB_URL, { max: 1 });
-  const ids: string[] = [];
-  try {
-    const m = await member(client, sql, ids, '舊版 會員');
-    await expire(sql, m);
-    const [r] = await sql`
-      select public.prepare_payment_order(${m}::uuid, ${tradeNo('LEGACY')}, null::text) as o`;
-    assertEquals(r.o, 'mode_required');
-  } finally {
-    await sql.end();
-    await deleteTestUsers(client, ids);
-  }
-});
-
 Deno.test('prepare_payment_order：已付款待開通的單 → paid_pending 帶單號並寫一筆告警', async () => {
   const client = adminClient();
   const sql = postgres(DB_URL, { max: 1 });
@@ -496,10 +480,14 @@ Deno.test('process_successful_payment：曾訂閱者的無模式單走到付款 
   }
 });
 
-Deno.test('prepare_payment_order：六參數與三參數版都只給 service_role 執行', async () => {
+Deno.test('prepare_payment_order：六參數版只給 service_role 執行，三參數 wrapper 已移除', async () => {
   const sql = postgres(DB_URL, { max: 1 });
   try {
-    for (const sig of ['uuid, text, text', 'uuid, text, text, uuid, text, text']) {
+    // 第 6 波 S6：三參數 wrapper（部署空窗相容用）已 drop——正式站與 develop 的 Edge 皆呼叫六參數版。
+    const [legacy] = await sql`
+      select to_regprocedure('public.prepare_payment_order(uuid, text, text)') is null as gone`;
+    assertEquals(legacy.gone, true, '三參數版應已不存在');
+    for (const sig of ['uuid, text, text, uuid, text, text']) {
       for (const role of ['anon', 'authenticated']) {
         const [r] = await sql`
           select has_function_privilege(${role},
