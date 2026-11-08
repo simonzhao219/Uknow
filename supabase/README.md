@@ -67,6 +67,9 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `request_withdrawal` / `confirm_withdrawal_collection` | 提領申請與查收 |
 | `admin_update_withdrawal_status` | 管理端審核（含退件退款） |
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
+| `log_referral_reward_failure` | 三代獎金沒發出的 error 告警（訊息含單號／第幾代／點數／推薦碼／下一步；補發步驟見〈補發漏發獎金〉） |
+| `list_paid_pending_order_ids` / `complete_paid_pending_order` | 「已付款待開通」單的自癒：Edge（`paid-pending-heal.ts`）逐筆呼叫，一筆一個交易，不與線上付款互鎖；單筆在委派前以 `lock_timeout` 3s 預取付款人 profiles 鎖，拿不到記 `skipped_locked`（只給 service_role） |
+| `complete_paid_pending_orders` | 上兩支的單交易 wrapper，只給舊 Edge 相容（互鎖風險同舊版）；第 6 波 S6 drop |
 | ~~`referral_tree`~~ | 已於 20261110000002 移除(無呼叫者,且曾以真名暴露三代下線;三代樹由 Edge Function 組出並遮罩) |
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
 | `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；由 `/auth/check-email` 與 Email 邀請的 `/referrals/invites`、`/auth/invite/accept` 呼叫） |
@@ -74,8 +77,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `refund_rate_limit` | 把 bump 過的計數原子退一格（`count > 0` 守衛；Email 邀請沒寄出時退推薦人額度；只給 service_role） |
 | `purge_stale_referral_invites` | 刪除 Email 邀請建立、逾期未驗證的空殼帳號（pg_cron 排程 `purge-stale-referral-invites`；帶 `p_email` 給客服立即刪除；只給 service_role） |
 | `begin_scheduled_run` / `finish_scheduled_run` | 排程租約：partial unique `(job) where status='running'`，同一 job 同時只跑一個，其餘落 `skipped`；15 分鐘前的 `running` 改 `abandoned`（只給 service_role） |
-| `invoke_internal_endpoint` | pg_cron 呼叫對帳／清理端點：讀 Vault 兩筆、經 pg_net 送 POST；Vault 缺值寫 `skipped/vault_missing`（不開放任何 API 角色） |
-| `scheduler_health` | `GET /internal/scheduler-health` 的資料來源（帳本、`cron.job`、`net._http_response`）；形狀由 `scripts/fixtures/scheduler-health/shape.json` 釘住 |
+| `invoke_internal_endpoint(p_job, p_trigger default 'pg_cron')` | pg_cron 呼叫對帳／清理端點：讀 Vault 兩筆、經 pg_net 送 POST；Vault 缺值寫 `skipped/vault_missing`。人工驗證帶 `'manual'`，帳本不冒充 pg_cron（不開放任何 API 角色） |
+| `scheduler_health` | `GET /internal/scheduler-health` 的資料來源（帳本、`cron.job`、`net._http_response`）；形狀由 `scripts/fixtures/scheduler-health/shape.json` 釘住。reconcile 另回 `healFailedStreak`／`healSkippedStreak`（最近連續幾輪 pg_cron 的 heal 有失敗／被換線鎖跳過；金額不符不計；只供人看、不推 LINE） |
 | `prune_scheduled_job_runs` / `pause_scheduled_jobs` / `resume_scheduled_jobs` | 帳本 90 天清理（pg_cron 排程 `prune-scheduled-job-runs`）／一鍵停與恢復（只切 `cron.job.active`） |
 | `delete_auth_audit_for_users` | 刪除指向指定使用者的 GoTrue 稽核列（purge 同交易呼叫；補償路徑在 GoTrue `deleteUser` 之後呼叫；只給 service_role） |
 | `referral_invite_issued_at` | 從 `app_metadata.referral_invite` 取出寄出時間；壞值回 null 讓 purge 跳過該列而不中斷整批（purge 內部用；不開放任何角色） |
@@ -103,11 +106,24 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 - 「該不該寫告警」的三條件判準與去重規則（`logSystemAlertOnce`：鍵要含實體識別碼；商店級加 UTC 日期桶、burst 加小時鍵，
   沒人 resolve 時隔天／下一小時會再推）寫在 `supabase/functions/api/index.ts` 的 `logSystemAlert` 上方註解，這裡不重複。
 
+## 補發漏發獎金
+
+收到「【獎金未發】」告警（`source` 為 `pay_referral_generations` 或 `apply_referral_side_effects`）時，由工程人員以
+service_role 在 SQL Editor 處理（目前沒有後台工具）。告警 `context` 有 `referee`、`generation`、`beneficiary`、
+`subscription_id`（任務續約為 `claim_id`）。
+
+1. 先查是否已補上（會員載入個人頁時的自癒、或他人先處理）：
+   `select * from reward_transactions where referee_user_id = <referee> and generation = <generation>
+   and subscription_id is not distinct from <subscription_id> and source_claim_id is not distinct from <claim_id>;`
+2. 沒有就依同一冪等鍵插入一列 `type='referral_reward'`、`user_id=<beneficiary>`、`amount`＝告警寫的點數。
+   冪等唯一索引（§8.3）保證自癒與人工任一方先寫，另一方撞索引、不會重複發。
+3. 把該則告警標成已處理（`resolved_at`）。
+
 ## 排程
 
 | 排程（`cron.job`） | 時間（UTC） | 做什麼 | 來源 |
 |---|---|---|---|
-| `reconcile-pending-payments` | `7 * * * *` | `invoke_internal_endpoint('reconcile')` → `POST /internal/reconcile-pending-payments` | `20261112000001` |
+| `reconcile-pending-payments` | `7 * * * *` | `invoke_internal_endpoint('reconcile')` → `POST /internal/reconcile-pending-payments`（先跑 heal：逐筆自癒待開通單，結果寫進帳本 `summary.heal`） | `20261112000001`、`20261115000001` |
 | `purge-orphan-listing-photos` | `17 19 * * *` | `invoke_internal_endpoint('purge-photos')` → `POST /internal/purge-orphan-listing-photos`；實刪看 Edge secret `PHOTO_PURGE_LIVE` | `20261112000001` |
 | `prune-scheduled-job-runs` | `41 4 * * *` | 帳本 90 天清理 | `20261112000001` |
 | `prune-rate-limits` | `17 * * * *` | 限流計數清理 | `20261017000001` |
@@ -187,6 +203,7 @@ migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
 | `20261017000003_revoke_profile_self_update_grants` | authenticated 對 `profiles` 的 UPDATE 全數撤銷——個人資料只能經 Edge Function 寫入 |
 | `20261017000004_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
 | `20261112000001_scheduled_job_runs` | 對帳與照片清理改由 pg_cron 經 pg_net 觸發；排程帳本兼租約、`scheduler_health`、Vault 憑證（見〈排程〉） |
+| `20261115000001_batch_heal_lock_split` | 自癒改逐筆一個交易（拆掉批次 heal 與線上付款的 profiles 互鎖）；三代獎金失敗改 error 告警；帳本 summary 記 heal 計數與 `unknownByReason`；`invoke_internal_endpoint` 加 `p_trigger` |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。
