@@ -125,7 +125,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 | 實作完成，獨立審查中 |
+| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 ✅ 1bcc377 | 收工 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
 | S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 | S3a 完工，獨立審查中 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
@@ -153,3 +153,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 14:40 | S4 修 #523 獨立審查（P1：手勢 chunk 改 `importWithRetry(..., {reload: noop, storage: null})`；P2：REPLACE 閘測試＋突變驗證、lockAxis 後才 cancel 進場、聚焦環改裁切層 `-mx-2／px-2`、overflow 探針加 `data-overflow-intentional`——主 session 核實只跳過該元素自身、子孫照掃）。CI 全綠 → **#523 合進 develop（77a87cb）**，S4 收工 | 業主在 develop 預覽手機實測三項 |
 | 11/08 14:55 | #521 獨立 Opus 審查：**P0 1**（unplaceable 群組 X↔Y 成環，展開狀態用全域 id → 無限遞迴、後台當掉；plan 有寫遇祖先即停但未實作）、**P1 2**（Sheet 關閉後焦點落 body；可判定閘門不看 edge 改線，舊流程棄單＋後來付款修 edge 會誤標「收獎人不符」）。主 session 代查正式站：profiles≠edge 0、有推薦人無 edge 2（未付款）、棄單 fresh 單 0 → 目前不命中。P1-2 處置：列已知殘留＋第 1／2 代那位 profiles≠edge 時改判無法判定。P2 六項本 PR 修；頂層 unplaceable 效能列第 7 波 | S3 修 → CI 綠 → 合 #521 |
 | 11/08 14:55 | S1 修 #524 獨立審查（紅 3d35e5dc／綠 35060de5：W6-24 前 60 字、deadlock 斷言改 sqlstate、lock_timeout 還原護欄、`claim_referral_king_reward` 升 error）；主 session 核 delta 通過。分支落後 develop（#523）→ S1 rebase | S1 rebase → CI 綠 → 合 #524 → 查 develop 函式定義 |
+| 11/08 15:45 | S1 rebase 到 77a87cb（只撞 friction-log），主 session 比對 supabase／src／scripts／.github 的 diff 與審過版本逐位元組相同、CI 全綠 → **#524 合進 develop（1bcc377）**，S1 收工。照 W6-2 開 **S6**（Opus，規劃） | 確認 develop 套用 `20261115000001`、部署後 dispatch reconcile 驗 heal 路徑 |

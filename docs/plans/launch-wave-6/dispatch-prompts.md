@@ -110,3 +110,23 @@
 3. 業主會在本 session 親打 `/tdd-implement listing-swipe-transition`。
 4. 收尾照 /tdd-implement：刪規劃檔、規格書與 ui-ux-guidelines 同步；PR 內文附紅燈 hash 與手機實測步驟（業主用手機驗）。
 ```
+
+## S6. 新約與部署收尾（Opus，三段式，`feature/renewal-deploy-closeout`）
+
+```text
+工項 S6（plan.md §2，裁決 W5-62、W5-63、R5 P2-6、W6-14、W6-1）。有完成才上（不是必上），11/22 22:00 收件；期限較遠的項目可在規劃裡提議分段。
+範圍（逐條讀出處原文；R5＝docs/plans/launch-wave-5/review.md，W5-x＝launch-wave-5/plan.md §0）：
+1. W5-63：新約確認框的推薦人句，在「現任推薦人即預設推薦人、新約留空」時仍寫「將改變」→ 加第三態（推薦人不變）。另讀 #514 內文的 P2-3（讀 status 後才成環的競態下確認框句與結果不符），決定本波是否一併處理。
+2. R5 P2-6：新約 source=default 時，0d 用的是付款當下的 `reward_config.default_referrer_code`，不是單上記的碼 → 後台在建單到付款之間換了預設碼會寫錯原因的 error 並維持原推薦人。改成 0d 驗單上的 `fresh_referrer_code`，或保留語意但把告警分成「預設碼已更換」與「失效」——規劃比較後定。
+3. drop 三參數版 `prepare_payment_order`（`20261113000002` 註解寫「下一波 drop」）：先確認正式站已無舊 Edge 在呼叫（主 session 可代查）。
+4. W6-14：drop S1（#524）留下的 wrapper `complete_paid_pending_orders`，並改掉直接呼叫它的測試（grep 現算）。前提：正式站 Edge 已是 S1 版本（逐筆呼叫 `complete_paid_pending_order`）。migration 由 Supabase 整合先於 Edge 套用：舊 Edge 還在呼叫 wrapper 時就 drop 會壞——規劃寫清楚：要嘛確認晉升時 S1 的 Edge 已上線過一輪，要嘛把這條延到下一波。
+5. W5-62：`deploy-supabase.yml` 部署 Edge 前自動確認本次 migration 已在目標環境套用（`supabase_migrations.schema_migrations` 有 repo 內每支 migration 的版本），未套用就失敗不部署；上線後 launch-wave-6/plan.md §4 的人工 4a 步驟可退場。改 workflow 有機械把關：`.claude/rules/github-actions.md`、`python3 scripts/check-workflows.py`。
+基準：S1 的 `20261115000001_batch_heal_lock_split.sql`（已合進 develop）是 `pay_referral_generations`、`apply_referral_side_effects`、`complete_paid_pending_order(s)` 的最新定義；你的 migration 版本號排在它之後（S3 也有 `2026111600000x`，rebase 後跑 check-migration-versions.py）。檔頭逐支寫「基準＝X，唯一差異＝Y」。
+不在範圍：3b／3d 失敗仍是 warning、`repair_orphaned_*` 單交易、單筆開通 sqlerrm 進 message（都已列第 7 波）。
+流程：
+1. `git checkout -B feature/renewal-deploy-closeout origin/develop`，跑 `/plan-feature renewal-deploy-closeout`（自動接 /review-plan）。讀規格書 §6.2、§9、supabase/README.md、R5 review.md §1.1（已核實的交互，不要改壞）。
+2. /review-plan 後**停下**，send_message 回報主 session（摘要、開放問題、需業主裁決的題目＋建議）。
+3. 業主會在本 session 親打 `/tdd-implement renewal-deploy-closeout`。
+4. 需要正式站／develop 資料（有無 source=default 的未完成新約單、Edge 部署 sha），send_message 給主 session 代跑。
+5. 收尾照 /tdd-implement：刪規劃檔、規格書與 supabase/README 同步；PR 內文附紅燈 hash 對照表與部署順序說明。
+```
