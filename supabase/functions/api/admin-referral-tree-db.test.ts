@@ -816,3 +816,71 @@ Deno.test('admin_referral_payment_audit：查無此人 → null；anon 與 authe
     await sql.end();
   }
 });
+
+// ------------------------------------------------------------
+// #521 獨立審查補強：可判定閘門的對象與順序、profiles≠edge、姓名 NFKC
+// ------------------------------------------------------------
+
+Deno.test('admin_referral_payment_audit：付款人自己付款後換線 → 三代 undeterminable', async () => {
+  await withSql(async (sql, track) => {
+    const { x, item } = await paidChain(sql, track, '付款人換線');
+    await sql`update public.profiles set referred_by_changed_at = ${item.at}::timestamptz + interval '1 hour'
+              where id = ${x}`;
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(results(after), ['undeterminable', 'undeterminable', 'undeterminable']);
+    assertEquals(after.generations[0].reason, 'changed_after');
+  });
+});
+
+Deno.test('admin_referral_payment_audit：第 2 代付款後換線 → undeterminable；第 3 代換線不影響', async () => {
+  await withSql(async (sql, track) => {
+    const { x, b, c, item } = await paidChain(sql, track, '二代換線');
+    await sql`update public.profiles set referred_by_changed_at = ${item.at}::timestamptz + interval '1 hour'
+              where id = ${c}`;
+    assertEquals(results((await paymentAudit(sql, x))!.items[0]), ['paid', 'paid', 'paid']);
+    await sql`update public.profiles set referred_by_changed_at = ${item.at}::timestamptz + interval '1 hour'
+              where id = ${b}`;
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(after.generations[2].result, 'undeterminable');
+    assertEquals(after.generations[2].reason, 'changed_after');
+  });
+});
+
+Deno.test('admin_referral_payment_audit：閘門先於其他判定 → 換線後缺列也不報缺漏', async () => {
+  await withSql(async (sql, track) => {
+    const { x, a, item } = await paidChain(sql, track, '閘門順序');
+    await sql`delete from public.reward_transactions
+              where referee_user_id = ${x} and generation = 1 and subscription_id = ${item.subscription_id}`;
+    await sql`update public.profiles set referred_by_changed_at = ${item.at}::timestamptz + interval '1 hour'
+              where id = ${a}`;
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(after.generations[0].result, 'undeterminable');
+    assertEquals((await audit(sql, x))!.anomalies.includes('missing_reward'), false);
+  });
+});
+
+Deno.test('admin_referral_payment_audit：第 1 代 profiles≠edge → referrer_mismatch', async () => {
+  await withSql(async (sql, track) => {
+    const { x, a, item } = await paidChain(sql, track, '一代不一致');
+    const [other] = await insertUsers(sql, ['付查 一代不一致 他人']);
+    track([other]);
+    // 不動 referred_by_changed_at：模擬舊流程改了 profiles、edge 沒跟上。
+    await sql`update public.profiles set referred_by_user_id = ${other}, referred_by_changed_at = null
+              where id = ${a}`;
+    const after = (await paymentAudit(sql, x))!.items[0];
+    assertEquals(results(after), ['undeterminable', 'undeterminable', 'undeterminable']);
+    assertEquals(after.generations[0].reason, 'referrer_mismatch');
+    assertEquals(item.generations[0].result, 'paid', '改線前一致時照常判定');
+  });
+});
+
+Deno.test('admin_referral_tree_search：姓名比對做 NFKC → 全形英數可用半形搜到', async () => {
+  await withSql(async (sql, track) => {
+    const tag = crypto.randomUUID().slice(0, 4);
+    const [full] = await insertUsers(sql, [`搜全形ＡＢＣ${tag}`]);
+    track([full]);
+    await subscribe(sql, full);
+    const res = await search(sql, { name: `abc${tag}` });
+    assertEquals(res.matches.map((m) => m.id), [full]);
+  });
+});

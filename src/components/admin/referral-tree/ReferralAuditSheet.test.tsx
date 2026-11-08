@@ -13,7 +13,7 @@ import type {
   AdminReferralNode,
   AdminReferralPaymentItem,
 } from '@admin-referral-contract';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { privateClass } from '../../../utils/analytics/privacy';
 import type { PaymentsData, ReferralTreeLoaders } from './loaders';
@@ -373,5 +373,91 @@ describe('ReferralAuditSheet 實作審查補強', () => {
     );
     const badge = await screen.findAllByText('已發');
     expect(badge[0].closest('[data-slot="badge"]')?.querySelector('svg')).toBeTruthy();
+  });
+});
+
+describe('ReferralAuditSheet 獨立審查補強', () => {
+  it('自癒提示只對付款的第 1 代缺漏；其他缺漏請回報', async () => {
+    renderSheet(
+      loaders({
+        loadPayments: vi.fn(async () => ({
+          total: 1,
+          items: [
+            item([
+              gen(1),
+              gen(2, { result: 'missing', actualId: null, actualName: null, actualAmount: null }),
+              gen(3),
+            ]),
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '付款與三代獎金' }));
+    await sec.findByText('已顯示 1 / 1 筆');
+    expect(sec.queryByText(/下次登入載入時自動補發/)).toBeNull();
+    expect(sec.getByText('這類缺漏不會自動補發，請回報。')).toBeTruthy();
+  });
+
+  it('無法判定時寫依現況鏈的人僅供參考，不寫應給', async () => {
+    renderSheet(
+      loaders({
+        loadPayments: vi.fn(async () => ({
+          total: 1,
+          items: [
+            item([
+              gen(1, { result: 'undeterminable', reason: 'referrer_mismatch' }),
+              gen(2),
+              gen(3),
+            ]),
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '付款與三代獎金' }));
+    expect(await sec.findByText('無法判定：推薦人資料兩處不一致')).toBeTruthy();
+    expect(sec.getByText('依現況鏈為 收獎人1（僅供參考）')).toBeTruthy();
+    expect(sec.queryByText('應給 收獎人1')).toBeNull();
+  });
+
+  it('付款載入更多在途時停用，回來的結果以 eventId 去重', async () => {
+    let release: (v: PaymentsData) => void = () => {};
+    const loadPayments = vi.fn((_id: string, p: { offset: number }) =>
+      p.offset
+        ? new Promise<PaymentsData>((r) => {
+            release = r;
+          })
+        : Promise.resolve({
+            total: 3,
+            items: [{ ...item([gen(1), gen(2), gen(3)]), eventId: 'e1' }],
+          }),
+    );
+    renderSheet(loaders({ loadPayments }));
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    fireEvent.click(more);
+    fireEvent.click(more);
+    expect(loadPayments).toHaveBeenCalledTimes(2);
+    await act(async () =>
+      release({
+        total: 3,
+        items: [
+          { ...item([gen(1), gen(2), gen(3)]), eventId: 'e1' },
+          { ...item([gen(1), gen(2), gen(3)]), eventId: 'e2' },
+        ],
+      }),
+    );
+    expect(screen.getByText('已顯示 2 / 3 筆')).toBeTruthy();
+  });
+
+  it('即將到期時頁首在到期日後寫剩幾天', async () => {
+    renderSheet(
+      loaders({
+        loadMember: vi.fn(async () =>
+          audit({
+            node: node({ status: 'expiring', daysToExpiry: 5, endDate: '2026-11-13T15:59:59Z' }),
+          }),
+        ),
+      }),
+    );
+    expect(await screen.findByText('2026/11/13 到期（剩 5 天）')).toBeTruthy();
   });
 });

@@ -140,7 +140,7 @@ export const ADMIN_REFERRAL_GEN_RESULTS = [
 export const AdminReferralGenerationSchema = obj({
   generation: num(),
   result: literals(...ADMIN_REFERRAL_GEN_RESULTS),
-  reason: nullable(literals('no_subscription', 'changed_after')),
+  reason: nullable(literals('no_subscription', 'changed_after', 'referrer_mismatch')),
   expectedId: nullable(str()),
   expectedName: nullable(str()),
   actualId: nullable(str()),

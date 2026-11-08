@@ -203,6 +203,23 @@ Deno.test('referral_award_chain：profiles 與 edges 不一致 → 第 1 代依 
   });
 });
 
+Deno.test('referral_award_chain：第 1 代的 profiles 與 edge 不一致 → 第 2 代依 edge', async () => {
+  await withUsers(async (sql, mk) => {
+    const x = await mk('鏈 一代不一致 付款人');
+    const a = await mk('鏈 一代不一致 第 1 代');
+    const p = await mk('鏈 一代不一致 profiles 推薦人');
+    const e = await mk('鏈 一代不一致 edge 推薦人');
+    await link(sql, x, a);
+    await link(sql, a, e);
+    // 只改 a 的 profiles：發獎第 2 代沿 a 的 edge（e），不讀 a 的 profiles（p）。
+    await sql`update public.profiles set referred_by_user_id = ${p} where id = ${a}`;
+
+    const chain = await chainOf(sql, x);
+    assertEquals(chain[1].recipient_id, e);
+    assertEquals(await paidRecipients(sql, x), chainRecipients(chain));
+  });
+});
+
 Deno.test('referral_award_chain：authenticated 與 anon 不得 EXECUTE', async () => {
   const sql = postgres(DB_URL, { max: 1 });
   try {

@@ -369,3 +369,93 @@ describe('實作審查補強', () => {
     expect(screen.queryByText('第 4 層')).toBeNull();
   });
 });
+
+describe('獨立審查補強', () => {
+  it('無法接上群組裡 X↔Y 成環：巢狀回到 X 時不再展開並寫說明', async () => {
+    const loadNodes = vi.fn(async (p: NodesParams) => {
+      if (p.group === 'unplaceable') {
+        return nodesData([node('X', { layer: null, directCount: 1, anomalyKinds: ['cycle'] })], 1);
+      }
+      if (p.parentId === 'X') return nodesData([node('Y', { layer: null, directCount: 1 })], 1);
+      if (p.parentId === 'Y') return nodesData([node('X', { layer: null, directCount: 1 })], 1);
+      return nodesData([node('1')], 1, { unplaceableCount: 1 });
+    });
+    renderTree(makeLoaders({ loadNodes }));
+    fireEvent.click(await screen.findByRole('button', { name: /無法接上推薦樹的會員（1）/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '展開會員X' }));
+    fireEvent.click(await screen.findByRole('button', { name: '展開會員Y' }));
+    expect(await screen.findByText('推薦關係成環，不再往下展開')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /展開會員X|收合會員X/ })).toHaveLength(1);
+  });
+
+  it('節點列只寫到期日，不寫剩幾天', async () => {
+    renderTree(
+      makeLoaders({
+        loadNodes: vi.fn(async () =>
+          nodesData([node('1', { status: 'expiring', daysToExpiry: 5 })], 1, {
+            unplaceableCount: 0,
+          }),
+        ),
+      }),
+    );
+    await screen.findByText('已顯示 1 / 1 位');
+    expect(screen.queryByText(/剩 5 天/)).toBeNull();
+    expect(screen.getByText(/到期$/)).toBeTruthy();
+  });
+
+  it('同一層有兩支請求在途時只採最新一次回應', async () => {
+    const resolvers: ((v: NodesData) => void)[] = [];
+    const loadNodes = vi.fn((p: NodesParams) =>
+      p.parentId
+        ? new Promise<NodesData>((r) => resolvers.push(r))
+        : Promise.resolve(nodesData([node('r', { directCount: 2 })], 1, { unplaceableCount: 0 })),
+    );
+    const search = vi.fn(async () => ({
+      total: 1,
+      matches: [{ ...node('t', { layer: 2 }), ancestorIds: ['r'], unplaceableReason: null }],
+    }));
+    renderTree(makeLoaders({ loadNodes, search }));
+    fireEvent.click(await screen.findByRole('button', { name: '展開會員r' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜尋姓名或推薦碼' }), {
+      target: { value: 't' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '在樹上展開到會員t' }));
+    await waitFor(() => expect(resolvers).toHaveLength(2));
+    await act(async () => resolvers[1](nodesData([node('t', { layer: 2 })], 2)));
+    await act(async () => resolvers[0](nodesData([node('old', { layer: 2 })], 2)));
+    expect(screen.getByRole('button', { name: '查看會員t的推薦與查帳資訊' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '查看會員old的推薦與查帳資訊' })).toBeNull();
+  });
+
+  it('搜尋載入更多在途時停用，回來的結果以 id 去重', async () => {
+    let release: (v: SearchData) => void = () => {};
+    const search = vi.fn((_q: unknown, offset?: number) =>
+      offset
+        ? new Promise<SearchData>((r) => {
+            release = r;
+          })
+        : Promise.resolve({
+            total: 3,
+            matches: [{ ...node('a'), ancestorIds: [], unplaceableReason: null }],
+          }),
+    );
+    renderTree(makeLoaders({ search: search as unknown as ReferralTreeLoaders['search'] }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: '搜尋姓名或推薦碼' }), {
+      target: { value: 'q' },
+    });
+    const more = await screen.findByRole('button', { name: '載入更多' });
+    fireEvent.click(more);
+    await waitFor(() => expect((more as HTMLButtonElement).disabled).toBe(true));
+    await act(async () =>
+      release({
+        total: 3,
+        matches: [
+          { ...node('a'), ancestorIds: [], unplaceableReason: null },
+          { ...node('b'), ancestorIds: [], unplaceableReason: null },
+        ],
+      }),
+    );
+    expect(screen.getAllByRole('button', { name: '查看會員a的推薦與查帳資訊' })).toHaveLength(1);
+    expect(screen.getByText('已顯示 2 / 3 筆')).toBeTruthy();
+  });
+});

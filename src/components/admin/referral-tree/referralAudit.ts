@@ -75,6 +75,7 @@ const RESULT_TEXT: Record<AdminReferralGeneration['result'], Label> = {
 const REASON_TEXT: Record<NonNullable<AdminReferralGeneration['reason']>, string> = {
   changed_after: '付款後推薦關係有變動',
   no_subscription: '找不到對應訂閱',
+  referrer_mismatch: '推薦人資料兩處不一致',
 };
 
 export function resultLabel(

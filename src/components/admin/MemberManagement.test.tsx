@@ -1946,4 +1946,36 @@ describe('MemberManagement 推薦樹次分頁', () => {
     await waitFor(() => expect(tree.loadMember).toHaveBeenCalledWith(detail().id));
     expect(screen.queryByRole('button', { name: '在推薦樹中查看' })).toBeNull();
   });
+  it('從推薦樹開查帳詳情再按 Esc 關閉 → 焦點回到該會員的名稱鈕', async () => {
+    const treeNode = {
+      id: 'n1',
+      name: '樹上會員',
+      referralCode: '801',
+      layer: 1,
+      directCount: 0,
+      status: 'active' as const,
+      daysToExpiry: 100,
+      endDate: '2027-03-01T15:59:59Z',
+      referralProgramJoined: true,
+      referralProgramJoinedAt: null,
+      anomalyKinds: [],
+      anomalyScanTruncated: false,
+    };
+    const tree = treeLoaders({
+      loadNodes: vi.fn(async () => ({
+        total: 1,
+        nodes: [treeNode],
+        pinned: null,
+        unplaceableCount: 0,
+      })),
+    });
+    renderWithTree(tree);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '推薦樹' }));
+    const trigger = await screen.findByRole('button', { name: '查看樹上會員的推薦與查帳資訊' });
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
 });
