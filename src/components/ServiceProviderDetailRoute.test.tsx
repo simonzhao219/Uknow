@@ -527,6 +527,22 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     expect(animate).not.toHaveBeenCalled();
   });
 
+  it('輪播盡頭續滑在最後一篇時，內容區輕推再回原位並播報', async () => {
+    const solo = mk('c', 'CCC美容師', 1);
+    setup('c', { rows: [A, B, solo] });
+    await screen.findByRole('heading', { name: 'CCC美容師' });
+    await settleLazy();
+    const scroller = document.querySelector('[data-carousel-scroller]') as HTMLElement;
+
+    fireEvent.touchStart(scroller, { touches: [{ clientX: 250, clientY: 300 }] });
+    fireEvent.touchEnd(scroller, { changedTouches: [{ clientX: 120, clientY: 300 }] });
+
+    expect(await screen.findByText(/已是最後一篇/)).toBeTruthy();
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(animate.mock.calls[0][0])).toContain('translateX(-24px)');
+    expect(animate.mock.instances[0]).toBe(motion());
+  });
+
   it('外層容器用 overflow-x-clip 擋住位移造成的橫向捲動', async () => {
     setup('b');
     await screen.findByRole('heading', { name: 'BBB美容師' });

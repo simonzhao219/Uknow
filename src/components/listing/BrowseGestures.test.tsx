@@ -131,7 +131,30 @@ describe('BrowseGestures 跟手', () => {
     drag(text, [200, 300], [140, 302], false);
     expect(target.style.transform).toBe('translateX(-15px)');
     touch(text, 'touchend', 110, 302);
-    expect(onNavigate).toHaveBeenCalledWith('next', 'swipe');
+    // 第三個參數＝手勢已自己彈回，呼叫端不必再疊一段輕推。
+    expect(onNavigate).toHaveBeenCalledWith('next', 'swipe', true);
+    expect(target.style.transform).toBe('');
+  });
+
+  it('快速放開（最後一幀位移尚未寫入）時，彈回仍從最後的位移起算', () => {
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn(() => 9),
+    );
+    const { text, target } = mount();
+    const animate = vi.fn();
+    target.animate = animate as unknown as typeof target.animate;
+    drag(text, [200, 300], [170, 301], false);
+    expect(target.style.transform).toBe('');
+    touch(text, 'touchend', 170, 301);
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(animate.mock.calls[0][0][0]).toEqual({ transform: 'translateX(-15px)' });
+  });
+
+  it('touchstart 時清掉上一次殘留的位移', () => {
+    const { text, target } = mount();
+    target.style.transform = 'translateX(-20px)';
+    touch(text, 'touchstart', 200, 300);
     expect(target.style.transform).toBe('');
   });
 });

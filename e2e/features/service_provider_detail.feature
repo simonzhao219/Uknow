@@ -113,6 +113,7 @@ Feature: Public service-provider detail page
     And the detail page container should keep room for focus rings
     When I release the drag
     Then I should be on the detail page for "Bob 美甲師"
+    And the page should not scroll horizontally
 
   @listing
   Scenario: With reduced motion the content stays put while a long drag still shows the next listing

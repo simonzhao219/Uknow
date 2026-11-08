@@ -51,7 +51,7 @@ export function useBrowseNav({
     return () => animation?.cancel?.();
   }, []);
 
-  const goBrowse = (direction: 'prev' | 'next', via: BrowseVia) => {
+  const goBrowse = (direction: 'prev' | 'next', via: BrowseVia, _sprung = false) => {
     if (!neighbors) return;
     const target = direction === 'next' ? neighbors.nextId : neighbors.prevId;
     if (!target) {

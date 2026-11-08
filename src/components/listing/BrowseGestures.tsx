@@ -14,7 +14,8 @@ import { SWIPE_EDGE_GUARD_PX, swipeIntent } from '../../utils/swipeIntent';
 export interface BrowseGesturesProps {
   /** 照片區以外的滑動由這個容器接。 */
   containerRef: RefObject<HTMLElement | null>;
-  onNavigate: (direction: 'prev' | 'next', via: 'key' | 'swipe') => void;
+  /** sprung＝手勢已自己彈回（去向沒有鄰居時），呼叫端不必再疊一段輕推。 */
+  onNavigate: (direction: 'prev' | 'next', via: 'key' | 'swipe', sprung?: boolean) => void;
   /** 跟手時被位移的元素（固定 wrapper，頁首列不在其內）。 */
   dragTargetRef: RefObject<HTMLElement | null>;
   /** 去向是否有鄰居：沒有的那一側阻尼加重、放開只播報不換篇。 */
