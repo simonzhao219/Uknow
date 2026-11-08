@@ -16,14 +16,14 @@
 | 5 | Edge 端點＋契約＋守門（5a～5d） | ✅ 綠（CI 682de3fb：api-tests、unit-tests、build-bundle 全過；static-checks 的 deno lint 由 3ad5764a 修） | ae25f1be（本機 unit：5a／5b 17 failed；CI api-tests：只有 5c 一支紅、581 passed） | d404f520（＋682de3fb 契約分檔，修 bundle 預算） |
 | 6 | 前端純函式 | ✅ 綠（本機 vitest 17 passed） | 894d070e（本機 vitest 16 failed／1 passed——「沒有說明」一支 stub 回 null 碰巧綠） | 96484797 |
 | 7 | `AdminReferralTree` | ✅ 綠（本機 vitest 12 passed） | 0222ab8b（本機 vitest 12 failed） | 2b1dc9ff |
-| 8 | `ReferralAuditSheet`＋次分頁＋私密 | 🔴 紅燈中 | （本 commit；本機 vitest src/components/admin：17 failed／574 passed，皆新測試） | |
+| 8 | `ReferralAuditSheet`＋次分頁＋私密 | ✅ 綠（本機 vitest admin＋analytics 690 passed） | 19d6c5a3（本機 vitest src/components/admin：17 failed／574 passed，皆新測試） | （本 commit） |
 | 9 | 規格書＋e2e | ⬜ 未開始 | | |
 | 10 | S3b：點數來源與對帳 RPC | ⬜ 未開始 | | |
 | 11 | S3b：端點＋UI＋異常 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 7 綠燈；下一步階段 8（詳情 Sheet、次分頁、跨分頁導覽、私密設定）。
+業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 8 綠燈；下一步階段 9（規格書 §13、e2e mock、overflow sweep）。
 
 **環境限制**：本容器 `supabase start` 拉不到映像（public.ecr.aws 的 CDN 被網路政策擋），DB 測試（`*.test.ts`）不能本機跑。階段 1～4、5c、5d 的紅綠證據以 CI api-tests 軌為準：紅燈 commit 單獨 push，確認 api-tests 在該測試上紅後才寫實作。deno 已以 `npm i -g deno` 安裝，`deno task check`、unit 測試可本機跑。
 

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -35,7 +35,9 @@ import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
 import { type AdminBusy, lockedTabProps, NOOP_BUSY, PAUSED_LOOK } from './adminBusy';
+import { AdminReferralTree } from './referral-tree/AdminReferralTree';
 import type { ReferralTreeLoaders } from './referral-tree/loaders';
+import { ReferralAuditSheet } from './referral-tree/ReferralAuditSheet';
 import { runAdminWrite } from './adminWrite';
 import { isForbidden, UNKNOWN_OUTCOME } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
@@ -141,6 +143,7 @@ export function MemberManagement({
   suspendMember,
   loadIdReviews,
   submitIdReview,
+  referralTree,
   cache,
   busy = NOOP_BUSY,
 }: MemberManagementProps) {
@@ -157,6 +160,10 @@ export function MemberManagement({
   const [searchInput, setSearchInput] = useState('');
   // 切回時回到原本的子分頁（D3）：存在記憶體快取的 view；搜尋字不存。
   const [memberTab, setMemberTab] = useState(() => cache?.readView().memberTab ?? 'members');
+  // 推薦樹（第 6 波 S3a）：從會員詳情跳來的目標，與推薦樹內打開的節點詳情。
+  const [treeFocusId, setTreeFocusId] = useState<string | null>(null);
+  const [auditId, setAuditId] = useState<string | null>(null);
+  const clearTreeFocus = useCallback(() => setTreeFocusId(null), []);
   // 送出中的管理動作，逐位會員記（面板用種類決定哪顆鈕轉圈）。單值做不到：A 在途時
   // 對 B 送出，A 的那筆就被蓋掉，關掉再重開 A 時鈕是活的，可以重複送出。
   const [processing, setProcessing] = useState<ReadonlyMap<string, MemberAction['kind']>>(
@@ -530,7 +537,8 @@ export function MemberManagement({
       value={memberTab}
       onValueChange={(next) => {
         setMemberTab(next);
-        cache?.writeView({ memberTab: next });
+        // 推薦樹每次都要重讀，不記成回後台時的預設次分頁（規劃 §3）。
+        if (next !== 'referral-tree') cache?.writeView({ memberTab: next });
       }}
       className="space-y-3 sm:space-y-6"
     >
@@ -547,7 +555,30 @@ export function MemberManagement({
         >
           證件審核
         </TabsTrigger>
+        <TabsTrigger
+          value="referral-tree"
+          {...lockedTabProps(tabLocked('referral-tree'), lockLook, busy.noteId)}
+        >
+          推薦樹
+        </TabsTrigger>
       </TabsList>
+
+      <TabsContent value="referral-tree">
+        <AdminReferralTree
+          loaders={referralTree}
+          onOpenNode={setAuditId}
+          focusId={treeFocusId}
+          onFocusConsumed={clearTreeFocus}
+        />
+        {auditId && (
+          <ReferralAuditSheet
+            key={auditId}
+            loaders={referralTree}
+            userId={auditId}
+            onClose={() => setAuditId(null)}
+          />
+        )}
+      </TabsContent>
 
       <TabsContent value="id-reviews">
         <IdReviewQueue
@@ -605,6 +636,16 @@ export function MemberManagement({
           onRequestAction={requestAction}
           onClose={closeDetail}
           onCloseAutoFocus={returnFocusToTrigger}
+          onViewInTree={
+            tabLocked('referral-tree')
+              ? undefined
+              : () => {
+                  const id = detailFor.id;
+                  closeDetail();
+                  setMemberTab('referral-tree');
+                  setTreeFocusId(id);
+                }
+          }
         />
       )}
 
