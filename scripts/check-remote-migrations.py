@@ -13,7 +13,7 @@ Edge Function 由 deploy-supabase.yml 部署，兩者各走各的。新 Edge 若
 讀遠端：Management API `GET /v1/projects/{ref}/database/migrations`（唯讀）。刻意不用
 `/database/query`——那個端點能跑任意 SQL。回應形狀已實測（2026-11-08，develop，PR #526
 的暫時探針 run 42508744727）：HTTP 200、陣列、元素只有 `version`（14 位數字字串）與 `name`
-兩鍵、共 97 筆依版本排序；self-test 的「真實回應樣本」案例照這個形狀寫。
+兩鍵、共 97 筆依版本排序；self-test 的「真實回應樣本」案例依這個形狀合成（版本與名稱為假值）。
 
 結果三分（退出碼）：
   0 齊 —— 放行部署
@@ -135,8 +135,12 @@ def run(argv: list[str], env: dict[str, str]) -> int:
         return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else default
 
     project_ref = arg("--project-ref") or env.get("SUPABASE_PROJECT_REF", "")
-    max_wait = float(arg("--max-wait", "600") or 600)
-    interval = float(arg("--interval", "30") or 30)
+    try:
+        max_wait = float(arg("--max-wait", "600") or 600)
+        interval = float(arg("--interval", "30") or 30)
+    except ValueError:
+        print("::error::--max-wait／--interval 必須是秒數")
+        return UNREADABLE
     token = env.get("SUPABASE_ACCESS_TOKEN", "")
     if not project_ref:
         print("::error::未指定 project ref（--project-ref 或 SUPABASE_PROJECT_REF）")

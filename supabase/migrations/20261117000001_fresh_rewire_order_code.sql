@@ -418,4 +418,3 @@ $$;
 
 revoke execute on function public.process_successful_payment(uuid, text, text, jsonb) from anon, authenticated, public;
 
-revoke execute on function public.process_successful_payment(uuid, text, text, jsonb) from anon, authenticated, public;

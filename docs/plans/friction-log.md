@@ -3542,3 +3542,20 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **推薦碼正規化有 4 份複本**：`admin-referral-tree.ts` 的 `normalizeCode`，加上 index.ts 三處內嵌的 `.normalize('NFKC').toLowerCase().trim()`。處置：存量債，收進 `_shared`。
 - **本機 e2e 的 playwright 版本與容器預裝的 chromium 不符**：requirements 釘 1.56.0（chromium 1194），容器是 1243，要在拋棄式容器裡 symlink 才跑得動。處置：存量債。
 - **紅燈期寫錯測試的代價**：#521 的紅燈 commit 有兩支測試寫錯（mock 讀錯參數、照審查員錯誤的自癒前提寫）。按 tdd-test-guard 規定記入 Blockers、取得業主授權後才修。另一次（#521 節點列精簡）是依裁決原文 W6-26 的合理解讀改實作，讓測試成立，沒有動測試。處置：流程運作正常；教訓是寫紅燈前先對照被測函式的實際簽章與現行行為，不要只信審查摘要。
+
+## 2026-11-09｜誤擋／漏網（環境、流程）｜第 6 波 S6 renewal-deploy-closeout（PR #526，從 progress.md 整併）
+
+- **雲端容器無 docker daemon、無 supabase CLI**（環境）：D 層紅綠只能靠 PR 的 api-tests 軌（每輪約 5～8 分鐘，`cancel-in-progress`
+  讓紅燈 commit 必須單獨推、等結果再推下一批）。補位：本機 PG16＋shim（roles、auth.users 欄位含 `invited_at`／`confirmation_sent_at`、
+  storage／cron／net／vault 空殼，拔 pg_cron／pg_net 的 create extension）可從零套全部 migration，用 SQL 情境先驗紅綠——0d 的五個情境
+  在 CI 前就確定行為。shim 仍只在 scratchpad，第 5 波起提過兩次「收進 scripts/」，仍未做。
+- **推送守衛在非 push 指令上自動 rebase**（誤擋）：一次 `npm run check:full` 被 PreToolUse 攔下，守衛先把本地分支 rebase 到新的
+  origin/develop（develop 剛合了 #525），再要求 force-with-lease。沒有衝突所以無害，但指令本身沒跑、歷史已被改寫，下一步要先查
+  `git status` 與 migration 版本號。候選：守衛只在指令實際含 git push 子命令時才動作。
+- **Management API 回應形狀只能在 Actions 內實測**（環境）：雲端容器連不到 api.supabase.com，主 session 要求合併前以真實回應驗過
+  `database/migrations` 的形狀。做法：PR 上加一支 `pull_request` 觸發的暫時探針 workflow（只讀、不印 token），看完 log 就刪，
+  把實測形狀寫進腳本 self-test。可複用於任何「部署 job 才碰得到的外部 API」。
+- **bundle 預算長期卡在上限**（流程）：develop 的 entry gzip 已是 316.0／316 kB，任何結帳頁文案改動都會撞線、要業主授權。
+  候選：雙週整併時盤點 entry 內可 lazy 的頁面，留出餘裕。
+
+處置：第 1 條（shim 腳本化）與第 2 條（守衛比對範圍）列入下次框架整併；第 3 條為可複用做法；第 4 條列第 7 波候選。
