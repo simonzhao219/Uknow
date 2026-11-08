@@ -264,11 +264,17 @@ def content_not_shifted(page):
 
 @then("the detail page container should keep room for focus rings")
 def container_keeps_ring_room(page):
-    # overflow-x: clip would cut the 3px focus ring of edge-hugging buttons without a clip margin.
-    margin = page.evaluate(
-        "getComputedStyle(document.querySelector('[data-browse-motion]').parentElement).overflowClipMargin"
+    # overflow-x: clip cuts the 3px focus ring of edge-hugging buttons unless the clip box extends
+    # past the content. Measure real pixels (no reliance on overflow-clip-margin, which Safari lacks):
+    # the back button sits at least 8px inside the clip layer's left edge.
+    gap = page.evaluate(
+        """() => {
+            const layer = document.querySelector('[data-browse-motion]').parentElement;
+            const back = layer.querySelector('button');
+            return back.getBoundingClientRect().left - layer.getBoundingClientRect().left;
+        }"""
     )
-    assert margin not in ("", "0px"), margin
+    assert gap >= 8, gap
 
 
 @then("the page should not scroll horizontally")

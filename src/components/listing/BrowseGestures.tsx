@@ -132,9 +132,6 @@ export default function BrowseGestures({
         start = null;
         return;
       }
-      // 上一段進場／彈回動畫還在跑：先取消；殘留的位移也清掉，跟手一律從 0 起算。
-      clearTransform();
-      for (const animation of dragTargetRef.current?.getAnimations?.() ?? []) animation.cancel();
       start = { x, y: touch.clientY, axis: null, abandoned: false };
     };
     const onTouchMove = (e: TouchEvent) => {
@@ -156,6 +153,9 @@ export default function BrowseGestures({
           from.abandoned = true;
           return;
         }
+        // 判定為水平拖曳才打斷上一段進場／彈回動畫（換篇後 220ms 內只是碰一下想捲動，不該切斷淡入）；
+        // 之後跟手一律從 0 起算。
+        for (const animation of dragTargetRef.current?.getAnimations?.() ?? []) animation.cancel();
       }
       if (hasSelection()) {
         from.abandoned = true;

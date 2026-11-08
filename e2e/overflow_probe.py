@@ -16,7 +16,7 @@ lint 又看不懂 `cn()` 組出來的 class——只有真的把頁面畫出來�
   東西不會把頁面撐出捲軸，所以前兩種訊號和 document 層級的檢查都看不到
   它（toast 就是這樣長期沒被發現的）。
 
-刻意「不」偵測的情況：`overflow` 非 visible 的元素（`overflow-hidden` 是
+刻意「不」偵測的情況：帶 `data-overflow-intentional` 屬性的元素（子層刻意外推，原因寫在屬性值）、`overflow` 非 visible 的元素（`overflow-hidden` 是
 明示要裁切、`overflow-auto` 是明示要捲動，兩者都是有意為之），以及寬高
 為 0 或 `visibility: hidden` 的元素。
 """
@@ -71,6 +71,9 @@ _PROBE_JS = """
     if (rect.width < 1 || rect.height < 1) continue;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden') continue;
+    // 刻意外推的容器：子層以負外距往兩側各多伸出一段（詳情頁的裁切層留聚焦環空間），伸出去的
+    // 部分仍在祖先的 padding 內、不是排不下的內容。以屬性明示才跳過，原因寫在屬性值裡。
+    if (el.hasAttribute('data-overflow-intentional')) continue;
 
     // scrollWidth 只算 inline-end（LTR 的右）方向的溢出。`justify-center`
     // 的內容是往左右兩邊各溢一半，只看 scrollWidth 會少報一半；純往左溢

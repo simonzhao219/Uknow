@@ -42,7 +42,11 @@ import type { PublicListingRow } from '../types/listing';
 // 截斷、手打錯）回 22P02。其餘（網路、5xx、沒有資料也沒有錯誤碼的怪回應）是暫時讀不到——
 // 從 LINE 分享連結進來的訪客遇到這種失敗，不能被告知「找不到」，要給重試。
 // 換篇的鍵盤與照片外滑動：只在有首頁脈絡時才載入（分享連結進來的訪客不付這段）。
-const BrowseGestures = lazy(() => importWithRetry(() => import('./listing/BrowseGestures')));
+// 手勢 chunk 載入失敗時不整頁重載（reload 設為空操作、storage 設 null 關掉記號）：換篇脈絡只在記憶體裡，
+// 重載會讓「‹ n/N ›」整組消失；失敗時由 BrowseGesturesBoundary 靜默降級為只有按鈕換篇。重試一次仍保留。
+const BrowseGestures = lazy(() =>
+  importWithRetry(() => import('./listing/BrowseGestures'), { reload: () => {}, storage: null }),
+);
 
 const NOT_FOUND_CODES = new Set(['PGRST116', '22P02']);
 
@@ -201,14 +205,20 @@ export function ServiceProviderDetail({
   const shell = (variant: 'page' | 'notFound', body: ReactNode) => (
     <div
       ref={gestureRef}
-      className={`max-w-4xl mx-auto overflow-x-clip [overflow-clip-margin:8px] ${variant === 'notFound' ? 'text-center py-12' : 'space-y-6'} ${gestureClass}`}
+      data-overflow-intentional="裁切層以 -mx-2 外推 8px 留聚焦環空間"
+      className={`max-w-4xl mx-auto ${variant === 'notFound' ? 'text-center py-12' : ''} ${gestureClass}`}
     >
-      {variant === 'notFound'
-        ? browseNav && <div className="flex justify-end">{browseNav}</div>
-        : topBar}
-      {gestures}
-      <div ref={motionRef} data-browse-motion="">
-        {body}
+      {/* 裁切層：overflow-x: clip 擋住位移造成的橫向捲動；-mx-2／px-2 讓裁切邊界在內容兩側各外推
+          8px（內容位置不變），貼邊按鈕的聚焦環與卡片陰影不被裁——不依賴 overflow-clip-margin
+          （Safari 不支援）。 */}
+      <div className={`-mx-2 overflow-x-clip px-2 ${variant === 'notFound' ? '' : 'space-y-6'}`}>
+        {variant === 'notFound'
+          ? browseNav && <div className="flex justify-end">{browseNav}</div>
+          : topBar}
+        {gestures}
+        <div ref={motionRef} data-browse-motion="">
+          {body}
+        </div>
       </div>
     </div>
   );
