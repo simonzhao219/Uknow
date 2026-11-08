@@ -2,7 +2,7 @@
 
 <!-- plans-keep: S3a／S3b 共用的 TDD 外部記憶；退場條件＝S3b PR 合併時隨 plan.md 一起刪（S3b 順延時由第 7 波主 session 決定） -->
 
-分支:`feature/admin-referral-tree`（S3a）；S3b 另切分支、沿用本目錄
+分支:`feature/admin-referral-tree`（S3a #521 已合併；S3b 以同名分支從 develop 重開，PR #525）
 規劃書:`./plan.md`|審查:`./review.md`(P0 須全數處置才可開工)
 
 ## 階段狀態
@@ -19,7 +19,7 @@
 | 8 | `ReferralAuditSheet`＋次分頁＋私密 | ✅ 綠（本機 vitest admin＋analytics 690 passed） | 19d6c5a3（本機 vitest src/components/admin：17 failed／574 passed，皆新測試） | 299e6f0a |
 | 9 | 規格書＋e2e | ✅ 綠（本機 e2e：admin_steps＋overflow sweep＋admin mobile layout 77 passed） | 不適用（逃生口 1，見 Blockers） | （本 commit） |
 | — | #521 獨立審查補強（P0 成環、P1×2、P2×6、W6-26） | ✅ 本機 vitest 綠；DB 待 CI | 666b6e0e（CI api-tests：2 failed／586 passed，皆新測試；unit 紅為前端新測試） | （本 commit） |
-| 10 | S3b：點數來源與對帳 RPC | ⬜ 未開始 | | |
+| 10 | S3b：點數來源與對帳 RPC | 🟡 綠燈待 CI 證明（本機無 DB） | 4b6bbda5 | （本 commit） |
 | 11 | S3b：端點＋UI＋異常 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
