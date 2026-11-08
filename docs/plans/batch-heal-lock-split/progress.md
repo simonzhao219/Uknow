@@ -9,17 +9,17 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | 死鎖重現 → 單筆交易 heal | ✅ 綠 | 56dce8c6 | （見下一個 commit） |
-| 2 | per-user 逐筆（W6-13） | ✅ 綠（逃生口 1） | —（一寫就綠） | （見下一個 commit） |
-| 3 | 發獎失敗改 error（W6-10、W6-12） | ✅ 綠 | 1d2ea7ba | （見下一個 commit） |
-| 4 | 帳本 summary：unknownByReason、heal | ⬜ 未開始 | | |
+| 1 | 死鎖重現 → 單筆交易 heal | ✅ 綠 | 56dce8c6 | 17052c4a |
+| 2 | per-user 逐筆（W6-13） | ✅ 綠（逃生口 1） | —（一寫就綠） | 9abf8017 |
+| 3 | 發獎失敗改 error（W6-10、W6-12） | ✅ 綠 | 1d2ea7ba | d7dcb0fc |
+| 4 | 帳本 summary：unknownByReason、heal | ✅ 綠 | 4cdb2ba7 | （見下一個 commit） |
 | 5 | scheduler_health streak | ⬜ 未開始 | | |
 | 6 | invoke_internal_endpoint(p_job, p_trigger) | ⬜ 未開始 | | |
 | 7 | 收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-業主 2026-11-08 在本 session 親打 `/tdd-implement batch-heal-lock-split` 開工（主 session 已親審 r3 通過）。階段 1～3 綠；下一步階段 4（帳本 summary）。
+業主 2026-11-08 在本 session 親打 `/tdd-implement batch-heal-lock-split` 開工（主 session 已親審 r3 通過）。階段 1～4 綠；下一步階段 5（scheduler_health streak）。
 本機環境：dockerd 背景起、`npm i -g supabase@2.109.1`、`SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime`；新 migration 以 psql 直接套。
 
 ## Blockers（逃生口紀錄）
@@ -31,5 +31,7 @@
   （實作與既有告警都存數字；斷言行為不變）。授權：業主 2026-11-08 本 session 互動選項「Fix the test (Recommended)」。
 - 階段 3 發現（範圍外，未改）：舊 wrapper 重現時第一個撞鎖點是 3b 建推薦邊（`apply_referral_side_effects：建立推薦邊失敗…deadlock detected`，
   warning），比發獎更早。逐筆化後這條環已不存在；但 3b／3d 失敗仍只是 warning，漏建推薦邊會影響之後的第 2、3 代——回報主 session 列候選。
+- 階段 4：`heal` dep 型別維持 `data: unknown`（plan §2.6 寫 `HealResult | null`）——紅燈期測試檔鎖住，既有 mock `{ completed: 0 }` 不合新型別；
+  改由 `healLedgerSummary` 逐鍵防禦解析（形狀不符當 0）。行為與 plan 相同，PR〈偏離規劃說明〉列這條。
 
 ## 框架摩擦
