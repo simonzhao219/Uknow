@@ -108,9 +108,14 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
+| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | — | 規劃中（11/08 開） |
+| S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | — | 施工中（11/08 開） |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | — | 規劃中（11/08 開） |
+| S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | — | 施工中（11/08 開） |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
 
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
 | 11/08 | 主 session 開局：讀交接、第 5 波 plan／review、〈慣例〉。正式站照片清理首輪 dryRun＝**true**（id 11，19:17 UTC，0 孤兒）→ W6-4。S5 預查：正式站 listings 含「南鄉」0 筆。業主裁 **W6-1～7**；主 session 定 W6-8、W6-9。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S3、S5；業主補設 PHOTO_PURGE_LIVE |
+| 11/08 09:15 | 開 #519（本檔，draft，已訂閱）。開 S1、S3（Opus，規劃）與 S2、S5（Sonnet，`/fix-bug`），tag `uknow-wave-6`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S1、S3 規劃交業主審；業主補設 PHOTO_PURGE_LIVE（W6-4） |
