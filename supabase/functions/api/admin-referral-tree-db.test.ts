@@ -1128,3 +1128,23 @@ Deno.test('admin_referral_ledger_audit：查無此人 → null；anon 與 authen
     }
   });
 });
+
+Deno.test('admin_referral_ledger_audit：新約清空列帶觸發它的付款時點', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 清空來源']);
+    track([u]);
+    await subscribe(sql, u);
+    const [po] = await sql`
+      insert into public.payment_orders (user_id, amount, status, transaction_id, completed_at)
+      values (${u}, 1200, 'completed', ${'TREE-' + crypto.randomUUID()}, '2026-03-01T00:00:00Z')
+      returning id`;
+    const [sub] = await sql`
+      insert into public.subscriptions (user_id, start_date, end_date, grace_period_end, source_payment_order_id)
+      values (${u}, now(), now() + interval '1 year', now() + interval '1 year', ${po.id})
+      returning id`;
+    await sql`insert into public.reward_transactions (user_id, type, amount, subscription_id, description, created_at)
+              values (${u}, 'ledger_reset', 0, ${sub.id}, '新約重置：帳本清空', '2026-03-01T00:00:00Z')`;
+    const row = (await ledger(sql, u))!.items.find((i) => i.type === 'ledger_reset')!;
+    assertEquals(new Date(row.event_at!).toISOString(), '2026-03-01T00:00:00.000Z');
+  });
+});

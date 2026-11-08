@@ -18,11 +18,9 @@
 --                      相同，一律當作尚未發生，免得 uuid 決定先後而偶發誤報
 --   reset_delayed      （info）description 含「延遲補沖」的 ledger_reset：
 --                      repair_orphaned_forfeitures 依告警快照寫入，不比金額
--- 已知競態（寫在詳情的說明裡）：別筆交易先開始、但在清空的 sum 之後才提交，清空
--- 金額就可能差一筆，會被標 reset_amount。
---
--- 舊資料：§2.3 的「加 fee 之前的提領單」——主 session 代查正式站 0 筆（2026-11-08），
--- 依規劃刪掉該條，不另判別。
+-- 已知競態（寫在詳情的說明裡）：清空列的 created_at 是付款交易起點，sum 卻在交易中途
+-- 讀。別筆交易先開始、在 sum 之後才提交（該列早於清空卻沒被算進去），或在付款交易開始
+-- 之後才開始、在 sum 之前提交（被算進去卻晚於清空），兩個方向都會差一筆、被標 reset_amount。
 --
 -- admin_referral_ledger_audit(p_user, limit, offset)：帳本明細（新到舊）＋ findings。
 -- 異常 ledger_mismatch（點數跨表核對不符）加進節點與會員詳情：本檔重新定義
@@ -149,7 +147,9 @@ begin
             order by v.created_at desc, v.id desc
             limit v_limit offset v_offset) t
       left join public.profiles rp on rp.id = t.referee_user_id
-      left join public.subscriptions s on s.id = t.subscription_id and t.type = 'referral_reward'
+      -- 推薦獎勵：付款人那筆付款；新約清空：觸發它的新約付款（規劃 §2.3）。
+      left join public.subscriptions s
+        on s.id = t.subscription_id and t.type in ('referral_reward', 'ledger_reset')
       left join public.payment_orders po on po.id = s.source_payment_order_id
       left join public.referral_king_rewards k on k.id = t.source_claim_id
       left join public.withdrawals w on w.id = t.withdrawal_id

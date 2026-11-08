@@ -73,6 +73,9 @@ function LedgerRow({ row }: { row: LedgerData['items'][number] }) {
           }`}
         </p>
       ) : null}
+      {row.type === 'ledger_reset' && row.eventAt ? (
+        <p className="text-xs text-muted-foreground">新約付款 {formatTwTimestamp(row.eventAt)}</p>
+      ) : null}
       {withdrawalLine ? <p className="text-xs text-muted-foreground">{withdrawalLine}</p> : null}
     </li>
   );
@@ -135,9 +138,12 @@ export function LedgerSection({
                           </li>
                         ))}
                       </ul>
+                      <p className="mt-1 text-xs">
+                        核對涵蓋整本帳，對應的列可能在尚未載入的列；提領單缺扣款或退款時沒有列可標。
+                      </p>
                       {counts.has('reset_amount') ? (
                         <p className="mt-1 text-xs">
-                          清空當下若有別筆交易同時寫入，金額可能差一筆；請先對照該時段的帳本再判斷。
+                          清空當下若有別筆交易同時寫入，金額可能差一筆（多算或少算都有可能）；請先對照該時段的帳本再判斷。
                         </p>
                       ) : null}
                     </>

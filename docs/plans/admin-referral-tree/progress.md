@@ -54,6 +54,14 @@
 - 320px 三分頁未驗證：e2e overflow sweep 只支援 375px。
 - 效能備註（不修）：`unplaceable_ids` 線性掃描；`tree_node` 呼叫 upline、payment_events 各兩次。
 
+## 偏離規劃（S3b）
+
+- §2.3「舊資料」：正式站 0 筆，依規劃刪掉，plan 已同步；階段 10 不寫「舊資料標未核對」的案例。
+- 帳本與付款兩區共用每頁 20 筆（`PAYMENT_PAGE`）。
+- 列上的徽章只寫「核對不符」，原因列在區塊頂部（未改成逐列短原因，實作審查 P2）。
+- `LedgerState` 與 Sheet 的 `PagedState` 欄位重複、`mergeById`／`mergeByEventId` 同形（實作審查 P2，未抽共用）。
+- 「載入更多」在途與失敗沒有 aria-live 播報，與付款區相同（實作審查 P2，兩區要一起改）。
+
 ## 框架摩擦
 
 - `normalizeCode`（推薦碼正規化）現在有 4 份：`admin-referral-tree.ts` 的 `normalizeCode`＋`index.ts` 三處內嵌 `.normalize('NFKC').toLowerCase().trim()`，值得收進 `_shared`。

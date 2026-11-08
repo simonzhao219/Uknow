@@ -621,3 +621,50 @@ describe('ReferralAuditSheet 點數來源（S3b）', () => {
     expect(loadLedger).toHaveBeenLastCalledWith('u1', { limit: 20, offset: 1 });
   });
 });
+
+describe('ReferralAuditSheet 點數來源實作審查補強', () => {
+  const base = {
+    id: 'r1',
+    at: '2026-11-01T04:00:00Z',
+    type: 'ledger_reset',
+    sourceCategory: 'ledger_reset',
+    amount: -300,
+    balanceAfter: 0,
+    description: '新約重置：帳本清空',
+    generation: null,
+    refereeId: null,
+    refereeName: null,
+    eventAt: '2026-11-01T03:59:00Z',
+    withdrawalId: null,
+    withdrawalStatus: null,
+    subscriptionId: 's1',
+    finding: null,
+  };
+
+  it('新約清空列寫觸發它的新約付款時點', async () => {
+    renderSheet(
+      loaders({ loadLedger: vi.fn(async () => ({ total: 1, findings: [], items: [base] })) }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/^新約付款 2026\/11\/01/)).toBeTruthy();
+  });
+
+  it.each([
+    ['withdrawal_debit', '提領單的帳本扣款不是恰好一筆，或金額不符'],
+    ['refund_unexpected', '未退件的提領卻有退款'],
+    ['orphan_debit', '有帳本扣款對不上這位會員的提領單'],
+  ] as const)('核對不符 %s 寫出對應原因，並提醒可能在未載入的列', async (kind, text) => {
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 1,
+          findings: [{ kind, transactionId: null, withdrawalId: 'w1', info: false }],
+          items: [base],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(text)).toBeTruthy();
+    expect(sec.getByText(/尚未載入的列/)).toBeTruthy();
+  });
+});
