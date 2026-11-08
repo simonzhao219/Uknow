@@ -67,6 +67,7 @@
 | W6-28 | S6：現任推薦人即預設推薦人、新約留空的確認框 | **寫「推薦人維持不變」**；§7.4 寫明「不揭露」只管預設推薦人的姓名與碼（被推翻：改中性句）（業主 2026-11-08） |
 | W6-29 | S6：自己填碼剛好填到預設推薦人者，新約留空付款後標成預設帶入 | **接受**（被推翻：推薦人實際改變才設旗標）（業主 2026-11-08） |
 | W6-30 | S6 Q2／Q3／Q5／Q7 | drop wrapper（W6-14）延第 7 波，等正式站跑過 S1 的 Edge 一輪；#514 P2-3 競態本波不處理、規格書寫明；status 現任推薦人讀取失敗降級成欄位缺；workflow 規則 14＋timeout 都做 |
+| W6-31 | S6 R2-9：自動綁預設者手動填入＝現任的碼，確認框寫「將改為」與留空的「維持不變」不一致 | **接受**，規格書 §6.2 寫一句；改寫成「維持不變」會讓人逐碼試出自己的預設推薦人，與 W6-28 衝突 |
 
 ## 1. 時程
 
@@ -133,7 +134,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
 | S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 ✅ 47cf195（S3a） | S3b 施工中 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
-| S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | — | 規劃 v2 修訂中 |
+| S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | — | 規劃 v2.1 親審通過，等業主親打 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -162,3 +163,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 18:00 | #524 develop 驗證：`20261114000001`、`20261115000001` 已套；新函式 `complete_paid_pending_order(uuid)`、`list_paid_pending_order_ids`、`invoke_internal_endpoint(p_job, p_trigger)` 在；develop pg_cron 08:07、09:07 UTC 兩輪 reconcile succeeded 且帳本 summary 有 `heal`、`unknownByReason`（07:07 那輪尚無）→ Edge 已是 S1 版本，heal 新路徑實跑無誤（未另 dispatch） | — |
 | 11/08 18:00 | S3 修 #521 獨立審查（P0 renderLayer 帶祖先路徑；P1 焦點回名稱鈕、profiles≠edge 判無法判定；P2 1～6；W6-26），rebase 到 1bcc377、CI 全綠；主 session 核 P0 修法 → **#521 合進 develop（47cf195）**。**本波必上四項（S1、S2、S3a、S5）全數合併**。bundle total 1977.1／1978、entry gzip 316／316 已頂上限 | S3b 施工；S6 規劃 v2；業主手機實測 S4、補設 PHOTO_PURGE_LIVE |
 | 11/08 18:00 | S6 交規劃（P0 0、P1 8、P2 15）。業主裁 **W6-27～29**；主 session 定 **W6-30**。代查：正式站 schema_migrations 91 支（缺的正是本波未晉升 6 支），develop 97 支與 repo 逐支相同 → 無歷史漂移；兩環境 pending fresh 單 0 | S6 修 plan v2 → 主 session 親審 → 業主親打 |
+| 11/08 18:25 | S6 plan v2.1（5726e4eb；第 2 輪四視角 P0 0、P1 2 皆處置）主 session 親審通過，定 **W6-31**；施工提醒：Management API migrations 端點要以 develop 真實回應驗證格式後才合 | 業主到 S6 親打 `/tdd-implement renewal-deploy-closeout` |
