@@ -358,3 +358,95 @@ Deno.test('status：預設推薦人在本人推薦樹內 → freshDefaultReferre
     await deleteTestUsers(client, ids);
   }
 });
+
+// 第 6 波 S6（W5-63、W6-28）：現任推薦人就是預設推薦人時，新約留空推薦人不變——確認框要寫
+// 「維持不變」。只回布林（不揭露預設推薦人的姓名與碼）；預設推薦人不可用時省略欄位。
+async function withDefaultCode(
+  client: ReturnType<typeof adminClient>,
+  run: (setCode: (code: string | null) => Promise<void>) => Promise<void>,
+) {
+  const { data: cfg } = await client.from('reward_config').select('default_referrer_code')
+    .eq('id', true).single();
+  const original = cfg?.default_referrer_code ?? null;
+  const setCode = async (code: string | null) => {
+    const { error } = await client.from('reward_config').update({ default_referrer_code: code })
+      .eq('id', true);
+    assertEquals(error, null);
+  };
+  try {
+    await run(setCode);
+  } finally {
+    await setCode(original);
+  }
+}
+
+const activeCodeOf = async (client: ReturnType<typeof adminClient>, id: string) =>
+  (await client.from('referral_codes').select('code').eq('user_id', id).eq('status', 'active')
+    .single()).data!.code as string;
+
+Deno.test('status：現任推薦人＝預設推薦人 → freshDefaultReferrerIsCurrent 為 true，否則 false', async () => {
+  const client = adminClient();
+  const platform = await createTestUser(client, { name: 'Status IsCurrent Platform' });
+  const other = await createTestUser(client, { name: 'Status IsCurrent Other' });
+  const ids = [platform.id, other.id];
+  try {
+    assertEquals((await payForUser(client, platform.id)).error, null);
+    assertEquals((await payForUser(client, other.id)).error, null);
+    const user = await createTestUser(client, {
+      name: 'Status IsCurrent User',
+      referredByCode: await activeCodeOf(client, platform.id),
+    });
+    ids.push(user.id);
+    assertEquals((await payForUser(client, user.id)).error, null);
+    const token = await getUserAccessToken(client, user.email);
+
+    await withDefaultCode(client, async (setCode) => {
+      await setCode(await activeCodeOf(client, platform.id));
+      const same = (await getStatus(token)).data.renewal;
+      assertEquals(same.freshDefaultReferrerAvailable, true);
+      assertEquals(same.freshDefaultReferrerIsCurrent, true, '填碼綁的推薦人剛好是預設推薦人');
+
+      await setCode(await activeCodeOf(client, other.id));
+      assertEquals((await getStatus(token)).data.renewal.freshDefaultReferrerIsCurrent, false);
+
+      await setCode(null);
+      const unset = (await getStatus(token)).data.renewal;
+      assertEquals(unset.freshDefaultReferrerAvailable, false);
+      assertEquals(
+        'freshDefaultReferrerIsCurrent' in unset,
+        false,
+        '預設推薦人不可用時省略欄位',
+      );
+    });
+  } finally {
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('status：讀現任推薦人失敗 → 仍 200，只省略 freshDefaultReferrerIsCurrent（W6-30）', async () => {
+  const client = adminClient();
+  const platform = await createTestUser(client, { name: 'Status IsCurrent Fail Platform' });
+  const ids = [platform.id];
+  try {
+    assertEquals((await payForUser(client, platform.id)).error, null);
+    const user = await createTestUser(client, {
+      name: 'Status IsCurrent Fail User',
+      referredByCode: await activeCodeOf(client, platform.id),
+    });
+    ids.push(user.id);
+    assertEquals((await payForUser(client, user.id)).error, null);
+    const token = await getUserAccessToken(client, user.email);
+
+    await withDefaultCode(client, async (setCode) => {
+      await setCode(await activeCodeOf(client, platform.id));
+      assertEquals((await getStatus(token)).data.renewal.freshDefaultReferrerIsCurrent, true);
+
+      const res = await withRestTableFailure(['profiles'], () => getStatus(token));
+      assertEquals(res.status, 200, JSON.stringify(res.body));
+      assertEquals(res.data.renewal.freshDefaultReferrerAvailable, true);
+      assertEquals('freshDefaultReferrerIsCurrent' in res.data.renewal, false);
+    });
+  } finally {
+    await deleteTestUsers(client, ids);
+  }
+});

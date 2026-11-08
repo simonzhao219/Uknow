@@ -4,6 +4,7 @@
 // 推薦人句依「建單時會套用的來源」分句（後端 /payuni/prepare 與付款當下的 0d 換線）：
 //   填碼且驗證通過 → 碼＝現任推薦人的碼：「維持」；其他碼：「將改為 {姓名}」
 //   留空 → 預設推薦人可用（default）：「將改變」——不揭露預設推薦人（規格書 §7.4）
+//        → 預設推薦人可用且就是現任推薦人：「維持不變」（第 6 波 S6，W5-63、W6-28）
 //        → 不可用或未知（keep，付款時維持原推薦人）：不寫推薦人句
 // 使用者看得到的字一律不用「上線／下線」（W5-53）。
 import type { RenewalInfo } from '@contract';
@@ -20,6 +21,19 @@ export interface FreshReferrerInput {
   isAutoReferral: boolean;
   /** /subscriptions/status 的 renewal.freshDefaultReferrerAvailable；缺值（空窗）視為不可用。 */
   defaultAvailable: boolean | undefined;
+  /** renewal.freshDefaultReferrerIsCurrent：預設推薦人就是現任推薦人（W5-63）；缺值走既有文案。 */
+  defaultIsCurrent?: boolean;
+}
+
+/** 新約留空時推薦人會怎樣：換到預設推薦人／預設即現任而不變／預設不可用而維持原推薦人。 */
+export type BlankFreshOutcome = 'changes' | 'keeps_same' | 'keeps';
+
+export function blankFreshOutcome(
+  available: boolean | undefined,
+  isCurrent: boolean | undefined,
+): BlankFreshOutcome {
+  if (available !== true) return 'keeps';
+  return isCurrent === true ? 'keeps_same' : 'changes';
 }
 
 const sameCode = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -35,11 +49,22 @@ export function freshReferrerSentence(input: FreshReferrerInput): string | null 
       ? `您的推薦人將改為 ${input.referrerName}。`
       : '您的推薦人將改為此推薦碼的會員。';
   }
-  return input.defaultAvailable === true ? '您的推薦人將改變。' : null;
+  switch (blankFreshOutcome(input.defaultAvailable, input.defaultIsCurrent)) {
+    case 'changes':
+      return '您的推薦人將改變。';
+    case 'keeps_same':
+      // W6-28：只說不變，不出現預設推薦人的姓名與碼。
+      return '您的推薦人維持不變。';
+    default:
+      return null;
+  }
 }
 
-export function freshCodeHint(defaultAvailable: boolean | undefined): string {
-  return defaultAvailable === true
+export function freshCodeHint(
+  defaultAvailable: boolean | undefined,
+  defaultIsCurrent?: boolean,
+): string {
+  return blankFreshOutcome(defaultAvailable, defaultIsCurrent) === 'changes'
     ? '選擇新約會重新建立推薦關係。若要留在原本的推薦人底下，請填入他的推薦碼；不填則推薦人將改變。'
     : '選擇新約會重新建立推薦關係。不填推薦碼則維持原本的推薦人。';
 }
@@ -49,8 +74,12 @@ export function freshCodePlaceholder(
   currentCode: string | null,
   isAutoReferral: boolean,
   defaultAvailable: boolean | undefined,
+  defaultIsCurrent?: boolean,
 ): string {
-  return currentCode && !isAutoReferral && defaultAvailable !== true
+  // 預設即現任（keeps_same）也不提示：那個碼就是預設推薦碼（W6-28）。
+  return currentCode &&
+    !isAutoReferral &&
+    blankFreshOutcome(defaultAvailable, defaultIsCurrent) === 'keeps'
     ? `目前：${currentCode}`
     : '輸入推薦碼';
 }

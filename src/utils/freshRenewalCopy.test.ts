@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RenewalInfo } from '@contract';
 import {
+  blankFreshOutcome,
   freshCodeHint,
   freshCodePlaceholder,
   freshReferrerSentence,
@@ -93,6 +94,44 @@ describe('freshCodePlaceholder', () => {
   });
 });
 
+// 第 6 波 S6（W5-63、W6-28）：現任推薦人就是預設推薦人時，新約留空推薦人不變——三處文案
+// 同一判斷（blankFreshOutcome），都歸「留空＝維持」，且不提示目前的碼（那就是預設碼）。
+describe('blankFreshOutcome', () => {
+  it('預設可用且即現任時為不變，可用但非現任或未知時為改變，不可用時為維持', () => {
+    expect(blankFreshOutcome(true, true)).toBe('keeps_same');
+    expect(blankFreshOutcome(true, false)).toBe('changes');
+    expect(blankFreshOutcome(true, undefined)).toBe('changes');
+    expect(blankFreshOutcome(false, true)).toBe('keeps');
+    expect(blankFreshOutcome(undefined, undefined)).toBe('keeps');
+  });
+});
+
+describe('新約留空且預設推薦人即現任', () => {
+  it('確認框說推薦人維持不變，不出現姓名或碼', () => {
+    expect(freshReferrerSentence({ ...base, defaultIsCurrent: true })).toBe('您的推薦人維持不變。');
+  });
+
+  it('說明與預設不可用時同一句，不說推薦人將改變', () => {
+    expect(freshCodeHint(true, true)).toBe(freshCodeHint(false));
+  });
+
+  it('placeholder 不提示目前的碼', () => {
+    expect(freshCodePlaceholder('8048901', false, true, true)).toBe('輸入推薦碼');
+  });
+
+  it('填了碼時照填碼的規則，不受預設即現任影響', () => {
+    expect(
+      freshReferrerSentence({
+        ...base,
+        defaultIsCurrent: true,
+        code: '8048999',
+        codeStatus: 'valid',
+        referrerName: '陳大文',
+      }),
+    ).toBe('您的推薦人將改為 陳大文。');
+  });
+});
+
 describe('hasFreshAssets', () => {
   const r = {
     freshForfeitPoints: 0,
@@ -114,6 +153,7 @@ describe('新約文案用語（W5-53）', () => {
       freshReferrerSentence({ ...base, code: '8048901', codeStatus: 'valid', referrerName: 'A' }),
       freshReferrerSentence({ ...base, code: '1', codeStatus: 'valid' }),
       freshReferrerSentence(base),
+      freshReferrerSentence({ ...base, defaultIsCurrent: true }),
       freshCodeHint(true),
       freshCodeHint(false),
     ].join('');

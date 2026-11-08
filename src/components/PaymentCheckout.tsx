@@ -467,6 +467,7 @@ export function PaymentCheckout() {
   const needsFreshConfirm = renewalMode === 'fresh' && !!renewal;
   const freshHasAssets = !!renewal && hasFreshAssets(renewal);
   const freshDefaultAvailable = renewal?.freshDefaultReferrerAvailable;
+  const freshDefaultIsCurrent = renewal?.freshDefaultReferrerIsCurrent;
   const freshReferrerLine = freshReferrerSentence({
     code: newReferralCode,
     codeStatus: newCodeStatus,
@@ -474,6 +475,7 @@ export function PaymentCheckout() {
     currentCode: pendingUser?.referredByCode ?? null,
     isAutoReferral: !!pendingUser?.isAutoReferral,
     defaultAvailable: freshDefaultAvailable,
+    defaultIsCurrent: freshDefaultIsCurrent,
   });
   // 目前實際效期迄日 = 下一筆起算日的前一天（補繳進度與確認警語共用）。
   // 不用「迄日 − 1 年」反推：迄日落在 02-29 時會少一天。
@@ -1231,11 +1233,15 @@ export function PaymentCheckout() {
                             pendingUser.referredByCode ?? null,
                             !!pendingUser.isAutoReferral,
                             freshDefaultAvailable,
+                            freshDefaultIsCurrent,
                           )
                         }
                         aria-invalid={newCodeStatus === 'invalid' || undefined}
                         aria-describedby={
-                          newCodeStatus === 'invalid' ? 'new-referral-code-error' : undefined
+                          // 錯誤在前（讀屏先唸錯誤），說明常駐在後
+                          newCodeStatus === 'invalid'
+                            ? 'new-referral-code-error fresh-code-hint'
+                            : 'fresh-code-hint'
                         }
                         onChange={(e) => {
                           // 續約換線的碼與註冊走同一組規則——全形數字一樣要摺。
@@ -1281,8 +1287,12 @@ export function PaymentCheckout() {
                       )}
                       {/* W5-51（S6）：與新約確認框同一文案來源（freshRenewalCopy）——留空會不會
                           換推薦人，依後端會套用的來源說；不解釋預設推薦碼機制（§7.4）。 */}
-                      <p className="text-xs text-muted-foreground" data-testid="fresh-code-hint">
-                        {freshCodeHint(freshDefaultAvailable)}
+                      <p
+                        id="fresh-code-hint"
+                        className="text-xs text-muted-foreground"
+                        data-testid="fresh-code-hint"
+                      >
+                        {freshCodeHint(freshDefaultAvailable, freshDefaultIsCurrent)}
                       </p>
                     </div>
                   </div>

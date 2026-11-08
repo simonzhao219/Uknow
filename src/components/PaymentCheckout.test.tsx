@@ -663,6 +663,45 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
       '輸入推薦碼',
     );
   });
+
+  // 第 6 波 S6（W5-63、W6-28）：現任推薦人就是預設推薦人時，留空推薦人不變。
+  it('確認框寫推薦人維持不變、說明寫維持原本的推薦人、不提示目前的碼', async () => {
+    spyFetch();
+    setSubscription({
+      ...RENEWAL,
+      freshDefaultReferrerAvailable: true,
+      freshDefaultReferrerIsCurrent: true,
+    });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    expect(screen.getByTestId('fresh-code-hint').textContent).toContain('維持原本的推薦人');
+    expect(screen.getByTestId('fresh-code-hint').textContent).not.toContain('將改變');
+    expect((screen.getByTestId('new-referral-code-input') as HTMLInputElement).placeholder).toBe(
+      '輸入推薦碼',
+    );
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).toContain('您的推薦人維持不變');
+    expect(dialog.textContent).not.toContain('推薦人將改變');
+  });
+
+  it('新推薦碼欄平時以說明文字為描述', async () => {
+    spyFetch();
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const hint = screen.getByTestId('fresh-code-hint');
+    expect(hint.id).toBe('fresh-code-hint');
+    expect(screen.getByTestId('new-referral-code-input').getAttribute('aria-describedby')).toBe(
+      'fresh-code-hint',
+    );
+  });
 });
 
 // R0 審查回填（#380 必修 2）：換推薦人驗證的「查無」與「暫時讀不到」分開
@@ -696,6 +735,17 @@ describe('PaymentCheckout 換推薦人驗證', () => {
     fireEvent.change(input, { target: { value: code } });
     fireEvent.blur(input);
   }
+
+  it('推薦碼無效時，描述先指錯誤訊息再指說明文字', async () => {
+    stubValidate(
+      async () => ({ ok: true, status: 200, json: async () => ({ valid: false }) }) as Response,
+    );
+    await enterNewCode('8048999');
+    await waitFor(() => expect(screen.getByText('推薦碼不存在或已失效')).toBeTruthy());
+    expect(screen.getByTestId('new-referral-code-input').getAttribute('aria-describedby')).toBe(
+      'new-referral-code-error fresh-code-hint',
+    );
+  });
 
   it('429 時顯示稍後再試，不說推薦碼不存在或已失效', async () => {
     stubValidate(

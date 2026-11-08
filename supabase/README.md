@@ -69,7 +69,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
 | `log_referral_reward_failure` | 三代獎金沒發出的 error 告警（訊息含單號／第幾代／點數／推薦碼／下一步；補發步驟見〈補發漏發獎金〉） |
 | `list_paid_pending_order_ids` / `complete_paid_pending_order` | 「已付款待開通」單的自癒：Edge（`paid-pending-heal.ts`）逐筆呼叫，一筆一個交易，不與線上付款互鎖；單筆在委派前以 `lock_timeout` 3s 預取付款人 profiles 鎖，拿不到記 `skipped_locked`（只給 service_role） |
-| `complete_paid_pending_orders` | 上兩支的單交易 wrapper，只給舊 Edge 相容（互鎖風險同舊版）；第 6 波 S6 drop |
+| `complete_paid_pending_orders` | 上兩支的單交易 wrapper，只給舊 Edge 相容（互鎖風險同舊版）。退場條件：正式站 `/health` sha 已含 #524 的 Edge 之後的下一次晉升才 drop（migration 先於 Edge 套用，正式站仍是舊 Edge 時 drop 會讓 `/profile` heal 與對帳失敗；第 6 波 W6-30 延第 7 波） |
 | ~~`referral_tree`~~ | 已於 20261110000002 移除(無呼叫者,且曾以真名暴露三代下線;三代樹由 Edge Function 組出並遮罩) |
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
 | `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；由 `/auth/check-email` 與 Email 邀請的 `/referrals/invites`、`/auth/invite/accept` 呼叫） |
@@ -203,8 +203,12 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
   gateway 層驗 JWT 會直接擋掉。函數內以 `requireAuth()` 逐路由自行驗證，
   公開端點（`/health`、webhook）刻意不驗。
 - 部署由 `.github/workflows/deploy-supabase.yml` 在**該分支 CI 綠之後**觸發
-  （`workflow_run`，不是 push）；部署後打 `/api/health` 比對 `sha`，
-  確認線上跑的就是這個 commit。
+  （`workflow_run`，不是 push）；部署前先確認目標環境的
+  `supabase_migrations.schema_migrations` 已有 repo 內每一支 migration
+  （`scripts/check-remote-migrations.py`，未套齊最多等 10 分鐘、讀不到即失敗，不部署），
+  部署後打 `/api/health` 比對 `sha`，確認線上跑的就是這個 commit。
+  Migration 由 Supabase 整合先套、Edge 後換：**drop 舊 Edge 仍在呼叫的函式要等那版 Edge
+  在正式站上線之後的下一次晉升**（`prepare_payment_order` 三參數版已於 20261117000002 移除）。
 
 工作守則（格式、lint、測試分層）見 `.claude/rules/supabase-functions.md`。
 

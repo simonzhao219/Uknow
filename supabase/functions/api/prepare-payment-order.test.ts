@@ -31,12 +31,17 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 
 type Client = ReturnType<typeof adminClient>;
 
+// 六參數版（三參數 wrapper 已於第 6 波 S6 drop）；回 jsonb，取 outcome 與舊斷言同形。
 async function callRpc(client: Client, userId: string, tradeNo: string, mode: string | null) {
-  return await client.rpc('prepare_payment_order', {
+  const { data, error } = await client.rpc('prepare_payment_order', {
     p_user_id: userId,
     p_trade_no: tradeNo,
     p_renewal_mode: mode,
+    p_referrer_user_id: null,
+    p_referrer_code: null,
+    p_referrer_source: null,
   });
+  return { data: (data as { outcome?: string } | null)?.outcome ?? null, error };
 }
 
 async function orders(client: Client, userId: string) {
@@ -177,7 +182,8 @@ Deno.test('prepare_payment_order：付款交易持鎖期間建單 → 等 commit
       await tx`select process_successful_payment(${user.id}::uuid, ${tradeNo}, ${tradeNo}, ${success}::jsonb)`;
       // 付款已寫入、尚未 commit：此時建第二張單。
       prepared = sql2<{ r: string }[]>`
-        select prepare_payment_order(${user.id}::uuid, ${`PPO-I2-${user.id}`}, null) as r`
+        select prepare_payment_order(${user.id}::uuid, ${`PPO-I2-${user.id}`}, null::text,
+          null::uuid, null::text, null::text) ->> 'outcome' as r`
         .execute();
       await new Promise((r) => setTimeout(r, 500));
     });

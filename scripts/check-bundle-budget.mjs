@@ -34,7 +34,7 @@ const BUDGET = {
   // 實測 entry 1013.1／315.9，仍在原額度內；只有總 raw 因新增的手勢 chunk 超出 1950 約 0.1 kB，
   // 故總量 +1（W6-20 只明寫 entry 額度，總量 +1 請主 session 追認）。
   entryRawKB: 1015, // 原 1000；S4 +2；S6 +3；S7 +10
-  entryGzipKB: 316, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3
+  entryGzipKB: 316.5, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3；第 6 波 S6 +0.5（新約第三態文案，實測 316.0→316.2；業主 2026-11-09 01:53 授權）
   // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
   // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。
   // 第 6 波 S3a（後台推薦樹查帳）：新增的元件全在 lazy 的後台 chunk（AdminDashboard 路由層
