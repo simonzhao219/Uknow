@@ -192,7 +192,14 @@
 - 子層：`referrer_user_id = parent`，用 `idx_referral_edges_referrer` 查。排序固定為 `referred_at, referee_user_id`，分頁才不會重複或漏列。
 - 頂層：收「沒有一條 edge 指向自己」的會員。
   - 成環的人和往上接進環的整條子樹，都不會出現在頂層，只能靠搜尋找到。
-  - 是否在頂層加一行「另有 N 位會員的推薦關係成環，僅能以搜尋查到」，屬產品取捨，交主 session 決定。目前**不做**（W6-17 已排除異常清單）。依 W6-19，只收「曾有過訂閱」或「至少有一條 edge 指向他」的人，也就是有推薦對象的人。排序固定為 `profiles.created_at, id`。
+  - **W6-21**：頂層樹最後加一個預設收合的群組「無法接上推薦樹的會員（N）」。
+    - 展開後是這些人的節點，帶成環標記，分頁與「已顯示 X / Y」照一般子層。
+    - N=0 時整個群組不顯示。
+    - 收的人：曾付款或有推薦對象（與樹同一群人）、往上走在 50 步內重複遇到節點，而且本身不是頂層。也就是在環上，或往上接進環。
+    - 往上超過 50 層的人**不收**，因為他們在樹上接得到，只是鏈太長。
+    - 這是樹的一部分，不是異常清單，與 W6-17 不衝突。
+    - API：`nodes?group=unplaceable&limit=&offset=`，回 `{ total, nodes[] }`；頂層回應另帶 `unplaceableCount`。
+    - 這些人的子樹：從群組內的節點照常逐層展開。環上的子節點可能又指回群組內的人，因此展開時遇到已在祖先路徑上的 id，就停止往下，並標「推薦關係成環，不再往下展開」。依 W6-19，只收「曾有過訂閱」或「至少有一條 edge 指向他」的人，也就是有推薦對象的人。排序固定為 `profiles.created_at, id`。
 - 這個篩選在頂層才實際生效（子層必然符合），子層與 `directCount` 都直接數 edges，兩者一定對得上。
 - 註冊中的空殼列從既有的會員列表找。
 - **推薦人資料兩處不一致（資訊提示，不算異常）**：
@@ -432,6 +439,13 @@
   - 不畫頭像，不畫連接線。
   - 狀態徽章沿用四態。
 
+### 無法接上推薦樹的會員（W6-21）
+
+- 放在頂層列表最後、「載入更多」之後。
+- 是一個 disclosure 群組：「無法接上推薦樹的會員（N）」，預設收合，N=0 時不渲染。
+- 展開後的節點列與一般節點相同，必帶「推薦關係成環」徽章；載入、失敗、空態、重試焦點都照子層的規則。
+- 搜尋命中這些人時（`unplaceableReason=cycle`）：自動展開這個群組，並以 `ensureId` 定位到該人，不再降級成「只開詳情」。只有 `truncated` 仍然只開詳情。
+
 ### 搜尋
 
 - 有輸入時，結果清單**就地取代樹**；清除（`X` 或清空輸入框）後回到樹，樹的展開狀態保留不變。
@@ -545,7 +559,7 @@
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
 | 1 | `referral_award_chain`，及其與 `pay_referral_generations` 的等價 | `supabase/functions/api/referral-award-chain.test.ts`（DB） | 以下拓撲下，實發收獎者逐代等於 chain：完整三代、缺第 2 代、缺第 3 代、第 1／2／3 代分別成環、profiles 與 edges 不一致 |
-| 2 | 樹節點與搜尋 RPC | `admin-referral-tree-db.test.ts`（DB） | 涵蓋分頁、total、穩定排序、頂層與搜尋共用的收人範圍、ancestorIds 與無法定位的原因、頂層與子層的 ensureId／pinned、個資排除、GRANT。沒訂閱也沒推薦對象的人搜不到；在環上的人 `ancestorIds=null` 且 reason 為 cycle。一位推薦人有 1,005 位直接推薦時，total 精確，第 21 頁有資料且不重複；全形碼命中；`%` 被跳脫；回應的 key 不含敏感欄位；anon 與 authenticated 被拒 |
+| 2 | 樹節點與搜尋 RPC | `admin-referral-tree-db.test.ts`（DB） | 涵蓋分頁、total、穩定排序、頂層與搜尋共用的收人範圍、ancestorIds 與無法定位的原因、頂層與子層的 ensureId／pinned、個資排除、GRANT。沒訂閱也沒推薦對象的人搜不到；在環上的人 `ancestorIds=null` 且 reason 為 cycle。`group=unplaceable` 收進在環上與往上接進環的人，total 精確，`unplaceableCount` 與它一致，超過 50 層的人不收。一位推薦人有 1,005 位直接推薦時，total 精確，第 21 頁有資料且不重複；全形碼命中；`%` 被跳脫；回應的 key 不含敏感欄位；anon 與 authenticated 被拒 |
 | 3 | 會員查帳 RPC | 同上 | 涵蓋全部欄位（原始欄位，不斷言四態）、往上鏈與深度上限、換線紀錄、成環／rho 形／自己推薦自己、兩處不一致的資訊提示（兩種 null 情境各一案）。具體斷言：回填形態的 pair-history（`created_at` 都相同）列為無序集合；新約單 keep 不列入；只有最新一筆可能標「已生效」；兩人成環與 rho 形都標異常且不會無窮迴圈；超過 50 層回 `truncated` |
 | 4 | 付款查帳 RPC 與節點的 `anomalyKinds` | 同上 | 六種結果都要造出來，另驗判定順序與「找不到對應訂閱」。單一會員有 60 筆付款時，節點回 `anomalyScanTruncated`。具體斷言：刪掉第 2 代那一列 → 缺漏；改 `user_id` → 收獎人不符；付款後祖先換線 → 無法判定，且「實拿」照列；任務續約用 `claimed_at`；ledger_reset 不誤判；自癒後缺漏消失 |
 | 5 | Edge 端點、契約、守門 | 依序做 5a～5d | 見 5a～5d |
@@ -554,7 +568,7 @@
 | 5c | 守門與回應形狀（DB） | `admin-referral-tree.test.ts`、`api-contract.test.ts` | 401、403；回應通過 `assertShape` |
 | 5d | admin 路由清單的覆蓋斷言 | `admin-gate.test.ts` | 現有清單漏的 4 條會先讓它紅燈；補齊並加上新端點後綠燈 |
 | 6 | 前端純函式 | `src/components/admin/referral-tree/referralAudit.test.ts`（node） | 涵蓋展開路徑、`pinned` 合併、去重與計數、結果與原因的文案、層級標示。所有情境綠燈，文案不含禁用詞 |
-| 7 | `AdminReferralTree` | `AdminReferralTree.test.tsx`（jsdom） | 涵蓋搜尋取代樹與清除、頂層、懶展開、載入更多與載入失敗、自動展開、展開鏈 token、中途失敗後續展、無法定位時降級、三態與重試焦點、disclosure 語意。具體斷言：點命中結果會逐層展開並聚焦到目標的名稱鈕；子層失敗只影響那一層；pinned 不計入 X；同一個 id 出現在正常頁時不重複，焦點也不掉 |
+| 7 | `AdminReferralTree` | `AdminReferralTree.test.tsx`（jsdom） | 涵蓋搜尋取代樹與清除、頂層、懶展開、載入更多與載入失敗、自動展開、展開鏈 token、中途失敗後續展、無法定位時降級、「無法接上推薦樹的會員」群組（N=0 不渲染、命中 cycle 時自動展開群組並定位、往下展開遇到祖先就停）、三態與重試焦點、disclosure 語意。具體斷言：點命中結果會逐層展開並聚焦到目標的名稱鈕；子層失敗只影響那一層；pinned 不計入 X；同一個 id 出現在正常頁時不重複，焦點也不掉 |
 | 8 | `ReferralAuditSheet`、`PaymentAuditList`、次分頁、跨分頁導覽、私密設定 | `ReferralAuditSheet.test.tsx`、`MemberManagement.test.tsx`、`AdminDashboard.test.tsx`、`analyticsReviewHardening.test.ts` | 涵蓋需要注意區與焦點目標、各區三態、付款卡的三種行數版型、Sheet 內跳轉與返回（返回鍵與 Esc 的對照表）、從會員詳情跳到推薦樹、`lockedTabProps`、`writeView` 不記推薦樹、portal 帶私密 class、fixture 補上 `referralTree` |
 | 9 | 規格書與 e2e | `e2e/features/admin_referral_tree.feature`（mock）、`test_overflow_sweep.py`、`test_admin_mobile_layout.py` | 規格書改 §13（並在 §7.2 加指向 §13 的一句），e2e 掃描 375、1024、1280。CI 綠；`check-spec-drift.py` 綠 |
 
@@ -578,7 +592,14 @@
 | Q6 發獎函式 | **W6-19** | S3a 不動 `pay_referral_generations`。等價測試在 S1、S6 合併前後都要跑。改成呼叫 chain 函式留第 7 波 |
 | Q7 admin-gate | **W6-19** | 改為自動列舉，用覆蓋斷言實作，順手修掉 ops P2-4 |
 
-**執行 session 自己決定的事**（主 session 或業主可以推翻；選配範圍另見 §3）：
+**W6-21（主 session 2026-11-08 親審通過 v3）**：
+
+- 推薦人鏈可點、「在推薦樹中查看」：保留。
+- 「推薦人資料兩處不一致」資訊提示：保留。
+- 成環的人要讓業主看得到：在頂層樹最後加「無法接上推薦樹的會員（N）」群組（§2.2、§4）。
+- 下列自決項全部同意；`MemberDetailSheet` 補 `SENSITIVE_PORTALS` 列第 7 波候選。
+
+**執行 session 自己決定的事**（已由 W6-21 同意；選配範圍另見 §3）：
 
 - Sheet 內跳到另一個人用「替換內容＋返回」，不疊層；只有這張 Sheet 攔 Android 返回鍵。
 - 節點列用巢狀清單加 disclosure 鈕，不用 `role="tree"`。
