@@ -30,6 +30,7 @@ import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
   ACCOUNT_SUSPENDED,
+  ALREADY_ACTIVE_MESSAGE,
   DEFAULT_NETWORK_SORT,
   PAYMENT_PENDING_ACTIVATION,
   PROFILE_MISSING,
@@ -1119,6 +1120,11 @@ app.get('/referrals/validate/:code', async (c) => {
   }
 
   const row = data[0];
+  // 帶 token 的呼叫者填自己的碼：呼叫者本來就知道那是自己的碼，沒有洩漏問題；
+  // 說「不存在」反而讓人以為自己的碼壞了，所以用自己碼的專屬文案（形狀與查無此碼相同）。
+  if (row.referrer_user_id === user.id) {
+    return c.json({ valid: false, error: { message: REFERRAL_CODE_SELF_MESSAGE } });
+  }
   return c.json({
     valid: true,
     referrer: {
@@ -2115,7 +2121,7 @@ app.post('/payuni/prepare', async (c) => {
     // （會員兩態模型：付款即訂閱／續訂／重新訂，見 0721）。
     const acct = await readAccountStatus(client, user.id);
     if (acct?.status === 'active') {
-      return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
+      return c.json({ success: false, error: ALREADY_ACTIVE_MESSAGE }, 400);
     }
 
     const lastSub = must(
@@ -2253,7 +2259,7 @@ app.post('/payuni/prepare', async (c) => {
     const outcome = result?.outcome;
     if (outcome === 'suspended') return c.json(accountSuspendedBody(), 403);
     if (outcome === 'active') {
-      return c.json({ success: false, error: '已有有效訂閱，請到期後再續約' }, 400);
+      return c.json({ success: false, error: ALREADY_ACTIVE_MESSAGE }, 400);
     }
     if (outcome === 'not_found') return c.json({ success: false, error: '用戶不存在' }, 404);
     // pay P1-4：已付款待開通——不建新單，交前端導結果頁（W5-50②：修不好的單客服人工開通）。
