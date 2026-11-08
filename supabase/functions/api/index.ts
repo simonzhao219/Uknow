@@ -1120,10 +1120,10 @@ app.get('/referrals/validate/:code', async (c) => {
   }
 
   const row = data[0];
-  // 帶 token 的呼叫者填自己的碼：與查無此碼同形（200、valid:false、同一句話），
-  // 不洩漏「這是你自己的碼」，也不讓前端顯示「推薦人：本人」後才在送單被 400。
+  // 帶 token 的呼叫者填自己的碼：呼叫者本來就知道那是自己的碼，沒有洩漏問題；
+  // 說「不存在」反而讓人以為自己的碼壞了，所以用自己碼的專屬文案（形狀與查無此碼相同）。
   if (row.referrer_user_id === user.id) {
-    return c.json({ valid: false, error: { message: REFERRAL_CODE_NOT_APPLICABLE_MESSAGE } });
+    return c.json({ valid: false, error: { message: REFERRAL_CODE_SELF_MESSAGE } });
   }
   return c.json({
     valid: true,

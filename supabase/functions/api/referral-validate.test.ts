@@ -122,7 +122,7 @@ Deno.test('referrals/validate：有效推薦碼 → 只回推薦人姓名與刊�
   }
 });
 
-Deno.test('referrals/validate：填自己的推薦碼 → 與查無此碼同形的 valid=false', async () => {
+Deno.test('referrals/validate：填自己的推薦碼 → valid=false 並說明是自己的碼', async () => {
   const client = adminClient();
   const me = await createTestUser(client, { name: '自己' });
   try {
@@ -134,7 +134,7 @@ Deno.test('referrals/validate：填自己的推薦碼 → 與查無此碼同形�
     assertEquals(res.status, 200);
     assertEquals(await res.json(), {
       valid: false,
-      error: { message: '推薦碼不存在或已失效' },
+      error: { message: '不能使用自己的推薦碼' },
     });
   } finally {
     await cleanup(client, [me.id]);
