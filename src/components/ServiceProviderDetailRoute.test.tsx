@@ -529,6 +529,7 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
 
   it('輪播盡頭續滑在最後一篇時，內容區輕推再回原位並播報', async () => {
     const solo = mk('c', 'CCC美容師', 1);
+    singleFor.mockResolvedValue({ data: solo, error: null });
     setup('c', { rows: [A, B, solo] });
     await screen.findByRole('heading', { name: 'CCC美容師' });
     await settleLazy();

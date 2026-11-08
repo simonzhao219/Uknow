@@ -24,9 +24,15 @@
 
 ## Blockers(逃生口紀錄)
 
-- 2026-11-08 審查修正的紅燈 commit d65c3af3：測試〈輪播盡頭續滑在最後一篇時，內容區輕推再回原位並播報〉（`ServiceProviderDetailRoute.test.tsx`）夾具寫錯——把最後一篇 C 換成單張照片版 `solo`，但背景重驗的 `singleFor` 仍回三張照片版，輪播起點不在盡頭，所以不會觸發盡頭續滑（與 #509 同類的夾具錯誤；既有單張照片測試用 `singleFor.mockResolvedValue({ data: solo, error: null })` 處理）。修法只是在該測試加那一行。實作本身已就緒（其餘 3 條新測試與全部既有測試綠）。逃生口 2：停手等人工裁決，授權後由本 session 解鎖修測試。
+- 2026-11-08 審查修正的紅燈 commit d65c3af3：測試〈輪播盡頭續滑在最後一篇時，內容區輕推再回原位並播報〉（`ServiceProviderDetailRoute.test.tsx`）夾具寫錯——把最後一篇 C 換成單張照片版 `solo`，但背景重驗的 `singleFor` 仍回三張照片版，輪播起點不在盡頭，所以不會觸發盡頭續滑（與 #509 同類的夾具錯誤；既有單張照片測試用 `singleFor.mockResolvedValue({ data: solo, error: null })` 處理）。修法只是在該測試加那一行。實作本身已就緒（其餘 3 條新測試與全部既有測試綠）。逃生口 2：停手等人工裁決。**業主 2026-11-08 互動選項：「授權解鎖並修這一行（建議）」**（本 session 的 AskUserQuestion）→ 由本 session 移除 tdd-lock、補該一行夾具。
 
 ## 框架摩擦
 
 - 本機跑 e2e：pinned playwright 1.56 要 chromium 1194，容器只有 1243；以 symlink `/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向 1243 的 headless shell 即可（環境級 hack，未入庫）。
 - e2e 偶發 `[e2e] blocked unmocked request: public_listing_categories`（首頁類別查詢未 mock，idle 觸發時機與測試收尾競爭）；一次同批 10 場景跑中出現過一次，單跑 12 次 0 次，非本 feature 引入。
+
+## 審查修正（/review-implementation，報告見 implementation-review.md）
+
+- 紅 d65c3af3（含夾具錯誤，授權見上方 Blockers）→ 綠：輪播盡頭續滑頭尾輕推（`goBrowse` 第三參數 `sprung`：頁面手勢已自己彈回才略過）、快速放開彈回起點（先補寫 pendingOffset）、touchstart 清殘留 transform。
+- 重構（無新行為）：`springTo`／`ENTER_*`／`SPRING_MS`／`NUDGE_PX` 拆到 `utils/browseMotion.ts`，`browseDrag.ts` 只留手勢純函式 → entry 少帶手勢函式；**拆分後 bundle：entry raw 1013.1／gzip 315.9／總 raw 1950.1 kB**，entry gzip 回到原 316 額度內，已還原先前調高的 gzip 預算（316.5→316）；僅總 raw 仍需 1951（+1）。
+- 記為偏離（不修）：焦點還原留在元件（綁定頁面 ref 與 status）；`isInteractiveStart` 排除 `contenteditable="false"`；plan 的「state 不含 dx」測試省略（`goBrowse` 沒有任何 dx 欄位可寫）；`springTo` 仍收 transform 字串。
