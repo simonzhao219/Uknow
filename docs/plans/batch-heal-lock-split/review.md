@@ -81,4 +81,21 @@ P1 處置（plan r2）：
 
 P2 處置：#14～17、#20～22、#24～27 採納進 plan r2；#18 併入階段 1（grants 測試）；#19 列 §6 知悉項；#23、#28 於 §2.5 說明不去重的理由。
 
+### 重審 r2（四視角，plan f0cb925）：P0 0、P1 8、P2 約 17
+
+| 視角 | P1 | 處置（plan r3） |
+|---|---|---|
+| 系統 | Edge 60 秒預算不是整體上界（單一 RPC 內等鎖管不到） | 採納改法：0b 預取包 `lock_timeout` 3s（只在單筆函式的子交易內，55P03 → skipped_locked，不流進發獎）；預算改稱「單筆之間檢查點」、per-user 10 秒；§2.3 註明 0b 預取讓順序變成 profiles→advisory、靠 try 成立 |
+| 架構 | body 與帳本兩種 heal 形狀未區分 | 採納：`healLedgerSummary` 純函式、單元測試釘形狀 |
+| 架構 | `ReconcileSummary` 位置寫錯、必填鍵三處連動 | 採納：§2.6／§3 改正並列三處；`UnknownReason` 由 `UNKNOWN_STATUS_LABEL` 推導 |
+| 架構 | list 回傳非陣列未處理 | 採納：回 `{data:null,error}`＋單元測試 |
+| UI/UX | 「補發」沒有可執行入口 | 採納：無後台工具 → 下一步改「通知工程人員」，README 新增〈補發漏發獎金〉runbook |
+| UI/UX | 反查失敗不能讓告警消失 | 採納：反查包子交易、降級「（查無單號）」＋測試 (e) |
+| 需求 | W6-11 不推 LINE 與單筆 error 告警矛盾 | 解讀：只限 heal 整支／連續；單筆既有告警保留——〔需主 session 確認〕 |
+| 需求 | W6-14 未落進第 6 波 S6 工作項 | 請主 session 補 S6 一列 |
+
+P2 主要採納：migration 一檔多段且排在 S6 前、purge 鍵輸出 null、`rpcOf` 包 Promise、階段 2 定 `profile-self-heal.test.ts`、wrapper 結尾清旗標、
+不在測試設 `deadlock_timeout`（superuser 參數）、階段 1 以訊息比對 deadlock、`skipped` 與 `skipped_locked` 混計寫明、truncated 計入 failed streak、
+原因對照常數、20 則上限知悉、W6-10 為對 S1 原文的擴大（§0 溯源）。
+
 - [ ] 人審完成，裁決：□ 通過 □ 修訂後通過（豁免理由：） □ 退回重規劃

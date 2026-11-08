@@ -19,7 +19,7 @@
 
 ## 目前位置與下一步
 
-plan r2 已併入 W6-10～14 與 13 條 P1，重審後等主 session 親審；業主在本 session 親打 `/tdd-implement batch-heal-lock-split` 才開工。
+plan r3 已併入 W6-10～14、首審 13 條與重審 8 條 P1，等主 session 親審；業主在本 session 親打 `/tdd-implement batch-heal-lock-split` 才開工。
 
 ## Blockers（逃生口紀錄）
 
