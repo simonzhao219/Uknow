@@ -14,7 +14,15 @@
 // ============================================================
 import { assert, assertEquals } from 'jsr:@std/assert@1';
 import postgres from 'npm:postgres@3';
-import { adminClient, ensureEdgeFunctionEnv, payForUser } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  createWithdrawableUser,
+  deleteTestUsers,
+  ensureEdgeFunctionEnv,
+  payForUser,
+  requestWithdrawal,
+} from './test-helpers.ts';
 
 ensureEdgeFunctionEnv();
 
@@ -1146,5 +1154,132 @@ Deno.test('admin_referral_ledger_audit：新約清空列帶觸發它的付款時
               values (${u}, 'ledger_reset', 0, ${sub.id}, '新約重置：帳本清空', '2026-03-01T00:00:00Z')`;
     const row = (await ledger(sql, u))!.items.find((i) => i.type === 'ledger_reset')!;
     assertEquals(new Date(row.event_at!).toISOString(), '2026-03-01T00:00:00.000Z');
+  });
+});
+
+// ------------------------------------------------------------
+// S3b 獨立審查補強：真寫入函式的正常流程、重複扣款、退款金額錯、退款入錯人、
+// 被推薦人姓名快照
+// ------------------------------------------------------------
+
+Deno.test('admin_referral_ledger_audit：真走 fresh 付款清空與提領退件 → 不標不符', async () => {
+  const client = adminClient();
+  const admin = await createTestUser(client, { name: '帳核真流程 管理員' });
+  const member = await createWithdrawableUser(client, 5000);
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    const { data: req } = await requestWithdrawal(client, member.id, 1000);
+    assertEquals(req?.success, true, JSON.stringify(req));
+    const { error: rejErr } = await client.rpc('admin_update_withdrawal_status', {
+      p_admin_id: admin.id,
+      p_withdrawal_id: req!.withdrawal_id,
+      p_status: 'rejected',
+      p_note: '測試退件',
+    });
+    assertEquals(rejErr, null);
+
+    await sql`update public.subscriptions
+              set end_date = now() - interval '90 days', grace_period_end = now() - interval '60 days'
+              where user_id = ${member.id}`;
+    const trade = `LEDGER-FRESH-${crypto.randomUUID().slice(0, 8)}`;
+    await sql`insert into public.payment_orders
+                (user_id, amount, status, payment_method, transaction_id, renewal_mode)
+              values (${member.id}, 1200, 'pending', 'payuni', ${trade}, 'fresh')`;
+    const { error: payErr } = await client.rpc('process_successful_payment', {
+      p_user_id: member.id,
+      p_trade_no: trade,
+      p_transaction_id: `PU-${trade}`,
+      p_payuni_response: { Status: 'SUCCESS' },
+    });
+    assertEquals(payErr, null);
+
+    const l = (await ledger(sql, member.id))!;
+    assert(l.items.some((i) => i.type === 'ledger_reset'), '有清空列');
+    assert(l.items.some((i) => i.type === 'adjustment' && i.withdrawal_id), '有退件退款列');
+    assertEquals(l.findings, []);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, [admin.id, member.id]);
+  }
+});
+
+Deno.test('admin_referral_ledger_audit：同一張單一筆正確扣款加一筆金額錯 → withdrawal_debit', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 重複扣款']);
+    track([u]);
+    await subscribe(sql, u);
+    await credit(sql, u, 50000, '2026-01-01T00:00:00Z');
+    const w = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'pending',
+      at: '2026-02-01T00:00:00Z',
+    });
+    await sql`insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+              values (${u}, 'withdrawal', -999, ${w}, '提領', '2026-02-01T00:00:01Z')`;
+    const l = (await ledger(sql, u))!;
+    assertEquals(
+      l.findings.filter((f) => f.kind === 'withdrawal_debit').map((f) => f.withdrawal_id),
+      [w],
+    );
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：退款金額錯 → refund_missing 指向那筆退款列', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 退款金額錯']);
+    track([u]);
+    await subscribe(sql, u);
+    await credit(sql, u, 50000, '2026-01-01T00:00:00Z');
+    const w = await withdrawal(sql, u, {
+      amount: 1000,
+      status: 'rejected',
+      at: '2026-02-01T00:00:00Z',
+    });
+    const [refund] = await sql`
+      insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+      values (${u}, 'adjustment', 1000, ${w}, '退件', '2026-02-01T01:00:00Z') returning id`;
+    const l = (await ledger(sql, u))!;
+    const f = l.findings.find((x) => x.kind === 'refund_missing')!;
+    assertEquals(f.transaction_id, refund.id);
+    assertEquals(l.items.find((i) => i.id === refund.id)!.finding, 'refund_missing');
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：退款列指向別人的提領單 → 收款人標 orphan_refund', async () => {
+  await withSql(async (sql, track) => {
+    const [u, other] = await insertUsers(sql, ['帳核 錯收退款', '帳核 錯收退款 單主']);
+    track([u, other]);
+    await subscribe(sql, u);
+    const theirs = await withdrawal(sql, other, {
+      amount: 1000,
+      status: 'rejected',
+      at: '2026-02-01T00:00:00Z',
+    });
+    const [row] = await sql`
+      insert into public.reward_transactions (user_id, type, amount, withdrawal_id, description, created_at)
+      values (${u}, 'adjustment', 1015, ${theirs}, '退件', '2026-02-02T00:00:00Z') returning id`;
+    const l = (await ledger(sql, u))!;
+    assertEquals(
+      l.findings.filter((f) => f.kind === 'orphan_refund').map((f) => f.transaction_id),
+      [row.id],
+    );
+    assert((await audit(sql, u))!.anomalies.includes('ledger_mismatch'));
+  });
+});
+
+Deno.test('admin_referral_ledger_audit：被推薦人已不在 → 用帳本上的姓名快照', async () => {
+  await withSql(async (sql, track) => {
+    const [u] = await insertUsers(sql, ['帳核 姓名快照']);
+    track([u]);
+    await subscribe(sql, u);
+    await sql`insert into public.reward_transactions
+                (user_id, type, amount, generation, referee_name, description, created_at)
+              values (${u}, 'referral_reward', 100, 1, '已刪除的會員', '推薦獎勵', '2026-01-01T00:00:00Z')`;
+    const l = (await ledger(sql, u))!;
+    assertEquals(
+      (l.items[0] as LedgerItem & { referee_name: string | null }).referee_name,
+      '已刪除的會員',
+    );
   });
 });

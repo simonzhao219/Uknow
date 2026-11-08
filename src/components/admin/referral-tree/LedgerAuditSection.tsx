@@ -18,6 +18,7 @@ const FINDING_TEXT: Record<Exclude<AdminReferralLedgerFindingKind, 'reset_delaye
   refund_missing: '退件的提領沒有恰好一筆正確金額的退款',
   refund_unexpected: '未退件的提領卻有退款',
   orphan_debit: '有帳本扣款對不上這位會員的提領單',
+  orphan_refund: '', // 紅燈 stub
   reset_amount: '新約清空的金額與清空前的餘額不符',
 };
 

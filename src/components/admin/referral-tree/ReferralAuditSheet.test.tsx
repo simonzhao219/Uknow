@@ -591,7 +591,8 @@ describe('ReferralAuditSheet 點數來源（S3b）', () => {
       }),
     );
     const sec = within(await screen.findByRole('region', { name: '點數來源' }));
-    expect(await sec.findByText('有一筆延遲補沖的清空，金額以告警快照為準')).toBeTruthy();
+    expect(await sec.findByText(/^有 1 筆延遲補沖的清空/)).toBeTruthy();
+    expect(sec.getByText(/快照遺失時補沖 0，請對照系統告警/)).toBeTruthy();
     expect(sec.queryByText(/點數跨表核對不符/)).toBeNull();
   });
 
@@ -653,6 +654,7 @@ describe('ReferralAuditSheet 點數來源實作審查補強', () => {
     ['withdrawal_debit', '提領單的帳本扣款不是恰好一筆，或金額不符'],
     ['refund_unexpected', '未退件的提領卻有退款'],
     ['orphan_debit', '有帳本扣款對不上這位會員的提領單'],
+    ['orphan_refund', '有退款列指向別人的提領單'],
   ] as const)('核對不符 %s 寫出對應原因，並提醒可能在未載入的列', async (kind, text) => {
     renderSheet(
       loaders({
@@ -666,5 +668,43 @@ describe('ReferralAuditSheet 點數來源實作審查補強', () => {
     const sec = within(await screen.findByRole('region', { name: '點數來源' }));
     expect(await sec.findByText(text)).toBeTruthy();
     expect(sec.getByText(/尚未載入的列/)).toBeTruthy();
+  });
+});
+
+describe('ReferralAuditSheet 點數來源獨立審查補強', () => {
+  it('清空金額不符時說明也涵蓋批次自癒期間的清空', async () => {
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 0,
+          items: [],
+          findings: [
+            { kind: 'reset_amount' as const, transactionId: 't1', withdrawalId: null, info: false },
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/批次自癒期間的清空同樣可能有差/)).toBeTruthy();
+  });
+
+  it('延遲補沖有多筆時寫出實際筆數', async () => {
+    const delayed = (id: string) => ({
+      kind: 'reset_delayed' as const,
+      transactionId: id,
+      withdrawalId: null,
+      info: true,
+    });
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 0,
+          items: [],
+          findings: [delayed('a'), delayed('b')],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/^有 2 筆延遲補沖的清空/)).toBeTruthy();
   });
 });

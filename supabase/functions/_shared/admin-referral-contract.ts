@@ -173,6 +173,7 @@ export const ADMIN_REFERRAL_LEDGER_FINDINGS = [
   'refund_missing',
   'refund_unexpected',
   'orphan_debit',
+  'orphan_refund',
   'reset_amount',
   'reset_delayed',
 ] as const;
