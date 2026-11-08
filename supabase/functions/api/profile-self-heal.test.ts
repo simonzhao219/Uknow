@@ -212,3 +212,37 @@ Deno.test('續費者卡單但金額相符：載入 profile 時自癒 → 同一�
     await deleteTestUsers(client, [user.id]);
   }
 });
+
+// 第 6 波 S1（W6-13）：per-user 自癒也逐筆一個交易；一張金額不符不拖累另一張。
+Deno.test('同一人兩張待開通單、較舊那張金額不符 → 另一張照樣開通、不符那張只告警一次', async () => {
+  const client = adminClient();
+  const user = await createTestUser(client, { name: 'Two Orders' });
+
+  try {
+    const older = new Date(Date.now() - 120_000).toISOString();
+    const mismatch = await seedPendingOrder(client, user.id, success('999'), older);
+    const good = await seedPendingOrder(client, user.id, success());
+
+    const first = await buildProfileResponse(client, user.id, user.email);
+    await buildProfileResponse(client, user.id, user.email);
+
+    assertEquals(first?.accountStatus, 'active', '金額相符那張開通，同一回應已是 active');
+    const { data: orders } = await client
+      .from('payment_orders').select('transaction_id, status').in('transaction_id', [
+        mismatch,
+        good,
+      ]);
+    const status = Object.fromEntries((orders ?? []).map((o) => [o.transaction_id, o.status]));
+    assertEquals(status, { [mismatch]: 'pending', [good]: 'completed' });
+
+    const { data: mismatchOrder } = await client
+      .from('payment_orders').select('id').eq('transaction_id', mismatch).single();
+    const { count } = await client
+      .from('system_alerts').select('id', { count: 'exact', head: true })
+      .eq('source', 'complete_paid_pending_orders')
+      .eq('context->>order_id', mismatchOrder!.id);
+    assertEquals(count, 1, '載入兩次也只告警一次（去重）');
+  } finally {
+    await deleteTestUsers(client, [user.id]);
+  }
+});
