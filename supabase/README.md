@@ -108,7 +108,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 ## 補發漏發獎金
 
-收到「【獎金未發】」告警時，由工程人員以 service_role 在 SQL Editor 處理（目前沒有後台工具）。
+收到「【獎金未發】」告警時，開一個 Claude Code session 照本段處理（W6-23；以 service_role 在 SQL Editor 執行，目前沒有後台工具）。
 
 1. 找告警（`context` 有 `referee`、`generation`、`beneficiary`、`amount`、`subscription_id`／`claim_id`、`trade_no`、
    `sqlstate`、`sqlerrm`；訊息裡的任務續約只寫 `claim_id` 前 8 碼，完整值看 context）：
