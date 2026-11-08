@@ -44,6 +44,8 @@ interface MemberDetailSheetProps {
   onClose: () => void;
   /** 關閉後焦點要回去的地方由父層決定（它知道是哪一顆「查看」開的）。 */
   onCloseAutoFocus?: (event: Event) => void;
+  /** 「在推薦樹中查看」：父層關閉面板、切到推薦樹次分頁並以這位會員為目標展開。不給就不顯示。 */
+  onViewInTree?: () => void;
 }
 
 const ID_STATUS_LABEL: Record<string, string> = {
@@ -172,6 +174,7 @@ export function MemberDetailSheet({
   onRequestAction,
   onClose,
   onCloseAutoFocus,
+  onViewInTree,
 }: MemberDetailSheetProps) {
   const bothBankFieldsMissing = detail.bankCode == null && detail.bankAccount == null;
   const name = memberName(detail.name);
@@ -293,6 +296,11 @@ export function MemberDetailSheet({
               </Field>
               <Field label="直接推薦">{detail.directChildCount} 位</Field>
             </dl>
+            {onViewInTree && (
+              <Button variant="link" className="h-auto p-0" onClick={onViewInTree}>
+                在推薦樹中查看
+              </Button>
+            )}
           </Section>
 
           {/* 遮罩值：需要全碼時回提領作業台看，那裡因匯款作業需要而維持完整值。查詢台

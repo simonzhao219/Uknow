@@ -77,6 +77,11 @@ export default defineConfig({
       // 契約 SSOT：前後端共用同一份 API 型別定義（見
       // supabase/functions/_shared/api-contract.ts 檔頭說明）。
       '@contract': path.resolve(__dirname, './supabase/functions/_shared/api-contract.ts'),
+      // 後台推薦樹的契約：與 @contract 分檔，避免頂層 schema 物件進前端入口 bundle。
+      '@admin-referral-contract': path.resolve(
+        __dirname,
+        './supabase/functions/_shared/admin-referral-contract.ts',
+      ),
       // 姓名格式規則的共用案例表。與 @contract 同理:檔案物理放在 Deno 側,
       // 前端經 alias 讀入——反過來(放 src/、Deno 用 ../../../ 爬進來)會打破
       // 「Deno 只依賴 supabase/functions/**」的邊界。
