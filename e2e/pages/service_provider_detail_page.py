@@ -51,3 +51,9 @@ class ServiceProviderDetailPage(BasePage):
 
     def browse_button(self, label: str):
         return self.browse_nav().get_by_role("button", name=label)
+
+    # --- 換篇跟手（第 6 波 S4）-----------------------------------------------
+    # 固定 wrapper：拖曳時 inline transform 寫在它身上；頁首列（換篇鈕）不在其內。
+
+    def motion_wrapper(self):
+        return self.page.locator("[data-browse-motion]")

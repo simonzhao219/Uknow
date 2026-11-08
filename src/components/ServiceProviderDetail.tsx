@@ -201,7 +201,7 @@ export function ServiceProviderDetail({
   const shell = (variant: 'page' | 'notFound', body: ReactNode) => (
     <div
       ref={gestureRef}
-      className={`max-w-4xl mx-auto overflow-x-clip ${variant === 'notFound' ? 'text-center py-12' : 'space-y-6'} ${gestureClass}`}
+      className={`max-w-4xl mx-auto overflow-x-clip [overflow-clip-margin:8px] ${variant === 'notFound' ? 'text-center py-12' : 'space-y-6'} ${gestureClass}`}
     >
       {variant === 'notFound'
         ? browseNav && <div className="flex justify-end">{browseNav}</div>

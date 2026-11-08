@@ -532,6 +532,8 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     await screen.findByRole('heading', { name: 'BBB美容師' });
 
     expect(motion()?.parentElement?.className).toContain('overflow-x-clip');
+    // 貼邊按鈕的聚焦環與卡片陰影不被裁掉
+    expect(motion()?.parentElement?.className).toContain('overflow-clip-margin');
   });
 
   it('偏好減少動態時頭尾不回彈，仍播報已是最後一篇', async () => {

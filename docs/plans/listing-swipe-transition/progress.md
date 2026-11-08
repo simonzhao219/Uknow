@@ -12,12 +12,12 @@
 | 3 | 抽 hook useBrowseNav＋WAAPI 進場(P2-b) | ✅ 綠 | 511cd1a9 | debe41c2 |
 | 4 | 跟手與放開、手勢起點(P2-e) | ✅ 綠 | 1cf74b79 | 841d2c21 |
 | 5 | 橫向溢出(P2-d)＋頭尾回彈 | ✅ 綠 | b36d8671 | 681bea34 |
-| 6 | 手勢 chunk error boundary(P2-c) | ✅ 綠 | 9e8379f0 | (本 commit) |
-| 7 | e2e、文件、bundle 預算 | ⬜ 未開始 | | |
+| 6 | 手勢 chunk error boundary(P2-c) | ✅ 綠 | 9e8379f0 | 75d737dd |
+| 7 | e2e、文件、bundle 預算 | ✅ 綠（一寫就綠，逃生口 1） | — | (本 commit) |
 
 ## 目前位置與下一步
 
-階段 1 完成（紅 09ce2a86；守衛測試＝prefers-reduced-motion 字串只准出現在 motionPreference.ts）。**bundle 基線（階段 1 後，develop 現況）：entry raw 1012.3／gzip 315.5／總 raw 1947.1 kB**（預算 1015／316／1950）。階段 2 完成（browseDrag.ts：lockAxis／dragOffset／settle／isInteractiveStart／startsInsideHorizontalScroller＋動畫常數）。階段 3 完成（useBrowseNav、固定 wrapper `data-browse-motion`、WAAPI 進場；紅燈 commit 只置換 slide-in class 斷言 4 條與「一般換篇不觸發回彈」1 條，其餘既有測試零修改）。**階段 3 後 bundle：entry raw 1012.7／gzip 315.7／總 raw 1947.5 kB**（對基線 +0.4／+0.2／+0.4，預算 1015／316／1950）。階段 4 完成（BrowseGestures 跟手；去向無鄰居時放開仍通知 onNavigate 以保留「已是最後一篇」播報，目前頭尾放開會同時有 wrapper 彈回與 contentRef 24px 回彈兩段——階段 5 併成單一 springBack）。階段 5 完成（`springTo` 統一彈回；按鈕／鍵盤頭尾輕推改作用在 wrapper，手勢頭尾由 BrowseGestures 彈回；外層 `overflow-x-clip`；`contentRef` 移除，`data-browse-content` 仍在）。紅燈 commit 另改一條既有斷言：`animate` 實例由 content 改為 motion wrapper。階段 6 完成（BrowseGesturesBoundary，靜默降級）。**階段 6 後 bundle：entry raw 1014.0／gzip 316.3／總 raw 1950.1 kB**，超出原預算 gzip 316／總 1950 → 依 W6-20 授權調 `check-bundle-budget.mjs`：gzip 316→316.5（+0.5，授權上限）、總 raw 1950→1951（+1，隨 entry 連動；W6-20 未明寫總量額度，已回報主 session）。下一步：階段 7 e2e、文件同步、最終 bundle。
+階段 1 完成（紅 09ce2a86；守衛測試＝prefers-reduced-motion 字串只准出現在 motionPreference.ts）。**bundle 基線（階段 1 後，develop 現況）：entry raw 1012.3／gzip 315.5／總 raw 1947.1 kB**（預算 1015／316／1950）。階段 2 完成（browseDrag.ts：lockAxis／dragOffset／settle／isInteractiveStart／startsInsideHorizontalScroller＋動畫常數）。階段 3 完成（useBrowseNav、固定 wrapper `data-browse-motion`、WAAPI 進場；紅燈 commit 只置換 slide-in class 斷言 4 條與「一般換篇不觸發回彈」1 條，其餘既有測試零修改）。**階段 3 後 bundle：entry raw 1012.7／gzip 315.7／總 raw 1947.5 kB**（對基線 +0.4／+0.2／+0.4，預算 1015／316／1950）。階段 4 完成（BrowseGestures 跟手；去向無鄰居時放開仍通知 onNavigate 以保留「已是最後一篇」播報，目前頭尾放開會同時有 wrapper 彈回與 contentRef 24px 回彈兩段——階段 5 併成單一 springBack）。階段 5 完成（`springTo` 統一彈回；按鈕／鍵盤頭尾輕推改作用在 wrapper，手勢頭尾由 BrowseGestures 彈回；外層 `overflow-x-clip`；`contentRef` 移除，`data-browse-content` 仍在）。紅燈 commit 另改一條既有斷言：`animate` 實例由 content 改為 motion wrapper。階段 6 完成（BrowseGesturesBoundary，靜默降級）。**階段 6 後 bundle：entry raw 1014.0／gzip 316.3／總 raw 1950.1 kB**，超出原預算 gzip 316／總 1950 → 依 W6-20 授權調 `check-bundle-budget.mjs`：gzip 316→316.5（+0.5，授權上限）、總 raw 1950→1951（+1，隨 entry 連動；W6-20 未明寫總量額度，已回報主 session）。階段 7 完成：mock e2e 3 個場景（CDP 真觸控：跟手＋長拖換篇＋無橫向捲動＋聚焦環保留空間／減少動態不位移／短拖彈回），本機 chromium 實跑綠；規格書與 ui-ux-guidelines 同步；另補 `overflow-clip-margin:8px`（overflow-x:clip 會裁掉貼邊鈕的 3px 聚焦環，審查 P2）。`check:full` 全綠（deno 以 npm 安裝）。**最終 bundle：entry raw 1014.0／gzip 316.3／總 raw 1950.2 kB**。下一步：/review-implementation → 清理規劃檔 → PR。
 
 舊記錄：
 規劃已依 /review-plan 與主 session 裁決 W6-20 修訂（review.md P1-1～11 已併入 plan.md），待主 session 親審後請業主在本 session 親打 `/tdd-implement listing-swipe-transition`。
@@ -25,3 +25,6 @@
 ## Blockers(逃生口紀錄)
 
 ## 框架摩擦
+
+- 本機跑 e2e：pinned playwright 1.56 要 chromium 1194，容器只有 1243；以 symlink `/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell` 指向 1243 的 headless shell 即可（環境級 hack，未入庫）。
+- e2e 偶發 `[e2e] blocked unmocked request: public_listing_categories`（首頁類別查詢未 mock，idle 觸發時機與測試收尾競爭）；一次同批 10 場景跑中出現過一次，單跑 12 次 0 次，非本 feature 引入。

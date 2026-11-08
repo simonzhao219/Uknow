@@ -115,7 +115,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 
 **區中心座標的資料來源**：`src/utils/districtCentroids.ts`（368 區，動態載入的獨立 chunk）由 `scripts/gen-district-centroids.py` 自內政部地政司「鄉鎮市區界線(TWD97經緯度)」版本 1140318 產生（政府資料開放平臺資料集 7441，政府資料開放授權條款－第 1 版，可商用、可製作衍生物，須顯名）。顯名聲明：內政部地政司 2025 鄉鎮市區界線(TWD97經緯度) 1140318，依政府資料開放授權條款（https://data.gov.tw/license）釋出。每區取多邊形質心，座標取小數 3 位。區名與界線資料一致（屏東縣「南州鄉」），無別名對應。
 
-**刊登詳情頁的換篇**：從首頁點進詳情頁時，凍結點擊當下首頁畫面上的順序（含搜尋、篩選、排序結果），詳情頁可左右滑、點「‹ ›」或在桌機按 ←／→ 切換上一篇／下一篇，標題列顯示「n/N」；照片輪播滑到頭尾再滑會接著換篇。換篇用取代式導覽，歷史只留一筆，按一次返回就回首頁；有換過篇時，返回首頁會把最後看的那張卡捲到中央，沒換過維持離開前的捲動位置。直接輸入網址、重新整理、從其他入口進詳情頁時沒有換篇脈絡，不顯示任何換篇介面。〔實作〕`src/utils/browseContext.ts`、`src/utils/homeListingsCache.ts`、`src/components/ServiceProviderDetail.tsx`、`src/components/listing/BrowseNav.tsx`、`src/utils/swipeIntent.ts`
+**刊登詳情頁的換篇**：從首頁點進詳情頁時，凍結點擊當下首頁畫面上的順序（含搜尋、篩選、排序結果），詳情頁可左右滑、點「‹ ›」或在桌機按 ←／→ 切換上一篇／下一篇，標題列顯示「n/N」；照片輪播滑到頭尾再滑會接著換篇。手指在照片以外的區域水平拖動時內容跟著手指位移（半阻尼，上限約視窗寬的三分之一；去向沒有鄰居時阻尼加重），放開達到滑動門檻才換篇，否則彈回；換篇後新內容從去向的對側淡入滑入，按鈕與鍵盤換篇同樣有這段進場（沒有跟手）；偏好減少動態時不位移、不淡入，換篇結果與播報不變。邊緣保護區、按鈕與連結、橫向可捲動區域、多指與選字時不啟動跟手。換篇手勢的程式載入失敗時，頁面與「‹ ›」按鈕照常，只少了滑動與鍵盤。換篇用取代式導覽，歷史只留一筆，按一次返回就回首頁；有換過篇時，返回首頁會把最後看的那張卡捲到中央，沒換過維持離開前的捲動位置。直接輸入網址、重新整理、從其他入口進詳情頁時沒有換篇脈絡，不顯示任何換篇介面。〔實作〕`src/utils/browseContext.ts`、`src/utils/homeListingsCache.ts`、`src/components/ServiceProviderDetail.tsx`、`src/components/listing/BrowseNav.tsx`、`src/utils/swipeIntent.ts`、`src/utils/browseDrag.ts`、`src/hooks/useBrowseNav.ts`、`src/components/listing/BrowseGestures.tsx`
 
 **守衛語意**
 
