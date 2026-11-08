@@ -83,7 +83,7 @@
 | S3b | **推薦樹第二段**：點數對帳（餘額 ≠ 獲得 − 提領）＋點數來源明細 | 同上規劃書，第二支 PR | Opus | 同上 | S3a 合併後 |
 | S4 | **換篇過場動畫**（W5-69），併 S7（#509）P2 五項：reduced-motion 未併 `motionPreference`、抽 hook、手勢 chunk 缺 error boundary、slide-in、手勢起點 | 三段式，`feature/listing-swipe-transition` | Sonnet | `ServiceProviderDetail.tsx`、`listing/*`、`docs/ui-ux-guidelines.md` | 純前端 |
 | S5 | **屏東「南鄉」→「南州鄉」**（W5-65、W6-9）：`TAIWAN_REGIONS` 改名、migration 冪等轉換 `listings.districts`、`districtCentroids.ts` 別名拿掉 | `/fix-bug`，`fix/nanzhou-township` | Sonnet | `src/utils/constants.ts`、`districtCentroids.ts`（含產生腳本別名表）、新 migration | 無 |
-| S6 | **新約與部署收尾**：確認框第三態「預設推薦人即現任」（W5-63）；0d 驗單上的碼（R5 P2-6）；drop 三參數版 `prepare_payment_order`；`deploy-supabase.yml` 部署前自動確認 migration 已套（W5-62，上線後 §4 第 4a 步退場） | 三段式，`feature/renewal-deploy-closeout` | Opus | migration、`PaymentCheckout.tsx`、`deploy-supabase.yml` | S1 合併後才開 |
+| S6 | **新約與部署收尾**：確認框第三態「預設推薦人即現任」（W5-63）；0d 驗單上的碼（R5 P2-6）；drop 三參數版 `prepare_payment_order`；drop S1 留下的 wrapper `complete_paid_pending_orders`＋改直接呼叫它的測試（W6-14）；`deploy-supabase.yml` 部署前自動確認 migration 已套（W5-62，上線後 §4 第 4a 步退場） | 三段式，`feature/renewal-deploy-closeout` | Opus | migration（版本號排在 S1 之後、以 S1 的檔為基準）、`PaymentCheckout.tsx`、`deploy-supabase.yml` | S1 合併後才開 |
 | R6 | 第 6 波審查；兼做 `launch-wave-5/` 退場（依 R5 §6） | 審查 session；報告 `docs/plans/launch-wave-6/review.md` | Opus | — | — |
 
 主 session 自己做：本檔 §7、§8；審每支 PR（金流 PR 另派獨立 Opus 審查員）；合併後 dispatch 驗證；代跑唯讀 SQL；上線後現場查詢（W4-26）。
@@ -119,10 +119,10 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | —（規劃已推） | 規劃交件，等業主裁決 |
+| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | —（規劃已推） | 規劃 r3 親審通過，等業主親打 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
 | S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃交件，等業主裁決 |
-| S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | — | 規劃交件，修訂中 |
+| S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | — | 規劃親審通過，等業主親打 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -136,3 +136,5 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 09:35 | S3 交規劃（#521 draft，/review-plan P0 0、P1 16、P2 16）。發現：停權／到期／未加入推薦計畫現行照發獎金（只是不能提領）；「自領停發」在程式裡是成環停發；`referral_pair_history` 不是換線紀錄。Q1～Q5、Q8 待業主；Q6（S3a 不動發獎函式、等價測試）、Q7（admin-gate 自動列舉路由，順修 ops P2-4）主 session 同意 | 收業主裁決 |
 | 11/08 09:50 | S2 交 **#522**：P2-1～4，同類掃描另修 `/auth/reset-registration` 的 `.json()` 容錯。主 session 審：無 P0／P1；P2：自己的碼應回專屬文案「不能使用自己的推薦碼」→ S2 已改。偏離：未走紅綠燈相位（PR 內文寫明）。CI 綠 → **#522 合進 develop（e778f75）**。首批已有合併 → 照 W6-2 開 **S4** | 等 S4 規劃；S1、S3 收業主裁決 |
 | 11/08 10:05 | S4 交規劃（/review-plan P0 0、P1 11 組、P2 9 組；純前端，WAAPI 進場、手勢跟手）。業主裁 **W6-10～13**（S1）、**W6-15～18**（S3）；主 session 定 W6-14、W6-19、W6-20（S4）。已轉達 S1、S3、S4 修訂 plan | S1、S3、S4 修訂 → 主 session 親審 → 業主親打 `/tdd-implement` |
+| 11/08 10:15 | S4 plan 修訂（da31fece）主 session 親審通過 | 業主到 S4 親打 `/tdd-implement listing-swipe-transition` |
+| 11/08 10:20 | S1 plan r3（7fc3a362；四視角重審 P0 0、P1 8 皆處置）主 session 親審通過：鎖序核過（heal 持 profiles 時 advisory 一律 try）；W6-11 解讀確認（單筆開通失敗的既有 error 告警照推）；P2：lock_timeout 還原原值。W6-14 補進 S6 列 | 業主到 S1 親打 `/tdd-implement batch-heal-lock-split` |
