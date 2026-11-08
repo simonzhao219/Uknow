@@ -35,6 +35,7 @@ import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useLatestRequest } from '../../hooks/useLatestRequest';
 import { type AdminCache, type MemberListParams, adminQuery } from './adminCache';
 import { type AdminBusy, lockedTabProps, NOOP_BUSY, PAUSED_LOOK } from './adminBusy';
+import type { ReferralTreeLoaders } from './referral-tree/loaders';
 import { runAdminWrite } from './adminWrite';
 import { isForbidden, UNKNOWN_OUTCOME } from './writeOutcome';
 import { REVALIDATE_DIM_DELAY_MS, useAdminList, useDelayedFlag } from './useAdminList';
@@ -71,6 +72,8 @@ export interface MemberManagementProps {
     offset: number;
   }) => Promise<{ reviews: AdminIdReview[]; total: number }>;
   submitIdReview: (userId: string, approve: boolean, reason?: string) => Promise<void>;
+  /** 後台推薦樹（第 6 波 S3a）的資料存取，整包注入。 */
+  referralTree: ReferralTreeLoaders;
   /** 後台記憶體快取（AdminConsole 建立）。不給＝不跨卸載保留。 */
   cache?: AdminCache;
   busy?: AdminBusy;

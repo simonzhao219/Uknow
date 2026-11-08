@@ -44,6 +44,8 @@ interface MemberDetailSheetProps {
   onClose: () => void;
   /** 關閉後焦點要回去的地方由父層決定（它知道是哪一顆「查看」開的）。 */
   onCloseAutoFocus?: (event: Event) => void;
+  /** 「在推薦樹中查看」：不給就不顯示（階段 8 紅燈 stub，綠燈才接上）。 */
+  onViewInTree?: () => void;
 }
 
 const ID_STATUS_LABEL: Record<string, string> = {

@@ -24,6 +24,7 @@ import { nextStamp } from '../../hooks/useLatestRequest';
 import { type AdminCache, createAdminCache } from './adminCache';
 import type { AdminBusy } from './adminBusy';
 import { MemberManagement } from './MemberManagement';
+import type { ReferralTreeLoaders } from './referral-tree/loaders';
 
 afterEach(cleanup);
 
@@ -108,6 +109,17 @@ function detail(over: Partial<AdminMemberDetail> = {}): AdminMemberDetail {
 /** 後端明確拒絕（4xx）：交易沒提交，照原文說出來。不帶 status 的錯誤歸「結果不明」。 */
 const conflict = (message: string) => Object.assign(new Error(message), { status: 409 });
 
+/** 推薦樹次分頁的 loader（沒有指定時全部回空；本檔只在「推薦樹次分頁」組裡細看）。 */
+function treeLoaders(over: Partial<ReferralTreeLoaders> = {}): ReferralTreeLoaders {
+  return {
+    loadNodes: vi.fn(async () => ({ total: 0, nodes: [], pinned: null, unplaceableCount: 0 })),
+    search: vi.fn(async () => ({ total: 0, matches: [] })),
+    loadMember: vi.fn(async () => Promise.reject(new Error('not used'))),
+    loadPayments: vi.fn(async () => ({ total: 0, items: [] })),
+    ...over,
+  };
+}
+
 function renderConsole(
   opts: {
     loadMembers?: (params: Record<string, unknown>) => Promise<Page>;
@@ -124,6 +136,7 @@ function renderConsole(
       suspendMember={opts.suspendMember ?? (async () => {})}
       loadIdReviews={async () => ({ reviews: [], total: 0 })}
       submitIdReview={async () => {}}
+      referralTree={treeLoaders()}
     />,
   );
 }
@@ -1400,6 +1413,7 @@ function renderMembers(
       suspendMember={opts.suspendMember ?? (async () => {})}
       loadIdReviews={async () => ({ reviews: [], total: 0 })}
       submitIdReview={async () => {}}
+      referralTree={treeLoaders()}
     />,
   );
 }
@@ -1877,5 +1891,59 @@ describe('MemberManagement 寫入協議', () => {
     await screen.findByText('證件審核佇列（替身）');
     expect(idReview.props?.cache).toBe(cache);
     expect(idReview.props?.busy).toBe(busy);
+  });
+});
+
+describe('MemberManagement 推薦樹次分頁', () => {
+  beforeEach(() => {
+    stubMediaQuery(true);
+  });
+
+  function renderWithTree(tree: ReferralTreeLoaders, cache?: AdminCache) {
+    return render(
+      <MemberManagement
+        cache={cache}
+        loadMembers={async () => page()}
+        loadMemberDetail={async () => detail()}
+        setMemberAdmin={async () => {}}
+        suspendMember={async () => {}}
+        loadIdReviews={async () => ({ reviews: [], total: 0 })}
+        submitIdReview={async () => {}}
+        referralTree={tree}
+      />,
+    );
+  }
+
+  it('推薦樹排在第三格，不動既有兩格的位置', async () => {
+    renderWithTree(treeLoaders());
+    const tabs = screen.getAllByRole('tab').map((t) => t.textContent);
+    expect(tabs).toEqual(['會員列表', '證件審核', '推薦樹']);
+  });
+
+  it('切到推薦樹會載入頂層，且不寫進 writeView（回後台不落在重頁）', async () => {
+    const cache = createAdminCache();
+    const tree = treeLoaders();
+    renderWithTree(tree, cache);
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '推薦樹' }));
+    await waitFor(() => expect(tree.loadNodes).toHaveBeenCalled());
+    expect(cache.readView().memberTab).not.toBe('referral-tree');
+
+    fireEvent.mouseDown(screen.getByRole('tab', { name: '證件審核' }));
+    expect(cache.readView().memberTab).toBe('id-reviews');
+  });
+
+  it('會員詳情的在推薦樹中查看 → 關閉面板、切到推薦樹並以該會員為目標展開', async () => {
+    const tree = treeLoaders();
+    renderWithTree(tree);
+    fireEvent.click(await screen.findByRole('button', { name: /查看 陳大文/ }));
+    fireEvent.click(await screen.findByRole('button', { name: '在推薦樹中查看' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('tab', { name: '推薦樹' }).getAttribute('aria-selected')).toBe(
+        'true',
+      ),
+    );
+    await waitFor(() => expect(tree.loadMember).toHaveBeenCalledWith(detail().id));
+    expect(screen.queryByRole('button', { name: '在推薦樹中查看' })).toBeNull();
   });
 });
