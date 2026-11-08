@@ -136,7 +136,7 @@ export function LedgerSection({
                         ))}
                       </ul>
                       {counts.has('reset_amount') ? (
-                        <p className="mt-1">
+                        <p className="mt-1 text-xs">
                           清空當下若有別筆交易同時寫入，金額可能差一筆；請先對照該時段的帳本再判斷。
                         </p>
                       ) : null}
