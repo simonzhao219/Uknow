@@ -60,6 +60,8 @@
 | W6-20 | S4 Q1～Q5 | WAAPI＋inline transform；手感數值照規劃起步、實測後微調；減少動態不保留淡入；bundle 超標授權 entry raw +2 kB／gzip +0.5 kB（PR 附實測）；手機實測三項列 PR 內文 |
 | W6-21 | S3 v3 的四題 | 推薦人鏈可點＋「在推薦樹中查看」保留；「推薦人資料兩處不一致」資訊提示保留；成環者在頂層樹最後放預設收合群組「無法接上推薦樹的會員（N）」（N=0 不顯示，屬樹的一部分、非異常清單）；§6 自決項同意，MemberDetailSheet 補 SENSITIVE_PORTALS 列第 7 波 |
 | W6-22 | S4 #523 追認 | bundle 總 raw 1950→1951 同意；焦點還原留在元件（不搬進 useBrowseNav）接受為偏離、列第 7 波；業主夾具授權已記 PR 內文 |
+| W6-24 | #524 告警在 LINE 通道被截到 60 字（`reconcile-payments.yml` 每則 `message[:60]`），「下一步」看不到 | 把行動放進前 60 字（「【獎金未發・請開 Claude 依手冊補發】付款單 X 第N代 N點」），測試斷言 `slice(0,60)`；不改 workflow |
+| W6-25 | S3 bundle 總 raw 1950→1975 | 核准：新增全在 lazy 後台 chunk、entry 只 +0.1；與 #523 的 +1 疊加時以 rebase 後實測為準 |
 
 ## 1. 時程
 
@@ -104,7 +106,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 ## 5. 第 7 波候選
 
-以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）。
+以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
 
 ## 6. 業主待辦
 
@@ -144,3 +146,5 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 10:25 | S3 plan v3（#521 82a72f98；三輪審查，第 3 輪需求／系統 P0 0、P1 0）主 session 親審通過，定 **W6-21** | 業主到 S3 親打 `/tdd-implement admin-referral-tree` |
 | 11/08 14:00 | S4 交 **#523**（7 階段紅綠＋審查修正，hash 以 PR 內文為準；/review-implementation P0 0、P1 3）。主 session 定 **W6-22**。獨立審查員：P0 0、**P1 1**（手勢 chunk 載入失敗走 `importWithRetry` 會整頁重載、換篇脈絡遺失，違反驗收 #8）；P2：REPLACE 閘無測試（mutation 實證）、touchstart 一律切斷進場、`overflow-clip-margin` Safari 相容性（未證實）、紅燈 commit 含產品修正（審查員已實證測試有效）→ 全數退回 S4 本 PR 修；斜拖手感列手機實測 | S4 修 → CI 綠 → 合 #523 → 業主手機實測 |
 | 11/08 14:15 | S1 交 **#524**（migration `20261115000001`；7 段紅綠，hash 以 PR 內文為準；本機 Deno api 764／0；實作審查 P0 0、P1 已修；偏離 9 項列 PR 內文）。業主裁 **W6-23**。主 session 派獨立 Opus 審查員 | 等審查、CI |
+| 11/08 14:25 | #524 獨立 Opus 審查：**P0 0、P1 1**（LINE 通道每則截 60 字，告警的「下一步」看不到 → 主 session 核實 workflow:202，定 **W6-24**）；P2：deadlock 斷言對發獎路徑空轉、lock_timeout 還原無測試、`claim_referral_king_reward` 仍 warning（W6-10 同類）→ 本 PR 修；單筆開通 sqlerrm 進 message 列第 7 波。鎖序、與基準逐行 diff、部署相容皆核實 | S1 修 → CI 綠 → 合 #524 |
+| 11/08 14:25 | S3a 九階段全綠（#521）。主 session 代跑正式站：曾付款且 `referred_by_changed_at` null 1 人、單人最大完成付款 1 筆、自推 0、成環 0、可判定第 1 代缺漏 0、2026-07-18 前提領單 0。主 session 定 **W6-25** | 等 S3 /review-implementation |
