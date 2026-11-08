@@ -4,9 +4,10 @@
 // 401／403 的守門由 admin-gate.test.ts 統一負責；本檔只驗管理員打得到四支端點、
 // 回應通過 api-contract 的 runtime schema，以及查無此人 → 404。
 // ============================================================
-import { assertEquals } from 'jsr:@std/assert@1';
+import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { assertShape } from '../_shared/api-contract.ts';
 import {
+  AdminReferralLedgerResponseSchema,
   AdminReferralMemberAuditResponseSchema,
   AdminReferralNodesResponseSchema,
   AdminReferralPaymentsResponseSchema,
@@ -78,6 +79,33 @@ Deno.test('GET /admin/referral-tree/*：管理員取得節點、搜尋、查帳�
     const missing = await get(`/members/${crypto.randomUUID()}`);
     assertEquals(missing.status, 404);
     await missing.body?.cancel();
+  } finally {
+    await deleteTestUsers(client, [admin.id, referrer.id, payer.id]);
+  }
+});
+
+Deno.test('GET /admin/referral-tree/members/:id/ledger：管理員取得點數來源 → 契約形狀、推薦獎勵帶付款人', async () => {
+  const client = adminClient();
+  const tag = crypto.randomUUID().slice(0, 6);
+  const admin = await createTestUser(client, { name: `帳端點 管理員 ${tag}` });
+  const referrer = await createTestUser(client, { name: `帳端點 推薦人 ${tag}` });
+  const payer = await createTestUser(client, { name: `帳端點 付款人 ${tag}` });
+  try {
+    await client.from('profiles').update({ is_admin: true }).eq('id', admin.id);
+    await client.from('profiles').update({ referred_by_user_id: referrer.id }).eq('id', payer.id);
+    assertEquals((await payForUser(client, referrer.id)).error, null);
+    assertEquals((await payForUser(client, payer.id)).error, null);
+    const token = await getUserAccessToken(client, admin.email);
+
+    const res = await app.request(`/api/admin/referral-tree/members/${referrer.id}/ledger`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assertEquals(res.status, 200);
+    const body = assertShape(AdminReferralLedgerResponseSchema, await res.json(), 'ledger');
+    const reward = body.data.items.find((i) => i.type === 'referral_reward')!;
+    assertEquals(reward.refereeId, payer.id);
+    assert(reward.eventAt !== null, '推薦獎勵帶付款時點');
+    assertEquals(body.data.findings, []);
   } finally {
     await deleteTestUsers(client, [admin.id, referrer.id, payer.id]);
   }

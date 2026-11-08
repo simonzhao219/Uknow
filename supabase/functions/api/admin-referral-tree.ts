@@ -290,5 +290,10 @@ export function createAdminReferralTreeHandlers(deps: AdminReferralTreeDeps) {
         } satisfies AdminReferralPaymentsResponse,
       );
     },
+
+    // S3b 階段 11 紅燈 stub：綠燈時實作。
+    ledger(c: Context) {
+      return c.json({ success: false, error: { code: 'not_implemented', message: '' } }, 501);
+    },
   };
 }

@@ -116,6 +116,7 @@ function treeLoaders(over: Partial<ReferralTreeLoaders> = {}): ReferralTreeLoade
     search: vi.fn(async () => ({ total: 0, matches: [] })),
     loadMember: vi.fn(async () => Promise.reject(new Error('not used'))),
     loadPayments: vi.fn(async () => ({ total: 0, items: [] })),
+    loadLedger: vi.fn(async () => ({ total: 0, items: [], findings: [] })),
     ...over,
   };
 }

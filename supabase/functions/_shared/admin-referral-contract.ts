@@ -25,6 +25,7 @@ export const ADMIN_REFERRAL_ANOMALY_KINDS = [
   'self_referral',
   'missing_reward',
   'recipient_mismatch',
+  'ledger_mismatch',
 ] as const;
 
 const AdminReferralAnomalyKindSchema = literals(...ADMIN_REFERRAL_ANOMALY_KINDS);
@@ -164,3 +165,56 @@ export const AdminReferralPaymentsResponseSchema = obj({
   data: obj({ total: num(), items: arr(AdminReferralPaymentItemSchema) }),
 });
 export type AdminReferralPaymentsResponse = Infer<typeof AdminReferralPaymentsResponseSchema>;
+
+// ---- S3b：點數來源明細與跨表核對（規劃 §2.3） ----
+
+export const ADMIN_REFERRAL_LEDGER_FINDINGS = [
+  'withdrawal_debit',
+  'refund_missing',
+  'refund_unexpected',
+  'orphan_debit',
+  'reset_amount',
+  'reset_delayed',
+] as const;
+const LedgerFindingKindSchema = literals(...ADMIN_REFERRAL_LEDGER_FINDINGS);
+export type AdminReferralLedgerFindingKind = Infer<typeof LedgerFindingKindSchema>;
+
+export const AdminReferralLedgerItemSchema = obj({
+  id: str(),
+  at: str(),
+  type: str(),
+  /** reward_transactions_with_balance.source_category；未知類型原樣回 type。 */
+  sourceCategory: str(),
+  amount: num(),
+  balanceAfter: num(),
+  description: nullable(str()),
+  generation: nullable(num()),
+  refereeId: nullable(str()),
+  refereeName: nullable(str()),
+  /** 推薦獎勵的付款時點（付款單 completed_at 或任務續約 claimed_at）。 */
+  eventAt: nullable(str()),
+  withdrawalId: nullable(str()),
+  withdrawalStatus: nullable(str()),
+  subscriptionId: nullable(str()),
+  finding: nullable(LedgerFindingKindSchema),
+});
+export type AdminReferralLedgerItem = Infer<typeof AdminReferralLedgerItemSchema>;
+
+export const AdminReferralLedgerFindingSchema = obj({
+  kind: LedgerFindingKindSchema,
+  transactionId: nullable(str()),
+  withdrawalId: nullable(str()),
+  /** true＝只是資訊（延遲補沖），不算核對不符。 */
+  info: bool(),
+});
+export type AdminReferralLedgerFinding = Infer<typeof AdminReferralLedgerFindingSchema>;
+
+export const AdminReferralLedgerResponseSchema = obj({
+  success: bool(),
+  data: obj({
+    total: num(),
+    items: arr(AdminReferralLedgerItemSchema),
+    findings: arr(AdminReferralLedgerFindingSchema),
+  }),
+});
+export type AdminReferralLedgerResponse = Infer<typeof AdminReferralLedgerResponseSchema>;

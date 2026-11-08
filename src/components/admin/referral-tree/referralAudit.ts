@@ -94,6 +94,7 @@ const ANOMALY_TEXT: Record<AdminReferralAnomalyKind, string> = {
   self_referral: '自己推薦自己',
   missing_reward: '獎金缺漏',
   recipient_mismatch: '收獎人不符',
+  ledger_mismatch: '點數跨表核對不符',
 };
 
 export function anomalyLabel(kind: AdminReferralAnomalyKind): string {
