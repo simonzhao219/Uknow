@@ -62,6 +62,7 @@
 | W6-22 | S4 #523 追認 | bundle 總 raw 1950→1951 同意；焦點還原留在元件（不搬進 useBrowseNav）接受為偏離、列第 7 波；業主夾具授權已記 PR 內文 |
 | W6-24 | #524 告警在 LINE 通道被截到 60 字（`reconcile-payments.yml` 每則 `message[:60]`），「下一步」看不到 | 把行動放進前 60 字（「【獎金未發・請開 Claude 依手冊補發】付款單 X 第N代 N點」），測試斷言 `slice(0,60)`；不改 workflow |
 | W6-25 | S3 bundle 總 raw 1950→1975 | 核准：新增全在 lazy 後台 chunk、entry 只 +0.1；與 #523 的 +1 疊加時以 rebase 後實測為準 |
+| W6-26 | S3 實作審查 P2 兩題 | 姓名搜尋做 NFKC；節點列只留到期日（已到期／停權用徽章），「剩 N 天」移到詳情；S3b 做（#521 合併後從 develop 另開分支） |
 
 ## 1. 時程
 
@@ -126,8 +127,8 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 | 實作完成，獨立審查中 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
-| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃 v3 親審通過，等業主親打 |
-| S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 | 實作完成，修獨立審查 P1 |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 | S3a 完工，獨立審查中 |
+| S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -148,3 +149,5 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 14:15 | S1 交 **#524**（migration `20261115000001`；7 段紅綠，hash 以 PR 內文為準；本機 Deno api 764／0；實作審查 P0 0、P1 已修；偏離 9 項列 PR 內文）。業主裁 **W6-23**。主 session 派獨立 Opus 審查員 | 等審查、CI |
 | 11/08 14:25 | #524 獨立 Opus 審查：**P0 0、P1 1**（LINE 通道每則截 60 字，告警的「下一步」看不到 → 主 session 核實 workflow:202，定 **W6-24**）；P2：deadlock 斷言對發獎路徑空轉、lock_timeout 還原無測試、`claim_referral_king_reward` 仍 warning（W6-10 同類）→ 本 PR 修；單筆開通 sqlerrm 進 message 列第 7 波。鎖序、與基準逐行 diff、部署相容皆核實 | S1 修 → CI 綠 → 合 #524 |
 | 11/08 14:25 | S3a 九階段全綠（#521）。主 session 代跑正式站：曾付款且 `referred_by_changed_at` null 1 人、單人最大完成付款 1 筆、自推 0、成環 0、可判定第 1 代缺漏 0、2026-07-18 前提領單 0。主 session 定 **W6-25** | 等 S3 /review-implementation |
+| 11/08 14:40 | S3a 交 **#521**（ready，CI 綠；8 段紅綠＋階段 9 逃生口 1；實作審查 P0 1 已修、P1 去重 11 條修 6、其餘 5 條列偏離或補 PR 內文）。主 session 定 **W6-26**，派獨立 Opus 審查員 | 等審查 |
+| 11/08 14:40 | S4 修 #523 獨立審查（P1：手勢 chunk 改 `importWithRetry(..., {reload: noop, storage: null})`；P2：REPLACE 閘測試＋突變驗證、lockAxis 後才 cancel 進場、聚焦環改裁切層 `-mx-2／px-2`、overflow 探針加 `data-overflow-intentional`——主 session 核實只跳過該元素自身、子孫照掃）。CI 全綠 → **#523 合進 develop（77a87cb）**，S4 收工 | 業主在 develop 預覽手機實測三項 |
