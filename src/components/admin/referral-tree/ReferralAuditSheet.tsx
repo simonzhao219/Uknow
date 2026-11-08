@@ -16,7 +16,8 @@ import { Button } from '../../ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../../ui/sheet';
 import { Skeleton } from '../../ui/skeleton';
 import { StatusCallout } from '../../ui/status-callout';
-import type { PaymentsData, ReferralTreeLoaders } from './loaders';
+import { type LedgerState, LedgerSection } from './LedgerAuditSection';
+import type { LedgerData, PaymentsData, ReferralTreeLoaders } from './loaders';
 import { PaymentCard } from './PaymentAuditList';
 import { anomalyLabel, displayName, uplineLabel, withdrawalBlockReason } from './referralAudit';
 
@@ -36,18 +37,23 @@ type Load<T> =
   | { status: 'error'; notFound: boolean }
   | { status: 'ready'; data: T };
 
-interface PaymentsState {
+interface PagedState<T> {
   status: 'loading' | 'error' | 'ready';
-  items: PaymentsData['items'];
+  items: T[];
   total: number;
   loadMoreError: boolean;
   loadingMore?: boolean;
 }
+type PaymentsState = PagedState<PaymentsData['items'][number]>;
 
 interface Entry {
   audit: Load<AdminReferralMemberAudit>;
   payments: PaymentsState;
+  ledger: LedgerState;
 }
+
+const emptyPaged = { status: 'loading', items: [], total: 0, loadMoreError: false } as const;
+const emptyLedger = (): LedgerState => ({ ...emptyPaged, items: [], findings: [] });
 
 // 「需要注意」的連結與付款區重試以 data-section 找到對應標題移焦。
 const focusSection = (key: string) => {
@@ -87,6 +93,11 @@ function mergeByEventId(prev: PaymentsData['items'], next: PaymentsData['items']
   return [...prev, ...next.filter((x) => !seen.has(x.eventId))];
 }
 
+function mergeById(prev: LedgerData['items'], next: LedgerData['items']) {
+  const seen = new Set(prev.map((x) => x.id));
+  return [...prev, ...next.filter((x) => !seen.has(x.id))];
+}
+
 const isNotFound = (err: unknown) =>
   typeof err === 'object' && err !== null && (err as { status?: number }).status === 404;
 
@@ -122,12 +133,8 @@ export function ReferralAuditSheet({
     async (id: string) => {
       patch(id, (prev) => ({
         audit: { status: 'loading' },
-        payments: prev?.payments ?? {
-          status: 'loading',
-          items: [],
-          total: 0,
-          loadMoreError: false,
-        },
+        payments: prev?.payments ?? { ...emptyPaged, items: [] },
+        ledger: prev?.ledger ?? emptyLedger(),
       }));
       try {
         const data = await loaders.loadMember(id);
@@ -147,7 +154,8 @@ export function ReferralAuditSheet({
       if (offset === 0) {
         patch(id, (prev) => ({
           audit: prev?.audit ?? { status: 'loading' },
-          payments: { status: 'loading', items: [], total: 0, loadMoreError: false },
+          payments: { ...emptyPaged, items: [] },
+          ledger: prev?.ledger ?? emptyLedger(),
         }));
       } else {
         patch(id, (prev) => {
@@ -186,12 +194,54 @@ export function ReferralAuditSheet({
     [loaders, patch],
   );
 
+  // 點數來源（S3b）：與付款區同一套分頁三態，彼此不連坐。
+  const loadLedger = useCallback(
+    async (id: string, offset: number) => {
+      patch(id, (prev) => ({
+        audit: prev?.audit ?? { status: 'loading' },
+        payments: prev?.payments ?? { ...emptyPaged, items: [] },
+        ledger:
+          offset === 0 ? emptyLedger() : { ...(prev?.ledger ?? emptyLedger()), loadingMore: true },
+      }));
+      try {
+        const data = await loaders.loadLedger(id, { limit: PAYMENT_PAGE, offset });
+        patch(id, (prev) => {
+          const base = prev as Entry;
+          return {
+            ...base,
+            ledger: {
+              status: 'ready',
+              items: offset === 0 ? data.items : mergeById(base.ledger.items, data.items),
+              total: data.total,
+              findings: data.findings,
+              loadMoreError: false,
+              loadingMore: false,
+            },
+          };
+        });
+      } catch {
+        patch(id, (prev) => {
+          const base = prev as Entry;
+          return {
+            ...base,
+            ledger:
+              offset === 0
+                ? { ...emptyLedger(), status: 'error' }
+                : { ...base.ledger, loadMoreError: true, loadingMore: false },
+          };
+        });
+      }
+    },
+    [loaders, patch],
+  );
+
   // 每一位只載一次：返回堆疊上的前一位時沿用已載入的資料。
   useEffect(() => {
     if (entries[current]) return;
     void loadAudit(current);
     void loadPayments(current, 0);
-  }, [current, entries, loadAudit, loadPayments]);
+    void loadLedger(current, 0);
+  }, [current, entries, loadAudit, loadPayments, loadLedger]);
 
   const goTo = (id: string) => {
     setStack((s) => [...s, id]);
@@ -321,6 +371,16 @@ export function ReferralAuditSheet({
               }}
             />
           ) : null}
+          {audit ? (
+            <LedgerSection
+              ledger={entry.ledger}
+              onRetry={() => void loadLedger(current, 0).then(() => focusSection('ledger'))}
+              onMore={() => {
+                if (entry.ledger.loadingMore) return;
+                void loadLedger(current, entry.ledger.items.length);
+              }}
+            />
+          ) : null}
         </section>
       </SheetContent>
     </Sheet>
@@ -341,7 +401,7 @@ function AuditBody({
   onMorePayments: () => void;
 }) {
   const block = withdrawalBlockReason(audit.node);
-  const attention: { text: string; target: 'payments' | 'upline' }[] = [];
+  const attention: { text: string; target: 'payments' | 'upline' | 'ledger' }[] = [];
   if (audit.paymentSummary.missingCount > 0) {
     attention.push({
       text: `獎金缺漏 ${audit.paymentSummary.missingCount} 筆`,
@@ -358,6 +418,7 @@ function AuditBody({
     if (kind === 'cycle' || kind === 'self_referral') {
       attention.push({ text: anomalyLabel(kind), target: 'upline' });
     }
+    if (kind === 'ledger_mismatch') attention.push({ text: anomalyLabel(kind), target: 'ledger' });
   }
   const g = audit.rewards.byGeneration;
   // 自癒範圍以現行函式為準（20260807000001）：repair_orphaned_payments 在付款的任一代缺漏

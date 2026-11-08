@@ -15,6 +15,7 @@
 import type { Context } from 'npm:hono@4';
 import type {
   AdminReferralAnomalyKind,
+  AdminReferralLedgerResponse,
   AdminReferralMemberAuditResponse,
   AdminReferralNode,
   AdminReferralNodesResponse,
@@ -291,9 +292,58 @@ export function createAdminReferralTreeHandlers(deps: AdminReferralTreeDeps) {
       );
     },
 
-    // S3b 階段 11 紅燈 stub：綠燈時實作。
-    ledger(c: Context) {
-      return c.json({ success: false, error: { code: 'not_implemented', message: '' } }, 501);
+    // S3b：點數來源明細與跨表核對（admin_referral_ledger_audit，規劃 §2.3）。
+    async ledger(c: Context) {
+      const g = await guard(c);
+      if (g) return g;
+      const id = c.req.param('id') ?? '';
+      if (!UUID_RE.test(id)) return bad(c, '會員 id 格式錯誤');
+      const { limit, offset } = page(c);
+
+      const { data, error } = await deps.rpc('admin_referral_ledger_audit', {
+        p_user: id,
+        p_limit: limit,
+        p_offset: offset,
+      });
+      if (error) return failed(c, 'ledger', error);
+      if (!data) {
+        return c.json(
+          { success: false, error: { code: 'not_found', message: '找不到此會員' } },
+          404,
+        );
+      }
+      const d = data as Json;
+      return c.json(
+        {
+          success: true,
+          data: {
+            total: Number(d.total),
+            items: (d.items ?? []).map((i: Json) => ({
+              id: i.id,
+              at: i.at,
+              type: i.type,
+              sourceCategory: i.source_category ?? i.type,
+              amount: Number(i.amount),
+              balanceAfter: Number(i.balance_after),
+              description: i.description ?? null,
+              generation: i.generation ?? null,
+              refereeId: i.referee_id ?? null,
+              refereeName: i.referee_name ?? null,
+              eventAt: i.event_at ?? null,
+              withdrawalId: i.withdrawal_id ?? null,
+              withdrawalStatus: i.withdrawal_status ?? null,
+              subscriptionId: i.subscription_id ?? null,
+              finding: i.finding ?? null,
+            })),
+            findings: (d.findings ?? []).map((f: Json) => ({
+              kind: f.kind,
+              transactionId: f.transaction_id ?? null,
+              withdrawalId: f.withdrawal_id ?? null,
+              info: Boolean(f.info),
+            })),
+          },
+        } satisfies AdminReferralLedgerResponse,
+      );
     },
   };
 }

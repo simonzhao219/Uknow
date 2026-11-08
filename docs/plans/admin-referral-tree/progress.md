@@ -20,7 +20,7 @@
 | 9 | 規格書＋e2e | ✅ 綠（本機 e2e：admin_steps＋overflow sweep＋admin mobile layout 77 passed） | 不適用（逃生口 1，見 Blockers） | （本 commit） |
 | — | #521 獨立審查補強（P0 成環、P1×2、P2×6、W6-26） | ✅ 本機 vitest 綠；DB 待 CI | 666b6e0e（CI api-tests：2 failed／586 passed，皆新測試；unit 紅為前端新測試） | （本 commit） |
 | 10 | S3b：點數來源與對帳 RPC | 🟡 綠燈待 CI 證明（本機無 DB） | 4b6bbda5 | （本 commit） |
-| 11 | S3b：端點＋UI＋異常 | ⬜ 未開始 | | |
+| 11 | S3b：端點＋UI＋異常 | ✅ 本機 Deno unit 14 passed、vitest admin 614 passed；DB 端點待 CI | 9b7a4d2e（本機 Deno unit 2 failed、vitest 6 failed，皆新測試） | （本 commit） |
 
 ## 目前位置與下一步
 
