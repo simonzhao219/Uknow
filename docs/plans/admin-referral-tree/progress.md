@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | `referral_award_chain` ＋ 與發獎等價 | ⬜ 未開始 | | |
+| 1 | `referral_award_chain` ＋ 與發獎等價 | 🟡 綠燈 commit 已推，待 CI api-tests 確認 | 7aa5503d（CI api-tests：9 failed／542 passed，皆為新測試「function does not exist」） | （本 commit） |
 | 2 | 樹節點／搜尋 RPC | ⬜ 未開始 | | |
 | 3 | 會員查帳 RPC（鏈、換線、成環） | ⬜ 未開始 | | |
 | 4 | 付款查帳＋異常 RPC | ⬜ 未開始 | | |
@@ -23,7 +23,7 @@
 
 ## 目前位置與下一步
 
-業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 1 紅燈中。
+業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。階段 1 綠燈待 CI 確認；下一步階段 2（樹節點／搜尋 RPC）。
 
 **環境限制**：本容器 `supabase start` 拉不到映像（public.ecr.aws 的 CDN 被網路政策擋），DB 測試（`*.test.ts`）不能本機跑。階段 1～4、5c、5d 的紅綠證據以 CI api-tests 軌為準：紅燈 commit 單獨 push，確認 api-tests 在該測試上紅後才寫實作。deno 已以 `npm i -g deno` 安裝，`deno task check`、unit 測試可本機跑。
 
