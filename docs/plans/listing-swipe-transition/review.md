@@ -11,7 +11,7 @@
 | UI/UX | 0 | 4 | 3 | 資訊架構／BottomNav、a11y（焦點／live 區／aria-disabled）、觸控目標 |
 | 需求 | 0 | 4 | 4 | 業務規則不涉及；未腦補需求（數值全進開放問題） |
 
-**P0＝0。** 去重後 P1 共 9 組（下列），P2 共 9 組。
+**P0＝0。** 去重後 P1 共 11 組（下列 1～11；各視角原判合計 20 項），P2 共 9 組。
 
 ## 發現清單（依嚴重度排序；括號為提出的視角）
 
@@ -27,11 +27,10 @@
 8. **P2-c／d／e 未進編號驗收情境**（需求）〔§1〕error boundary 失敗時使用者可見行為、橫向溢出的判準（`scrollWidth ≤ innerWidth`）、橫向捲動祖先內起手不換篇，只散在階段測試。→ 補成編號情境。
 9. **階段 3 驗證標準自相矛盾，jsdom 無 `Element.prototype.animate`**（系統、架構）〔§5 階段 3〕同格寫「slide-in class 斷言改為 animate spy」又寫「既有測試零修改通過」；`typeof el.animate !== 'function'` 守衛會讓未 stub 的測試空過。→ 改寫為「僅 enterClass 相關斷言置換，其餘零修改」，並寫明 stub 方式。
 
-另有兩條 P1 層級的測試／預算項（架構）：
+以下兩組同為 P1（架構）：
 10. **階段 4 的 jsdom 觸控事件構造**〔§5 階段 4〕jsdom 的 Touch／TouchEvent 支援有限，須說明用 `new Event` 加手動掛 `touches`；且 `touch-pan-y` 已讓瀏覽器不處理水平 pan，「鎖定水平後才 `preventDefault`（`passive:false`）」是否必要需先確認，不必要則省掉。
 11. **Bundle 估算缺依據**〔§3〕entry 只剩約 3 kB raw／0.6 kB gzip；hook 搬移、WAAPI、取消邏輯、class boundary 全在 entry，「淨增 < 0.5 kB」無根據。→ 階段 1 量基線，階段 3、6 各跑一次 `check-bundle-budget`，不等階段 7；並明講 boundary 必在 entry（已有 `src/components/ErrorBoundary.tsx` 但為整頁 fallback，不適合直接重用）。
 
-（P1 實計：系統 6、架構 6、UI/UX 4、需求 4＝20，去重後 11 組；上表 1～11。）
 
 ### P2
 
@@ -52,7 +51,7 @@
 3. **Q4 bundle 額度**：階段 3／6 實測後若超標，是否授權調高（建議 raw +2、gzip +0.5）。
 4. **`overflow-x: clip`** 的 focus ring 裁切與舊 LINE WebView 支援度：僅能實機確認。
 5. **#509 的 P2 五項原文**與規劃書所列是否一致（需求視角無法驗證；本 session 已讀 #509 PR 內文「後續 P2」段，五項一字對得上）。
-6. **業主新增意見**：P1 項目的處置方式——建議「修訂規劃後通過」：將 P1-1～11 併入 plan.md（§2 介面契約、§5 各階段驗證標準），不需重跑完整審查；若業主偏好重跑請告知。
+6. **P1 處置方式**——建議「修訂規劃後通過」：將 P1-1～11 併入 plan.md（§2 介面契約、§5 各階段驗證標準），不需重跑完整審查；若業主偏好重跑請告知。
 
 ## 處置（人審後填寫）
 
