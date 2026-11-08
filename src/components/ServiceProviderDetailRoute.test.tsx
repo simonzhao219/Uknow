@@ -359,11 +359,13 @@ describe('ServiceProviderDetailRoute 滑動換篇', () => {
   });
 });
 
-// 換篇動畫（W5-27）：換篇後新內容由側邊滑入（不做跟手拖曳）；頭尾再換篇時內容區輕微回彈。
-// 偏好減少動態時兩者都不動，但頭尾仍有文字播報。jsdom 沒有 Element.animate，用 spy。
+// 換篇動畫（W5-27、W6-20）：換篇後新內容由去向的對側滑入（Web Animations，固定位移 32px＋淡入）；
+// 頭尾再換篇時內容區輕微回彈。偏好減少動態時兩者都不動，但頭尾仍有文字播報。
+// jsdom 沒有 Element.animate，用 spy。動畫掛在固定 wrapper（data-browse-motion），頁首列不動。
 describe('ServiceProviderDetailRoute 換篇動畫', () => {
   const animate = vi.fn();
   const content = () => document.querySelector('[data-browse-content]');
+  const motion = () => document.querySelector('[data-browse-motion]');
   const stubReducedMotion = (reduced: boolean) =>
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: reduced && query.includes('prefers-reduced-motion'),
@@ -379,14 +381,19 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('往下一篇換篇後，新內容從右側滑入', async () => {
+  it('往下一篇換篇後，新內容從右側滑入並淡入', async () => {
     setup('a');
     await screen.findByRole('heading', { name: 'AAA美容師' });
 
     fireEvent.click(nextButton());
     await screen.findByRole('heading', { name: 'BBB美容師' });
 
-    expect(content()?.className).toContain('slide-in-from-right');
+    expect(animate).toHaveBeenCalledTimes(1);
+    const [keyframes, options] = animate.mock.calls[0];
+    expect(keyframes[0]).toMatchObject({ transform: 'translateX(32px)', opacity: 0 });
+    expect(keyframes[1]).toMatchObject({ transform: 'translateX(0)', opacity: 1 });
+    expect(options).toMatchObject({ duration: 220 });
+    expect(animate.mock.instances[0]).toBe(motion());
   });
 
   it('往上一篇換篇後，新內容從左側滑入', async () => {
@@ -396,18 +403,28 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     fireEvent.click(prevButton());
     await screen.findByRole('heading', { name: 'AAA美容師' });
 
-    expect(content()?.className).toContain('slide-in-from-left');
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(animate.mock.calls[0][0][0]).toMatchObject({ transform: 'translateX(-32px)' });
   });
 
-  it('第一次從首頁進來（不是換篇）時內容不做滑入動畫', async () => {
+  it('換篇的進場動畫在畫面繪製前（同一次 commit）就已啟動', async () => {
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    fireEvent.click(nextButton());
+
+    expect(animate).toHaveBeenCalledTimes(1);
+  });
+
+  it('第一次從首頁進來（不是換篇）時不做進場動畫', async () => {
     setup('b');
     await screen.findByRole('heading', { name: 'BBB美容師' });
 
-    expect(content()).not.toBeNull();
-    expect(content()?.className).not.toContain('slide-in');
+    expect(motion()).not.toBeNull();
+    expect(animate).not.toHaveBeenCalled();
   });
 
-  it('偏好減少動態時換篇不做滑入動畫', async () => {
+  it('偏好減少動態時換篇不做進場動畫', async () => {
     stubReducedMotion(true);
     setup('a');
     await screen.findByRole('heading', { name: 'AAA美容師' });
@@ -415,8 +432,65 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     fireEvent.click(nextButton());
     await screen.findByRole('heading', { name: 'BBB美容師' });
 
-    expect(content()).not.toBeNull();
-    expect(content()?.className).not.toContain('slide-in');
+    expect(motion()).not.toBeNull();
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it('連續換篇時，上一段進場動畫被取消', async () => {
+    const cancel = vi.fn();
+    animate.mockImplementation(() => ({ cancel }));
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+
+    fireEvent.click(nextButton());
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+    expect(cancel).not.toHaveBeenCalled();
+    fireEvent.click(nextButton());
+    await screen.findByRole('heading', { name: 'CCC美容師' });
+
+    expect(animate).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('動畫掛在固定 wrapper，頁首列的換篇鈕不在其內', async () => {
+    setup('b');
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(motion()?.contains(nextButton())).toBe(false);
+    expect(motion()?.contains(content())).toBe(true);
+  });
+
+  it('骨架換成內容時 wrapper 是同一個節點且只進場一次', async () => {
+    let release: (value: SingleResult) => void = () => {};
+    setup('a');
+    await screen.findByRole('heading', { name: 'AAA美容師' });
+    setCachedListings([A]);
+    singleFor.mockImplementationOnce(
+      () =>
+        new Promise<SingleResult>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    fireEvent.click(nextButton());
+    expect(screen.getByRole('status', { name: '載入服務者詳情中' })).toBeTruthy();
+    const wrapperWhileLoading = motion();
+    expect(wrapperWhileLoading).not.toBeNull();
+    await act(async () => {
+      release({ data: B, error: null });
+    });
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(motion()).toBe(wrapperWhileLoading);
+    expect(animate).toHaveBeenCalledTimes(1);
+  });
+
+  it('找不到的刊登也在同一個 wrapper 內顯示', async () => {
+    singleFor.mockResolvedValue({ data: null, error: { code: 'PGRST116', message: 'none' } });
+    setup('b', { state: null });
+    await screen.findByRole('heading', { name: '找不到此服務者' });
+
+    expect(motion()?.contains(screen.getByRole('heading', { name: '找不到此服務者' }))).toBe(true);
   });
 
   it('最後一篇再按下一篇，內容區向左輕推再回原位', async () => {
@@ -452,13 +526,14 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     expect(await screen.findByText(/已是最後一篇/)).toBeTruthy();
   });
 
-  it('一般換篇（不在頭尾）不觸發回彈動畫', async () => {
+  it('一般換篇（不在頭尾）只有進場動畫、沒有 24px 回彈', async () => {
     setup('a');
     await screen.findByRole('heading', { name: 'AAA美容師' });
 
     fireEvent.click(nextButton());
     await screen.findByRole('heading', { name: 'BBB美容師' });
 
-    expect(animate).not.toHaveBeenCalled();
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(animate.mock.calls[0][0])).not.toContain('24px');
   });
 });
