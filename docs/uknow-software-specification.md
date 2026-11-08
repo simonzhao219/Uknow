@@ -113,7 +113,7 @@ Uknow 是**專業服務媒合平台**：訪客可公開瀏覽、搜尋服務提�
 
 **首頁排序規則**：未取得定位時依刊登時間由新到舊。取得定位後依「區級距離」排序：以使用者座標反查最近的區中心作為所在區（近似，非行政區判定）；服務區含所在區的刊登排最前，其餘依各刊登「最近的服務區中心」距離由近到遠，同分維持由新到舊；刊登寫「全區」或服務區為空＝該縣市每一區都服務。已授權定位者冷載入首頁時最多等約 1.5 秒取得座標再顯示；拿不到、太慢或尚未授權時先顯示最新，座標回來後以動畫重排（尊重減少動態偏好）。返回首頁時有快取座標就不重排。使用者座標只留記憶體，不上傳、不存 storage。〔實作〕`src/components/HomePage.tsx`、`src/utils/listingDistanceOrder.ts`（`nearestDistrict`、`sortByDistance`）、`src/utils/homeListingOrder.ts`、`src/utils/flipReorder.ts`、`src/utils/homeReorder.ts`
 
-**區中心座標的資料來源**：`src/utils/districtCentroids.ts`（368 區，動態載入的獨立 chunk）由 `scripts/gen-district-centroids.py` 自內政部地政司「鄉鎮市區界線(TWD97經緯度)」版本 1140318 產生（政府資料開放平臺資料集 7441，政府資料開放授權條款－第 1 版，可商用、可製作衍生物，須顯名）。顯名聲明：內政部地政司 2025 鄉鎮市區界線(TWD97經緯度) 1140318，依政府資料開放授權條款（https://data.gov.tw/license）釋出。每區取多邊形質心，座標取小數 3 位。程式內屏東縣的區名寫「南鄉」，界線資料為「南州鄉」，產生腳本以別名對應。
+**區中心座標的資料來源**：`src/utils/districtCentroids.ts`（368 區，動態載入的獨立 chunk）由 `scripts/gen-district-centroids.py` 自內政部地政司「鄉鎮市區界線(TWD97經緯度)」版本 1140318 產生（政府資料開放平臺資料集 7441，政府資料開放授權條款－第 1 版，可商用、可製作衍生物，須顯名）。顯名聲明：內政部地政司 2025 鄉鎮市區界線(TWD97經緯度) 1140318，依政府資料開放授權條款（https://data.gov.tw/license）釋出。每區取多邊形質心，座標取小數 3 位。區名與界線資料一致（屏東縣「南州鄉」），無別名對應。
 
 **刊登詳情頁的換篇**：從首頁點進詳情頁時，凍結點擊當下首頁畫面上的順序（含搜尋、篩選、排序結果），詳情頁可左右滑、點「‹ ›」或在桌機按 ←／→ 切換上一篇／下一篇，標題列顯示「n/N」；照片輪播滑到頭尾再滑會接著換篇。換篇用取代式導覽，歷史只留一筆，按一次返回就回首頁；有換過篇時，返回首頁會把最後看的那張卡捲到中央，沒換過維持離開前的捲動位置。直接輸入網址、重新整理、從其他入口進詳情頁時沒有換篇脈絡，不顯示任何換篇介面。〔實作〕`src/utils/browseContext.ts`、`src/utils/homeListingsCache.ts`、`src/components/ServiceProviderDetail.tsx`、`src/components/listing/BrowseNav.tsx`、`src/utils/swipeIntent.ts`
 

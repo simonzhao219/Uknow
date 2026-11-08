@@ -69,6 +69,11 @@ describe('TAIWAN_CITIES / TAIWAN_REGIONS consistency', () => {
     }
   });
 
+  it('屏東縣使用正式名稱南州鄉，不留舊寫法南鄉', () => {
+    expect(TAIWAN_REGIONS['屏東縣']).toContain('南州鄉');
+    expect(TAIWAN_REGIONS['屏東縣']).not.toContain('南鄉');
+  });
+
   it('does not use 全區 as a stored district (it is a UI-only marker)', () => {
     for (const city of TAIWAN_CITIES) {
       expect(TAIWAN_REGIONS[city]).not.toContain('全區');
