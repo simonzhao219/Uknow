@@ -27,7 +27,8 @@
 --      空窗用。退場：S6 drop（W6-14）。
 --   4. log_referral_reward_failure（新）：三代獎金沒發出的 error 告警（W6-10、W6-12）。LINE 只帶
 --      message，所以前 200 字放完結論、單號（或任務續約）、第幾代、點數、推薦碼、下一步；不放
---      姓名與 uid（LINE 是外部通道）。反查單號／推薦碼各自包子交易，查不到就寫「查無」，告警一定寫入。
+--      姓名、uid 與原始錯誤文字（LINE 是外部通道；sqlerrm 只進 context）。三代整批（generation
+--      null）寫第 1 代推薦人推薦碼與每代點數，下一步改「核對三代」。反查單號／推薦碼各自包子交易，查不到就寫「查無」，告警一定寫入。
 --   5. pay_referral_generations：基準＝20261113000001。唯一差異＝三代各自的 when others 由 warning
 --      改呼叫 4（error）；unique_violation 照舊靜默（冪等）。
 --   6. apply_referral_side_effects：基準＝20261113000003。唯一差異＝3c（整支發獎擲錯）改 error，
@@ -283,16 +284,21 @@ begin
     else '系統錯誤'
   end;
 
+  -- 原始錯誤（sqlerrm）只放 context：LINE 是外部通道，PG 原文可能帶約束名或識別碼。
   perform public.log_system_alert(p_source, 'error',
     '【獎金未發】' || v_doc || ' 的' || v_what || '沒有發出'
-      || case when p_generation is null then ''
+      || case when p_generation is null
+              then '（第 1 代推薦人推薦碼 ' || coalesce(v_code, '（無有效推薦碼）')
+                   || '，每代 ' || coalesce(p_amount::text, '?') || ' 點）'
               else '（應發給推薦人，推薦碼 ' || coalesce(v_code, '（無有效推薦碼）') || '）' end
-      || '。下一步：請通知工程人員人工核對並補發（步驟見 supabase/README〈補發漏發獎金〉）。'
-      || '原因：' || v_reason || '（' || coalesce(p_sqlstate, '?') || '）：' || coalesce(p_sqlerrm, ''),
+      || '。下一步：請通知工程人員人工核對'
+      || case when p_generation is null then '三代' else '' end
+      || '並補發（步驟見 supabase/README〈補發漏發獎金〉）。'
+      || '原因：' || v_reason || '（' || coalesce(p_sqlstate, '?') || '）',
     jsonb_build_object(
       'referee', p_referee, 'generation', p_generation, 'beneficiary', p_beneficiary,
-      'subscription_id', p_subscription_id, 'claim_id', p_claim_id,
-      'trade_no', v_trade_no, 'sqlstate', p_sqlstate));
+      'amount', p_amount, 'subscription_id', p_subscription_id, 'claim_id', p_claim_id,
+      'trade_no', v_trade_no, 'sqlstate', p_sqlstate, 'sqlerrm', p_sqlerrm));
 end;
 $$;
 

@@ -78,7 +78,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `purge_stale_referral_invites` | 刪除 Email 邀請建立、逾期未驗證的空殼帳號（pg_cron 排程 `purge-stale-referral-invites`；帶 `p_email` 給客服立即刪除；只給 service_role） |
 | `begin_scheduled_run` / `finish_scheduled_run` | 排程租約：partial unique `(job) where status='running'`，同一 job 同時只跑一個，其餘落 `skipped`；15 分鐘前的 `running` 改 `abandoned`（只給 service_role） |
 | `invoke_internal_endpoint(p_job, p_trigger default 'pg_cron')` | pg_cron 呼叫對帳／清理端點：讀 Vault 兩筆、經 pg_net 送 POST；Vault 缺值寫 `skipped/vault_missing`。人工驗證帶 `'manual'`，帳本不冒充 pg_cron（不開放任何 API 角色） |
-| `scheduler_health` | `GET /internal/scheduler-health` 的資料來源（帳本、`cron.job`、`net._http_response`）；形狀由 `scripts/fixtures/scheduler-health/shape.json` 釘住。reconcile 另回 `healFailedStreak`／`healSkippedStreak`（最近連續幾輪 pg_cron 的 heal 有失敗／被換線鎖跳過；金額不符不計；只供人看、不推 LINE） |
+| `scheduler_health` | `GET /internal/scheduler-health` 的資料來源（帳本、`cron.job`、`net._http_response`）；形狀由 `scripts/fixtures/scheduler-health/shape.json` 釘住。reconcile 另回 `healFailedStreak`／`healSkippedStreak`（最近連續幾輪 pg_cron 的 heal 有失敗／被跳過；`skippedLocked` 與舊版同樣混計「被換線鎖跳過」與「重讀時已被他處完成」，可能偶爾虛高；金額不符不計；只供人看、不推 LINE） |
 | `prune_scheduled_job_runs` / `pause_scheduled_jobs` / `resume_scheduled_jobs` | 帳本 90 天清理（pg_cron 排程 `prune-scheduled-job-runs`）／一鍵停與恢復（只切 `cron.job.active`） |
 | `delete_auth_audit_for_users` | 刪除指向指定使用者的 GoTrue 稽核列（purge 同交易呼叫；補償路徑在 GoTrue `deleteUser` 之後呼叫；只給 service_role） |
 | `referral_invite_issued_at` | 從 `app_metadata.referral_invite` 取出寄出時間；壞值回 null 讓 purge 跳過該列而不中斷整批（purge 內部用；不開放任何角色） |
@@ -108,16 +108,44 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 ## 補發漏發獎金
 
-收到「【獎金未發】」告警（`source` 為 `pay_referral_generations` 或 `apply_referral_side_effects`）時，由工程人員以
-service_role 在 SQL Editor 處理（目前沒有後台工具）。告警 `context` 有 `referee`、`generation`、`beneficiary`、
-`subscription_id`（任務續約為 `claim_id`）。
+收到「【獎金未發】」告警時，由工程人員以 service_role 在 SQL Editor 處理（目前沒有後台工具）。
 
-1. 先查是否已補上（會員載入個人頁時的自癒、或他人先處理）：
-   `select * from reward_transactions where referee_user_id = <referee> and generation = <generation>
-   and subscription_id is not distinct from <subscription_id> and source_claim_id is not distinct from <claim_id>;`
-2. 沒有就依同一冪等鍵插入一列 `type='referral_reward'`、`user_id=<beneficiary>`、`amount`＝告警寫的點數。
-   冪等唯一索引（§8.3）保證自癒與人工任一方先寫，另一方撞索引、不會重複發。
-3. 把該則告警標成已處理（`resolved_at`）。
+1. 找告警（`context` 有 `referee`、`generation`、`beneficiary`、`amount`、`subscription_id`／`claim_id`、`trade_no`、
+   `sqlstate`、`sqlerrm`；訊息裡的任務續約只寫 `claim_id` 前 8 碼，完整值看 context）：
+
+   ```sql
+   select id, created_at, message, context from public.system_alerts
+    where source in ('pay_referral_generations', 'apply_referral_side_effects') and resolved_at is null
+    order by created_at desc;
+   ```
+
+2. 查這一代是否已補上（會員載入個人頁的自癒、或他人先處理）。`generation` 為 null 的是三代整批失敗
+   （`source = 'apply_referral_side_effects'`），三代都要查；`beneficiary` 只是第 1 代，第 2、3 代沿
+   `referral_edges` 往上找：
+
+   ```sql
+   select generation, user_id, amount from public.reward_transactions
+    where referee_user_id = '<referee>' and type = 'referral_reward'
+      and subscription_id is not distinct from '<subscription_id>'::uuid
+      and source_claim_id is not distinct from '<claim_id>'::uuid;
+   ```
+
+3. 沒有就依同一冪等鍵補一列（點數取 context 的 `amount`）。冪等唯一索引保證自癒與人工任一方先寫，另一方撞索引、
+   不會重複發：
+
+   ```sql
+   insert into public.reward_transactions
+     (user_id, type, amount, generation, referee_user_id, subscription_id, source_claim_id,
+      description, referee_name, referee_referrer_name)
+   values ('<beneficiary>', 'referral_reward', <amount>, <generation>, '<referee>',
+           '<subscription_id>', null, '推薦獎勵（第 <generation> 代，人工補發）',
+           (select name from public.profiles where id = '<referee>'),
+           <第 1 代填 null；第 2、3 代填第 1 代推薦人的姓名>);
+   ```
+
+   任務續約路徑改成 `subscription_id` 填 null、`source_claim_id` 填 context 的 `claim_id`。
+
+4. 標成已處理：`update public.system_alerts set resolved_at = now() where id = <告警 id>;`
 
 ## 排程
 

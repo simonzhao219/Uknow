@@ -14,8 +14,8 @@
 | 3 | 發獎失敗改 error（W6-10、W6-12） | ✅ 綠 | 1d2ea7ba | d7dcb0fc |
 | 4 | 帳本 summary：unknownByReason、heal | ✅ 綠 | 4cdb2ba7 | cec602fa |
 | 5 | scheduler_health streak | ✅ 綠 | b04414a5、d46469d5（改名） | c8435b97 |
-| 6 | invoke_internal_endpoint(p_job, p_trigger) | ✅ 綠 | 89026f22 | （見下一個 commit） |
-| 7 | 收尾 | ⬜ 未開始 | | |
+| 6 | invoke_internal_endpoint(p_job, p_trigger) | ✅ 綠 | 89026f22 | 844cae81 |
+| 7 | 收尾（文件同步＋實作審查修正） | ✅ 綠 | d5ca6f57（審查修正紅燈） | （見下一個 commit） |
 
 ## 目前位置與下一步
 
@@ -35,6 +35,18 @@
   改由 `healLedgerSummary` 逐鍵防禦解析（形狀不符當 0）。行為與 plan 相同，PR〈偏離規劃說明〉列這條。
 - 階段 5：紅燈 commit 後發現一個測試名 76 字超過 72（check-test-names 經 `| tail` 吞了 exit code，chain 照走）。只改名、斷言不動。
   授權：業主 2026-11-08 本 session 互動選項「Allow the rename (Recommended)」；解鎖→改名→重建鎖，另疊一個 test(red) commit。
+
+### 偏離規劃說明（實作審查後彙整，PR 內文照抄）
+
+1. migration 版本號 `20261115000001`（plan 寫 `2026111400000N`）：`20261114000001` 已被 S5 用掉；仍排在 S6 之前。
+2. 告警訊息另抽成 `log_referral_reward_failure`（plan 寫 handler 內反查）：三代與 3c 共用一處，避免四份拷貝。
+3. `UnknownReason` 由 `reconcile-handler.ts` 的 `UNKNOWN_REASONS` 元組推導、`UNKNOWN_STATUS_LABEL` 以 `Record<UnknownReason,string>` 約束（plan 寫 `keyof typeof UNKNOWN_STATUS_LABEL`）：避免 handler 反向依賴 index.ts；漏一個 label 編譯會擋。
+4. 四種 unknown reason 的計數測試放 `reconcile-outcome.unit.test.ts`（假 client，plan 寫 `reconcile-pending-payments.test.ts`）：不需 DB 即可驗。
+5. `heal` dep 型別維持 `data: unknown`、`healLedgerSummary` 逐鍵防禦（見上，階段 4）；data 為 null 時 `heal.error=true`。
+6. `paid-pending-heal.ts` 對未知 outcome 記 `failed`（plan 未寫，防禦）。
+7. 反查失敗的措辭統一為「（查無單號）」（plan §7 寫「（查詢失敗）」）。
+8. 實作審查 P1 修正：原始錯誤（sqlerrm）不再進 LINE 訊息、只放 context；context 加 `amount`；3c 整批訊息補第 1 代推薦碼、每代點數、「核對三代」；README 補發 runbook 補完整 SQL。
+9. 未補的驗收字面：階段 6「manual 完成列不刷新 lastPgCronCompletedAt」沒有新增斷言——`scheduler_health` 只看 `trigger='pg_cron'` 的既有測試已覆蓋；預設 `pg_cron` 由既有「Vault 有值 → body trigger pg_cron」測試覆蓋。
 
 ## 框架摩擦
 
