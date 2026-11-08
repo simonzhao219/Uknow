@@ -136,7 +136,7 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
 | S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 ✅ 47cf195（S3a）、#525 ✅ 4d16618（S3b） | 收工 |
 | S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
-| S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | #526 | 實作完成，獨立審查中 |
+| S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | #526 ✅ c08bf88 | 收工 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -170,3 +170,4 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 02:15 | S3 修 #525 獨立審查 P2 1～8（紅 c5e2991e：新增三支行為測試 3 紅／617 綠；綠 1398d7cf；b918751a 刪 `docs/plans/admin-referral-tree/`），主 session 核 delta、CI 全綠 → **#525 合進 develop（4d16618）**，S3 收工 | 剩 S6；業主 S4 手機實測、PHOTO_PURGE_LIVE |
 | 11/09 02:30 | S6 交 **#526**（5 階段紅綠，hash 以 PR 內文為準；Management API 以 develop ref 實測 200、`[{version,name}]` 97 筆，形狀寫進 self-test；實作審查 P0 0、P1 1 記偏離；業主 11/09 01:53 於 S6 session 授權 entry gzip 316→316.5 與改 5 處既有測試）。主 session 派獨立 Opus 審查；晉升清單 4a 依 S6 建議改寫 | 等審查、CI |
 | 11/09 02:45 | #526 獨立 Opus 審查：**P0 0、P1 0、P2 7**（0d 對基準函式本體 diff 只有宣稱差異、三參數無呼叫端、status 降級與三態核實）。P2：規則 14 有四種繞法（`if: always()`、`||true` 變體、`--self-test`、旗標前置）、timeout 算式低估、API 暫時性錯誤不重試、遠端清單是否有上限未證實（主 session 查官方文件：無分頁參數）、workflow／腳本來源耦合、檔頭措辭 → 本 PR 修；讀預設碼失敗分支無測試接受 | S6 修 → CI 綠 → 合 #526 → 看 develop 部署的確認步驟 |
+| 11/09 03:00 | S6 修 #526 獨立審查 P2（紅 7043ebf4／綠 b7d1b1b8：規則 14 四種繞法各一反例、timeout 30、API 暫時性錯誤退避重試兩次、缺版本訊息帶筆數、耦合註解、檔頭措辭；self-test 輪詢改假時鐘）。主 session 以 PR head 本地跑兩支 self-test 與真檔皆 OK、CI 全綠 → **#526 合進 develop（c08bf88）**，S6 收工。**本波 S1～S6 全數合併** | 看 develop 部署的確認 migration 步驟 → 晉升 |
