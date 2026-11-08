@@ -26,7 +26,8 @@
 --      迴圈結束後清旗標。仍是單一交易、互鎖風險同舊版——只給新 migration 已套、舊 Edge 未換的
 --      空窗用。退場：S6 drop（W6-14）。
 --   4. log_referral_reward_failure（新）：三代獎金沒發出的 error 告警（W6-10、W6-12）。LINE 只帶
---      message，所以前 200 字放完結論、單號（或任務續約）、第幾代、點數、推薦碼、下一步；不放
+--      message，且推播只取前 60 字（W6-24）：開頭固定「【獎金未發・請開 Claude 補發】單號 第N代X點」，
+--      推薦碼與完整下一步接在後面（本文前 200 字內）；前 200 字放完結論、單號（或任務續約）、第幾代、點數、推薦碼、下一步；不放
 --      姓名、uid 與原始錯誤文字（LINE 是外部通道；sqlerrm 只進 context）。三代整批（generation
 --      null）寫第 1 代推薦人推薦碼與每代點數，下一步改「核對三代」。下一步指向「開一個 Claude Code session 依 README〈補發漏發獎金〉處理」（W6-23）。反查單號／推薦碼各自包子交易，查不到就寫「查無」，告警一定寫入。
 --   5. pay_referral_generations：基準＝20261113000001。唯一差異＝三代各自的 when others 由 warning
@@ -39,6 +40,8 @@
 --      pg_cron／manual），body 與 vault_missing 列都用它（R5 P2-9）。先 drop 舊的單參數版：兩支並存時
 --      cron 的 invoke_internal_endpoint('reconcile') 會多載歧義、每輪失敗。cron.job 的指令字串在執行時
 --      才解析，同一 migration 交易內 drop＋create，指令不必改。
+--   9. claim_referral_king_reward：基準＝20260724000005。唯一差異＝包 pay_referral_generations 的
+--      when others 由 warning 改呼叫 4（error，任務續約格式；W6-10）。
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -270,13 +273,14 @@ begin
     end;
   end if;
 
+  -- W6-24：LINE 推播只取 message 前 60 字，所以「行動＋單號＋第幾代點數」放最前面。
   v_doc := case
-    when p_claim_id is not null then '任務續約 ' || left(p_claim_id::text, 8)
-    else '付款單' || coalesce(' ' || v_trade_no, '（查無單號）')
+    when p_claim_id is not null then '任務續約' || left(p_claim_id::text, 8)
+    else coalesce(v_trade_no, '（查無單號）')
   end;
   v_what := case
-    when p_generation is null then '三代推薦獎金整批'
-    else '第 ' || p_generation || ' 代推薦獎金 ' || coalesce(p_amount::text, '?') || ' 點'
+    when p_generation is null then '三代整批每代' || coalesce(p_amount::text, '?') || '點'
+    else '第' || p_generation || '代' || coalesce(p_amount::text, '?') || '點'
   end;
   v_reason := case p_sqlstate
     when '40P01' then '資料庫互鎖'
@@ -286,10 +290,9 @@ begin
 
   -- 原始錯誤（sqlerrm）只放 context：LINE 是外部通道，PG 原文可能帶約束名或識別碼。
   perform public.log_system_alert(p_source, 'error',
-    '【獎金未發】' || v_doc || ' 的' || v_what || '沒有發出'
+    '【獎金未發・請開 Claude 補發】' || v_doc || ' ' || v_what || ' 沒有發出'
       || case when p_generation is null
-              then '（第 1 代推薦人推薦碼 ' || coalesce(v_code, '（無有效推薦碼）')
-                   || '，每代 ' || coalesce(p_amount::text, '?') || ' 點）'
+              then '（第 1 代推薦人推薦碼 ' || coalesce(v_code, '（無有效推薦碼）') || '）'
               else '（應發給推薦人，推薦碼 ' || coalesce(v_code, '（無有效推薦碼）') || '）' end
       || '。下一步：開一個 Claude Code session，請它依 supabase/README〈補發漏發獎金〉核對'
       || case when p_generation is null then '三代' else '' end
@@ -826,3 +829,122 @@ end;
 $$;
 
 revoke execute on function public.invoke_internal_endpoint(text, text) from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 9. claim_referral_king_reward（基準 20260724000005）
+-- ------------------------------------------------------------
+create or replace function public.claim_referral_king_reward(
+  p_user_id   uuid,
+  p_reward_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_reward_user_id uuid;
+  v_reward_status  text;
+  v_suspended      timestamptz;
+  v_sub_id         uuid;
+  v_old_end        timestamptz;
+  v_new_last_day   date;
+  v_new_end        timestamptz;
+  v_new_grace      timestamptz;
+  v_reward_amount  int;
+begin
+  -- 鎖定這筆 reward，防止雙擊/併發請求同時處理同一筆。
+  select user_id, status into v_reward_user_id, v_reward_status
+  from public.referral_king_rewards
+  where id = p_reward_id
+  for update;
+
+  if v_reward_user_id is null then
+    return jsonb_build_object('success', false, 'error_code', 'not_found', 'message', '找不到這筆獎勵紀錄');
+  end if;
+
+  if v_reward_user_id <> p_user_id then
+    return jsonb_build_object('success', false, 'error_code', 'forbidden', 'message', '這筆獎勵不屬於你');
+  end if;
+
+  if v_reward_status = 'claimed' then
+    -- 已領取：冪等回傳成功，不重複延展、不重複發獎。刻意放在守衛之前。
+    return jsonb_build_object('success', true, 'idempotent', true, 'status', 'claimed');
+  end if;
+
+  -- 鎖定該用戶「目前」訂閱（依 end_date 排序取最新一筆）。
+  select id, end_date into v_sub_id, v_old_end
+  from public.subscriptions
+  where user_id = p_user_id
+  order by end_date desc
+  limit 1
+  for update;
+
+  if v_sub_id is null then
+    return jsonb_build_object('success', false, 'error_code', 'no_subscription', 'message', '找不到可延展的訂閱紀錄，請聯繫客服');
+  end if;
+
+  -- 停權優先擋（與 request_withdrawal 一致）。
+  select suspended_at into v_suspended from public.profiles where id = p_user_id;
+  if v_suspended is not null then
+    return jsonb_build_object(
+      'success', false,
+      'error_code', 'suspended',
+      'message', '帳號已停權，無法領取免費續約，請聯繫客服'
+    );
+  end if;
+
+  -- 到期不得領取（不允許到期會員用 credit 免費復活）。
+  if v_old_end is null or now() > v_old_end then
+    return jsonb_build_object(
+      'success', false,
+      'error_code', 'subscription_invalid',
+      'message', '會員資格已失效，請先續訂會員後再領取免費續約'
+    );
+  end if;
+
+  v_new_last_day := (public.tw_day(v_old_end) + interval '1 year')::date;
+  v_new_end      := public.tw_end_of_day(v_new_last_day);
+  v_new_grace    := public.tw_end_of_day(v_new_last_day + 60);
+
+  update public.subscriptions
+  set end_date = v_new_end, grace_period_end = v_new_grace
+  where id = v_sub_id;
+
+  update public.referral_king_rewards
+  set status = 'claimed', claimed_at = now(), resulting_subscription_id = v_sub_id
+  where id = p_reward_id;
+
+  -- ★ 規則更新：任務續約＝下線續約，對領取者（p_user_id）的上線鏈發三代
+  --   100P。例外隔離：發獎失敗不回滾「訂閱已延展 + credit 已領」，寫 error 告警（第 6 波 S1）。
+  --   不 +1 task（續約不計）。冪等鍵綁這次 claim（source_claim_id）。
+  begin
+    select referral_reward_amount into v_reward_amount from public.reward_config where id = true;
+    perform public.pay_referral_generations(
+      p_user_id,
+      coalesce(v_reward_amount, 100),
+      null,          -- p_subscription_id：續約無新訂閱事件
+      p_reward_id,   -- p_claim_id：冪等鍵綁這次 claim
+      '・任務續約'
+    );
+  exception when others then
+    -- 第 6 波 S1（W6-10）：整批沒發出＝漏發錢，error（推 LINE），格式同 log_referral_reward_failure。
+    perform public.log_referral_reward_failure('claim_referral_king_reward', p_user_id, null,
+      (select referred_by_user_id from public.profiles where id = p_user_id),
+      coalesce(v_reward_amount, 100), null, p_reward_id, sqlstate, sqlerrm);
+    raise warning 'claim_referral_king_reward：續約推薦獎勵處理失敗（續約已完成，reward_id=%）: %', p_reward_id, sqlerrm;
+  end;
+
+  return jsonb_build_object(
+    'success',        true,
+    'subscriptionId', v_sub_id,
+    'activeUntil',    v_new_end,
+    'gracePeriodEnd', v_new_grace
+  );
+
+exception when others then
+  raise exception 'claim_referral_king_reward 失敗: %', sqlerrm;
+end;
+$$;
+
+revoke execute on function public.claim_referral_king_reward(uuid, uuid) from anon, authenticated, public;

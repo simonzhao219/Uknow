@@ -547,7 +547,8 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 | 任務免費續約 | null | 有值 | `(referee, generation, source_claim_id)` |
 
 每一代各自包一層例外隔離：gen2/gen3 失敗不拖累 gen1。撞冪等索引（`unique_violation`）視同已發、
-不告警；其他任何錯誤（含死鎖、序列化衝突）都寫 **error** 告警（推 LINE），訊息前段寫明單號（或任務續約）、
+不告警；其他任何錯誤（含死鎖、序列化衝突）都寫 **error** 告警（推 LINE；推播只取前 60 字，開頭固定
+「【獎金未發・請開 Claude 補發】單號 第N代X點」，W6-24），訊息接著寫明單號（或任務續約）、
 第幾代、點數、推薦人的推薦碼與下一步「開一個 Claude Code session，請它依 supabase/README〈補發漏發獎金〉核對並補發」，不承諾自動補發（W6-10、W6-12）。
 〔實作〕`20261115000001_batch_heal_lock_split.sql` 的 `log_referral_reward_failure`。兩條路徑各有自癒補償
 （`repair_orphaned_payments` / `repair_orphaned_claim_rewards`）；自癒先鎖該會員的

@@ -115,12 +115,13 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
    ```sql
    select id, created_at, message, context from public.system_alerts
-    where source in ('pay_referral_generations', 'apply_referral_side_effects') and resolved_at is null
+    where source in ('pay_referral_generations', 'apply_referral_side_effects', 'claim_referral_king_reward')
+      and resolved_at is null
     order by created_at desc;
    ```
 
 2. 查這一代是否已補上（會員載入個人頁的自癒、或他人先處理）。`generation` 為 null 的是三代整批失敗
-   （`source = 'apply_referral_side_effects'`），三代都要查；`beneficiary` 只是第 1 代，第 2、3 代沿
+   （`source` 為 `apply_referral_side_effects`，或任務續約的 `claim_referral_king_reward`），三代都要查；`beneficiary` 只是第 1 代，第 2、3 代沿
    `referral_edges` 往上找：
 
    ```sql
