@@ -1,4 +1,4 @@
-# 新約與部署收尾（第 6 波 S6）規劃書 v2
+# 新約與部署收尾（第 6 波 S6）規劃書 v2.1
 
 <!-- plans-keep: 跨 session 施工鷹架（主 session 審、業主親打 /tdd-implement）；退場條件＝/tdd-implement 收尾時刪除 -->
 
@@ -109,7 +109,7 @@ D（W6-14 drop `complete_paid_pending_orders`）依 W6-30 延第 7 波：main �
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | A 後端：status 第三態＋契約＋降級 | `subscriptions-status.test.ts`（Deno 整合；A4 以攔截 `profiles` 讀取注入錯誤，照該檔既有寫法） | 現任＝預設 → true；≠ → false；預設不可用 → false；讀取失敗 → 200 且欄位缺 |
+| 1 | A 後端：status 第三態＋契約＋降級 | `subscriptions-status.test.ts`（Deno 整合；A4 以攔截 `profiles` 讀取注入錯誤，照該檔既有寫法） | 現任＝預設 → true；≠ → false；預設不可用 → 欄位省略；讀取失敗 → 200 且欄位省略 |
 | 2 | A 前端：文案三態＋a11y | `freshRenewalCopy.test.ts`（逐字斷言三態句、hint、placeholder）、`PaymentCheckout.test.tsx`（jsdom：A1～A3、`aria-describedby` 含 hint id） | A1～A3 |
 | 3 | B：0d 驗單上碼＋告警分句 | `renewal-referrer-intent.test.ts` 加 B1～B4 | B1～B5；既有 0d 案全綠 |
 | 4 | C：drop 三參數 prepare | 新案：`to_regprocedure` 為 null。改既有（**需業主授權**）：`renewal-referrer-intent.test.ts` LEGACY 案（約 `:240-250`）刪除、權限案（約 `:499-512`）拿掉三參數簽章；`prepare-payment-order.test.ts` `callRpc`（約 `:35`）與 raw SQL（約 `:180`）改六參數並改讀 `outcome`；`duplicate-payment.test.ts`（約 `:275`）同。行號開工時現算 | C1；改後各檔全綠 |
@@ -131,3 +131,15 @@ D（W6-14 drop `complete_paid_pending_orders`）依 W6-30 延第 7 波：main �
 ## 8. v1 審查處置對照（`review.md` v1 編號）
 
 1→§2.4 判準＋主 session 代查（無漂移，全量成立）｜2→§2.4 邏輯全進 Python｜3→§2.2 ①②與 B4｜4→W6-28｜5→§2.1 placeholder（keeps_same 不顯示碼）｜6→W6-30 降級（A4）｜7→W6-29｜8→§2.1 `@contract` 同一份｜9→§2.4 末段｜10→§2.4 schema 驗證、不退用 query｜11→§5 階段 4｜12→§1.3｜13→§1.1 D、§2.3｜14→兩支 migration｜15→§2.4｜16→§2.1 三態字串｜17→§4、§7｜18→§2.1 a11y｜19→§3 文件｜20→W6-27 定稿 B1～B4｜21→W6-30｜22→§2.4 4a｜23→D 不做，不需 D1
+
+## 9. v2 審查處置（`review.md` 第 2 輪；本節優先於前文）
+
+- R2-1（需求 P1）規格書 §7.4「換線到使用者親自填的推薦碼時於付款成功時重置為 false」一句加例外（W6-29）：新約留空而預設推薦人即現任時，旗標為 true，之後結帳頁不顯示「目前：碼」。§7.4 改動一律**以內容定位**（行號會漂）：「不填碼不等於維持原狀」加限定、「續約文案只說『留空表示不指定推薦人』」改成與現行文案一致、W6-28 的不揭露範圍寫在同段、W6-27 換碼／清空寫一句。§1.3 兩個不處理視窗只寫在 §6.2 一處。
+- R2-2（架構 P1）規則 14 改為三條：(a) 以去掉註解行後的 step 序號比順序（同規則 12 的做法，避開 `_steps()` 把註解歸給上一個 step）；(b) 呼叫 `scripts/check-remote-migrations.py` 的 step 必須排在第一個含 `supabase secrets set` 或 `supabase functions deploy` 的 step 之前；(c) 該 step 不得有 `continue-on-error`、`if:`，指令不得含 `|| true`。範圍＝`deploy-supabase.yml`，檔案不存在即紅；`journey.yml` 部署的是拋棄式分支（migration 由 branch replay 建立），不在範圍——寫進 github-actions.md 規則 14 段。self-test 每條各一反例。
+- R2-3（系統 P2）B 的告警分句改三分：內層讀目前預設碼設旗標 `v_cur_read_ok`。讀失敗 → 今日 message（B3）＋context `current_default_code_read_failed: true`；讀成功且目前為 null（unset）→「預設推薦人機制已停用，且建單時的預設推薦碼在付款當下已停權或失效…」；讀成功且不同 → B2 message；相同 → B3。補驗收 **B6**（unset＋舊碼失效）。
+- R2-4（系統 P2）每次 HTTP 請求 timeout 15 秒；`URLError`、`socket.timeout`、連線重置等一律正規化成「讀不到」（退出碼 2）；token 空時退出碼 2 並印「未設定 SUPABASE_ACCESS_TOKEN」、不印值。self-test 加：逾時、URLError、空 token。
+- R2-5（架構 P2）版本解析定案：遠端腳本自帶 `^(\d{14})_.+\.sql$`，不符者略過（M2 由 `check-migration-versions.py` 管），兩檔註解互相指向，不新增 import 依賴；self-test 加「repo 含格式不符檔名」。
+- R2-6（架構 P2）輪詢上限以 `--max-wait 600` 引數傳入，workflow step 註解寫明 `timeout-minutes: 25`＝10（輪詢）＋3（部署重試）＋2（煙霧）＋餘裕。
+- R2-7（UI/UX P2）`aria-describedby`：平時＝hint id；invalid 時＝「錯誤 id hint id」（錯誤在前）。階段 2 兩種都斷言。checking／unavailable 文字的既有 a11y 債不在範圍。
+- R2-8（系統 P2）`fresh_referrer_missing` 的 context 碼不改（唯一差異原則，非本題）。
+- R2-9〔需人工裁決，見 review.md〕自動綁定者（`isAutoReferral`）手動填入恰好等於現任（＝預設）推薦人的碼 → 確認框寫「將改為 {姓名}」，與留空的「維持不變」不一致。要修就得讓前端知道「填的碼等於現任」，等於洩漏預設碼（與 W6-28 衝突）。建議：接受，記入 §6.2 不處理視窗旁一句。
