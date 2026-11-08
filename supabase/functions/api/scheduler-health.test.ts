@@ -227,3 +227,106 @@ Deno.test('scheduler-health：回應不含帳本明細（summary、id）', async
   assertEquals(text.includes('secret'), false);
   await resetLedger();
 });
+
+// ------------------------------------------------------------
+// 第 6 波 S1（R5 P2-8；W6-11）：heal 連續出問題的輪數，只看 pg_cron 完成列；
+// amountMismatch 不計（金額不符的單會永遠 pending）；遇到沒有 heal 鍵的舊列就停。
+// ------------------------------------------------------------
+type Heal = Partial<{
+  failed: number;
+  error: boolean;
+  skippedLocked: number;
+  amountMismatch: number;
+  truncated: boolean;
+}>;
+
+function reconcileRow(minutesAgo: number, heal: Heal | null, over: Record<string, unknown> = {}) {
+  return {
+    job: 'reconcile',
+    trigger: 'pg_cron',
+    status: 'succeeded',
+    summary: heal === null ? { checked: 0 } : {
+      checked: 0,
+      heal: {
+        candidates: 1,
+        completed: 0,
+        failed: 0,
+        skippedLocked: 0,
+        amountMismatch: 0,
+        truncated: false,
+        error: false,
+        ...heal,
+      },
+    },
+    started_at: ago(minutesAgo),
+    finished_at: ago(minutesAgo - 1),
+    ...over,
+  };
+}
+
+Deno.test('scheduler-health：heal 連續失敗三輪 → healFailedStreak＝3，github 與 vault_missing 列不計', async () => {
+  await resetLedger();
+  await seed([
+    reconcileRow(300, null), // 本案上線前的舊列
+    reconcileRow(180, { failed: 1 }),
+    reconcileRow(120, { error: true }),
+    reconcileRow(60, { truncated: true }),
+    reconcileRow(40, { failed: 0 }, { trigger: 'github' }),
+    reconcileRow(20, null, {
+      status: 'skipped',
+      error_code: 'vault_missing',
+      summary: null,
+      finished_at: ago(20),
+    }),
+  ]);
+  const r = (await health()).data.jobs.reconcile;
+  assertEquals(r.healFailedStreak, 3);
+  assertEquals(r.healSkippedStreak, 0);
+  await resetLedger();
+});
+
+Deno.test('scheduler-health：最新一輪 heal 乾淨 → streak 歸零；中間乾淨只數到乾淨那輪為止', async () => {
+  await resetLedger();
+  await seed([
+    reconcileRow(180, { failed: 1 }),
+    reconcileRow(120, { failed: 2 }),
+    reconcileRow(60, {}),
+  ]);
+  assertEquals((await health()).data.jobs.reconcile.healFailedStreak, 0);
+  await resetLedger();
+  await seed([
+    reconcileRow(180, { failed: 1 }),
+    reconcileRow(120, {}),
+    reconcileRow(60, { failed: 1 }),
+  ]);
+  assertEquals((await health()).data.jobs.reconcile.healFailedStreak, 1);
+  await resetLedger();
+});
+
+Deno.test('scheduler-health：只有金額不符不算 heal 失敗；換線鎖連續跳過另計 healSkippedStreak', async () => {
+  await resetLedger();
+  await seed([
+    reconcileRow(180, { amountMismatch: 3, skippedLocked: 1 }),
+    reconcileRow(120, { amountMismatch: 3, skippedLocked: 2 }),
+  ]);
+  const r = (await health()).data.jobs.reconcile;
+  assertEquals({ failed: r.healFailedStreak, skipped: r.healSkippedStreak }, {
+    failed: 0,
+    skipped: 2,
+  });
+  await resetLedger();
+});
+
+Deno.test('scheduler-health：遇到沒有 heal 鍵的舊列就停；purge-photos 的兩鍵為 null', async () => {
+  await resetLedger();
+  await seed([
+    reconcileRow(240, { failed: 1 }),
+    reconcileRow(180, null),
+    reconcileRow(60, { failed: 1 }),
+  ]);
+  const jobs = (await health()).data.jobs;
+  assertEquals(jobs.reconcile.healFailedStreak, 1);
+  assertEquals(jobs['purge-photos'].healFailedStreak, null);
+  assertEquals(jobs['purge-photos'].healSkippedStreak, null);
+  await resetLedger();
+});
