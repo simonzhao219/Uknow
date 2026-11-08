@@ -69,6 +69,8 @@
 | W6-30 | S6 Q2／Q3／Q5／Q7 | drop wrapper（W6-14）延第 7 波，等正式站跑過 S1 的 Edge 一輪；#514 P2-3 競態本波不處理、規格書寫明；status 現任推薦人讀取失敗降級成欄位缺；workflow 規則 14＋timeout 都做 |
 | W6-31 | S6 R2-9：自動綁預設者手動填入＝現任的碼，確認框寫「將改為」與留空的「維持不變」不一致 | **接受**，規格書 §6.2 寫一句；改寫成「維持不變」會讓人逐碼試出自己的預設推薦人，與 W6-28 衝突 |
 | W6-32 | S3b bundle 總 raw 1978→1983 | 核准：增量全在後台 lazy chunk、entry 不變 |
+| W6-33 | 晉升時點 | **業主先在 develop 預覽手機實測 S4（#523 三項），回報後才開晉升 PR**（被推翻：現在就開；等 11/22）（業主 2026-11-09） |
+| W6-34 | 照片清理仍 dry-run | **業主尚未設，馬上補設**正式站 Edge Secret `PHOTO_PURGE_LIVE=true`；主 session 11/09 19:25 UTC 複查（業主 2026-11-09） |
 
 ## 1. 時程
 
@@ -173,3 +175,4 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 03:00 | S6 修 #526 獨立審查 P2（紅 7043ebf4／綠 b7d1b1b8：規則 14 四種繞法各一反例、timeout 30、API 暫時性錯誤退避重試兩次、缺版本訊息帶筆數、耦合註解、檔頭措辭；self-test 輪詢改假時鐘）。主 session 以 PR head 本地跑兩支 self-test 與真檔皆 OK、CI 全綠 → **#526 合進 develop（c08bf88）**，S6 收工。**本波 S1～S6 全數合併** | 看 develop 部署的確認 migration 步驟 → 晉升 |
 | 11/09 03:30 | #526 develop 驗證：deploy-supabase run 42513390673 全綠，新步驟「確認 migration 已套用」success（2 秒）、部署＋`/health` sha 比對 success；develop 有 `20261117000001／2`，`prepare_payment_order` 只剩六參數版。補記：#521 合併後的 develop push CI（42469159038）紅於 static-checks、api-tests 的「安裝 Deno」504（外部暫時性，與 S3 同時段），該次 deploy 因此 skipped；後續 #525、#526 的 push CI 含同一份程式皆綠並已部署，不需補跑 | 業主決定晉升時點 |
 | 11/09 03:30 | W6-4 複查：正式站照片清理 11/08 19:17 UTC（id 36）**仍 dryRun=true**（0 孤兒、0 刪除，影響為零）→ 業主尚未補設或未生效 | 業主補設，再看 11/09 19:17 UTC |
+| 11/09 03:35 | 業主裁 **W6-33**（先手機實測 S4 再晉升）、**W6-34**（馬上補設 PHOTO_PURGE_LIVE）。主 session 排 11/09 19:25 UTC 複查 dryRun | 等業主實測回報 → 開晉升 PR |
