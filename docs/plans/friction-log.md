@@ -3527,4 +3527,9 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 5. **範圍外發現**：舊 wrapper 重現互鎖時第一個撞鎖點是 `apply_referral_side_effects` 3b 建推薦邊（warning），比發獎更早。
    逐筆化後這條環已不存在，但 3b／3d 失敗仍只是 warning——漏建推薦邊會讓之後的第 2、3 代靜默漏發。列第 7 波候選。
 
-處置：1 列入下次框架整併（pre-commit 已擋命名，問題在紅燈通道只跑靜態閘門之前的手動 chain）；2、4 為紀錄；3 為紀錄；5 交主 session。
+6. **LINE 推播只取 message 前 60 字**（`reconcile-payments.yml` 的 notify 段 `str(a['message'])[:60]`）：規劃與四視角審查都以
+   「前 200 字」設計告警，獨立審查才抓到；W6-24 把行動與單號移進前 60 字。教訓：寫告警文案前先讀推播端實際截斷。
+   另記（第 7 波）：`complete_paid_pending_order` 單筆失敗的 error 告警 message 仍是原始 sqlerrm（既有行為，未改）。
+
+處置：1 列入下次框架整併（pre-commit 已擋命名，問題在紅燈通道只跑靜態閘門之前的手動 chain）；2、4 為紀錄；3 為紀錄；5 交主 session；
+6 寫進下次 `/plan-feature` 的「外部通道」檢查題，sqlerrm 那條列第 7 波候選。
