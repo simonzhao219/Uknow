@@ -120,7 +120,7 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | **W6-4**：正式站 Edge Secret 補設 `PHOTO_PURGE_LIVE=true`；確認 GitHub repo variable `PHOTO_PURGE_LIVE` 也是 `true` | 待做 |
+| 1 | **W6-4**：正式站 Edge Secret 補設 `PHOTO_PURGE_LIVE=true`；確認 GitHub repo variable `PHOTO_PURGE_LIVE` 也是 `true` | **11/08 19:17 UTC 那輪仍 dryRun=true**（id 36），待業主補設 |
 | 2 | 審 S1、S3 規劃與 `/review-plan` 報告，通過後在各自 session 親打 `/tdd-implement` | 等規劃 |
 | 3 | 實機確認（第 4 波起帶過來）：H1 邀請連結、`uknow.pages.dev` 導向、正式站實際登入一次 | 待回報 |
 | 4 | PayUni 商店後台確認第一筆付款（11/03）發票已開立 | 待回報 |
@@ -171,3 +171,5 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 02:30 | S6 交 **#526**（5 階段紅綠，hash 以 PR 內文為準；Management API 以 develop ref 實測 200、`[{version,name}]` 97 筆，形狀寫進 self-test；實作審查 P0 0、P1 1 記偏離；業主 11/09 01:53 於 S6 session 授權 entry gzip 316→316.5 與改 5 處既有測試）。主 session 派獨立 Opus 審查；晉升清單 4a 依 S6 建議改寫 | 等審查、CI |
 | 11/09 02:45 | #526 獨立 Opus 審查：**P0 0、P1 0、P2 7**（0d 對基準函式本體 diff 只有宣稱差異、三參數無呼叫端、status 降級與三態核實）。P2：規則 14 有四種繞法（`if: always()`、`||true` 變體、`--self-test`、旗標前置）、timeout 算式低估、API 暫時性錯誤不重試、遠端清單是否有上限未證實（主 session 查官方文件：無分頁參數）、workflow／腳本來源耦合、檔頭措辭 → 本 PR 修；讀預設碼失敗分支無測試接受 | S6 修 → CI 綠 → 合 #526 → 看 develop 部署的確認步驟 |
 | 11/09 03:00 | S6 修 #526 獨立審查 P2（紅 7043ebf4／綠 b7d1b1b8：規則 14 四種繞法各一反例、timeout 30、API 暫時性錯誤退避重試兩次、缺版本訊息帶筆數、耦合註解、檔頭措辭；self-test 輪詢改假時鐘）。主 session 以 PR head 本地跑兩支 self-test 與真檔皆 OK、CI 全綠 → **#526 合進 develop（c08bf88）**，S6 收工。**本波 S1～S6 全數合併** | 看 develop 部署的確認 migration 步驟 → 晉升 |
+| 11/09 03:30 | #526 develop 驗證：deploy-supabase run 42513390673 全綠，新步驟「確認 migration 已套用」success（2 秒）、部署＋`/health` sha 比對 success；develop 有 `20261117000001／2`，`prepare_payment_order` 只剩六參數版。補記：#521 合併後的 develop push CI（42469159038）紅於 static-checks、api-tests 的「安裝 Deno」504（外部暫時性，與 S3 同時段），該次 deploy 因此 skipped；後續 #525、#526 的 push CI 含同一份程式皆綠並已部署，不需補跑 | 業主決定晉升時點 |
+| 11/09 03:30 | W6-4 複查：正式站照片清理 11/08 19:17 UTC（id 36）**仍 dryRun=true**（0 孤兒、0 刪除，影響為零）→ 業主尚未補設或未生效 | 業主補設，再看 11/09 19:17 UTC |
