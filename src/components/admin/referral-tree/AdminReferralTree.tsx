@@ -69,6 +69,12 @@ function paramsFor(key: string, ensureId: string | null, offset: number): NodesP
   return { ...base, parentId: key };
 }
 
+// 載入更多時以 id 去重：分頁之間資料若有增減，同一人可能出現在兩頁。
+function mergeById<T extends { id: string }>(prev: T[], next: T[]): T[] {
+  const seen = new Set(prev.map((x) => x.id));
+  return [...prev, ...next.filter((x) => !seen.has(x.id))];
+}
+
 function keyOf(step: ExpandStep): string {
   if (step.kind === 'top') return TOP;
   if (step.kind === 'unplaceable') return UNPLACEABLE;
@@ -86,9 +92,9 @@ function NodeSummary({ node }: { node: AdminReferralNode }) {
   return (
     <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground wrap-anywhere">
       <span>{layerLabel(node.layer)}</span>
-      <Badge variant="outline">{STATUS_TEXT[node.status]}</Badge>
-      {node.status === 'expiring' && node.daysToExpiry !== null ? (
-        <span>剩 {node.daysToExpiry} 天</span>
+      {/* W6-26：節點列只寫到期日；已失效與停權才另加徽章（剩幾天移到查帳詳情）。 */}
+      {node.status === 'expired' || node.status === 'suspended' ? (
+        <Badge variant="outline">{STATUS_TEXT[node.status]}</Badge>
       ) : null}
       {end ? <span>{end} 到期</span> : null}
       <span>直接推薦 {node.directCount} 位</span>
@@ -126,8 +132,12 @@ export function AdminReferralTree({
     setLayers((prev) => ({ ...prev, [key]: patch(prev[key]) }));
   }, []);
 
+  // 每層的請求世代：同一層同時有兩支請求在途（例：手動展開與自動展開）時只採最新一支。
+  const layerGen = useRef<Record<string, number>>({});
   const loadLayer = useCallback(
-    async (key: string, ensureId: string | null = null): Promise<Layer | null> => {
+    async (key: string, ensureId: string | null = null): Promise<Layer | 'stale' | null> => {
+      const gen = (layerGen.current[key] ?? 0) + 1;
+      layerGen.current[key] = gen;
       setLayer(key, (prev) => ({
         state: prev?.state ?? emptyLayer(),
         status: prev?.state.items.length ? 'ready' : 'loading',
@@ -136,6 +146,7 @@ export function AdminReferralTree({
       }));
       try {
         const page = await loaders.loadNodes(paramsFor(key, ensureId, 0));
+        if (layerGen.current[key] !== gen) return 'stale';
         if (key === TOP && page.unplaceableCount !== undefined) {
           setUnplaceableCount(page.unplaceableCount);
         }
@@ -148,6 +159,7 @@ export function AdminReferralTree({
         setLayer(key, () => next);
         return next;
       } catch {
+        if (layerGen.current[key] !== gen) return 'stale';
         setLayer(key, (prev) => ({
           state: prev?.state ?? emptyLayer(),
           status: 'error',
@@ -207,7 +219,7 @@ export function AdminReferralTree({
   const retryLayer = useCallback(
     async (key: string) => {
       const next = await loadLayer(key);
-      const first = next ? rowsToRender(next.state)[0] : undefined;
+      const first = next && next !== 'stale' ? rowsToRender(next.state)[0] : undefined;
       if (first) setPendingFocus(first.node.id);
     },
     [loadLayer],
@@ -230,7 +242,7 @@ export function AdminReferralTree({
           rowsToRender(existing.state).some((r) => r.node.id === step.ensureId);
         if (!present) {
           const result = await loadLayer(key, step.ensureId);
-          if (token !== expandToken.current) return;
+          if (token !== expandToken.current || result === 'stale') return;
           if (!result) {
             setExpanding(false);
             setAnnounce('');
@@ -269,6 +281,7 @@ export function AdminReferralTree({
     total: number;
     matches: AdminReferralSearchMatch[];
     loadMoreError: boolean;
+    loadingMore?: boolean;
   } | null>(null);
   const latestQuery = useRef('');
 
@@ -282,6 +295,7 @@ export function AdminReferralTree({
       latestQuery.current = q;
       if (offset === 0)
         setResults({ q, status: 'loading', total: 0, matches: [], loadMoreError: false });
+      else setResults((prev) => (prev ? { ...prev, loadingMore: true } : prev));
       try {
         const data = await loaders.search({ q, limit: PAGE_SIZE, offset });
         if (latestQuery.current !== q) return;
@@ -289,15 +303,16 @@ export function AdminReferralTree({
           q,
           status: 'ready',
           total: data.total,
-          matches: offset === 0 ? data.matches : [...(prev?.matches ?? []), ...data.matches],
+          matches: offset === 0 ? data.matches : mergeById(prev?.matches ?? [], data.matches),
           loadMoreError: false,
+          loadingMore: false,
         }));
       } catch {
         if (latestQuery.current !== q) return;
         setResults((prev) =>
           offset === 0 || !prev
             ? { q, status: 'error', total: 0, matches: [], loadMoreError: false }
-            : { ...prev, loadMoreError: true },
+            : { ...prev, loadMoreError: true, loadingMore: false },
         );
       }
     },
@@ -354,7 +369,9 @@ export function AdminReferralTree({
   }, [focusId, loaders, onFocusConsumed, onOpenNode, runExpansion]);
 
   // ---- 呈現 --------------------------------------------------------------
-  function renderLayer(key: string, depth: number) {
+  // path：由頂層到本層父節點的 id。節點若已在 path 上就是成環（只會發生在「無法接上推薦樹的
+  // 會員」群組裡），不再往下展開，否則 X↔Y 會無限遞迴（#521 獨立審查 P0，規劃 §2.2）。
+  function renderLayer(key: string, depth: number, path: ReadonlySet<string> = new Set()) {
     const layer = layers[key];
     if (!layer || layer.status === 'loading') {
       return <AdminListSkeleton label="推薦樹載入中" variant="rows" count={2} />;
@@ -389,7 +406,8 @@ export function AdminReferralTree({
       <>
         <ul className="space-y-1">
           {rows.map(({ node, pinned }) => {
-            const isOpen = expanded.has(node.id);
+            const cyclic = path.has(node.id);
+            const isOpen = !cyclic && expanded.has(node.id);
             const name = displayName(node.name);
             return (
               <li
@@ -397,7 +415,7 @@ export function AdminReferralTree({
                 style={{ paddingInlineStart: Math.min(depth, MAX_INDENT_DEPTH) * INDENT_PX }}
               >
                 <div className="flex min-w-0 items-start gap-1">
-                  {node.directCount > 0 ? (
+                  {node.directCount > 0 && !cyclic ? (
                     <button
                       type="button"
                       aria-expanded={isOpen}
@@ -432,9 +450,16 @@ export function AdminReferralTree({
                       </Badge>
                     ) : null}
                     <NodeSummary node={node} />
+                    {cyclic ? (
+                      <p className="text-sm text-muted-foreground">推薦關係成環，不再往下展開</p>
+                    ) : null}
                   </div>
                 </div>
-                {isOpen ? <div className="mt-1">{renderLayer(node.id, depth + 1)}</div> : null}
+                {isOpen ? (
+                  <div className="mt-1">
+                    {renderLayer(node.id, depth + 1, new Set(path).add(node.id))}
+                  </div>
+                ) : null}
               </li>
             );
           })}
@@ -484,6 +509,7 @@ export function AdminReferralTree({
               <li key={m.id} className="min-w-0">
                 <button
                   type="button"
+                  data-node-name={m.id}
                   aria-label={`查看${name}的推薦與查帳資訊`}
                   onClick={() => onOpenNode(m.id)}
                   className="text-left font-medium wrap-anywhere pointer-coarse:min-h-11"
@@ -516,6 +542,7 @@ export function AdminReferralTree({
             <Button
               tone="secondary"
               size="sm"
+              disabled={results.loadingMore}
               onClick={() => void runSearch(results.q, results.matches.length)}
             >
               {results.loadMoreError ? '載入失敗，重試載入更多' : '載入更多'}

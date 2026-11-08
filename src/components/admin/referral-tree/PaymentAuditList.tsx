@@ -48,8 +48,14 @@ function GenerationRow({ g }: { g: AdminReferralGeneration }) {
       {g.result === 'paid' && actual ? (
         <p className="text-sm text-muted-foreground wrap-anywhere">{actual}</p>
       ) : null}
-      {(showsExpectedOnly || g.result === 'undeterminable') && expected ? (
+      {showsExpectedOnly && expected ? (
         <p className="text-sm text-muted-foreground wrap-anywhere">應給 {expected}</p>
+      ) : null}
+      {/* 無法判定時「該拿的人」只是依現在的推薦鏈推算，不能當成應給（#521 獨立審查 P2-2）。 */}
+      {g.result === 'undeterminable' && expected ? (
+        <p className="text-sm text-muted-foreground wrap-anywhere">
+          依現況鏈為 {expected}（僅供參考）
+        </p>
       ) : null}
       {showsActualLine ? (
         <p className="text-sm text-muted-foreground wrap-anywhere">實發 {actual}</p>

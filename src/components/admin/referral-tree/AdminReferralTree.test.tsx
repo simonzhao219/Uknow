@@ -429,8 +429,8 @@ describe('獨立審查補強', () => {
 
   it('搜尋載入更多在途時停用，回來的結果以 id 去重', async () => {
     let release: (v: SearchData) => void = () => {};
-    const search = vi.fn((_q: unknown, offset?: number) =>
-      offset
+    const search = vi.fn((params: { offset?: number }) =>
+      params.offset
         ? new Promise<SearchData>((r) => {
             release = r;
           })

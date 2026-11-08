@@ -390,6 +390,15 @@ export function MemberManagement({
     trigger.focus();
   };
 
+  // 推薦樹的查帳詳情關閉後，焦點回到樹上（或搜尋結果裡）同一位的名稱鈕；
+  // 那顆鈕不在了（例如已換頁）才交給 Radix 預設行為。
+  const returnFocusToTreeNode = (id: string) => (event: Event) => {
+    const trigger = document.querySelector<HTMLElement>(`[data-node-name="${id}"]`);
+    if (!trigger) return;
+    event.preventDefault();
+    trigger.focus();
+  };
+
   const latestOpeningId = openingIds[openingIds.length - 1];
   const latestOpening = latestOpeningId ? members.find((m) => m.id === latestOpeningId) : undefined;
 
@@ -576,6 +585,7 @@ export function MemberManagement({
             loaders={referralTree}
             userId={auditId}
             onClose={() => setAuditId(null)}
+            onCloseAutoFocus={returnFocusToTreeNode(auditId)}
           />
         )}
       </TabsContent>

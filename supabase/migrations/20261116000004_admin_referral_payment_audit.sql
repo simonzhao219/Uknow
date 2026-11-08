@@ -9,7 +9,11 @@
 -- 每一代的結果（規劃 §2.1，判定順序：先過可判定閘門）：
 --   undeterminable  找不到對應訂閱（no_subscription），或付款人、第 1 代、第 2 代
 --                   任一人的 referred_by_changed_at 晚於付款時點（changed_after）
---                   ——比自癒更保守；有實發列照樣列出
+--                   ——比自癒更保守；有實發列照樣列出；或第 1、2 代那位目前
+--                   profiles.referred_by_user_id 與 referral_edges 不一致
+--                   （referrer_mismatch：第 2、3 代讀 edge，edge 改線沒有時間戳，
+--                   閘門看不到；#521 獨立審查 P1-2）。兩種原因同時成立時報
+--                   referrer_mismatch——它是現在就要修的資料不一致，換線只是歷史
 --   cycle_stopped   referral_award_chain 的 stop_reason='cycle'
 --   not_applicable  stop_reason='no_referrer'
 --   missing         該代有收獎者，但找不到 (referee, generation, 冪等鍵) 的
@@ -79,6 +83,14 @@ begin
       where pr.id = any(array_remove(array[p_user, p_recipients[1], p_recipients[2]], null))
         and pr.referred_by_changed_at > p_at);
     v_reason := case when v_gate_ok then null else 'changed_after' end;
+    if exists (
+      select 1 from public.profiles pr
+      left join public.referral_edges e on e.referee_user_id = pr.id
+      where pr.id = any(array_remove(array[p_recipients[1], p_recipients[2]], null))
+        and pr.referred_by_user_id is distinct from e.referrer_user_id) then
+      v_gate_ok := false;
+      v_reason := 'referrer_mismatch';
+    end if;
   end if;
 
   for g in 1..3 loop

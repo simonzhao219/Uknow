@@ -17,6 +17,10 @@
 --   profiles.referred_by_user_id IS DISTINCT FROM 本人 edge 的 referrer。
 -- 異常（本階段）：cycle（往上 50 步內重複）、self_referral（profiles 指向自己）。
 -- 不回身分證、電話、生日、銀行帳號、email。只授權 service_role。
+--
+-- ⚠️ 本檔定義的 admin_referral_member_audit 在 20261116000004 被改名為
+-- admin_referral_member_audit_base，並由同名包裝函式加上 payment_summary 與付款異常。
+-- 之後要改 admin_referral_member_audit，基準是 0004 的包裝（與 _base），不是本檔。
 -- ============================================================
 
 -- 修正階段 2：搜尋必須與樹收同一群人（規劃 §2.2）。樹上的子節點來自 referral_edges，

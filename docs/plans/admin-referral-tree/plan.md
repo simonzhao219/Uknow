@@ -283,6 +283,8 @@
 
 ### 2.3 S3b：點數來源明細與跨表核對（W6-18）
 
+> S3a 實作後補註（#521 獨立審查 P2-6）：`admin_referral_member_audit` 在 0004 被改名為 `admin_referral_member_audit_base`，外面再包同名函式。S3b 若要動會員查帳 RPC，基準是 0004 的包裝與 `_base`，不是 0003。
+
 **點數來源明細：**
 
 - 這個人在 `reward_transactions_with_balance` 的每一列，分頁、依時間新到舊。

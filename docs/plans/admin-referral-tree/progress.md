@@ -18,6 +18,7 @@
 | 7 | `AdminReferralTree` | ✅ 綠（本機 vitest 12 passed） | 0222ab8b（本機 vitest 12 failed） | 2b1dc9ff |
 | 8 | `ReferralAuditSheet`＋次分頁＋私密 | ✅ 綠（本機 vitest admin＋analytics 690 passed） | 19d6c5a3（本機 vitest src/components/admin：17 failed／574 passed，皆新測試） | 299e6f0a |
 | 9 | 規格書＋e2e | ✅ 綠（本機 e2e：admin_steps＋overflow sweep＋admin mobile layout 77 passed） | 不適用（逃生口 1，見 Blockers） | （本 commit） |
+| — | #521 獨立審查補強（P0 成環、P1×2、P2×6、W6-26） | ✅ 本機 vitest 綠；DB 待 CI | 666b6e0e（CI api-tests：2 failed／586 passed，皆新測試；unit 紅為前端新測試） | （本 commit） |
 | 10 | S3b：點數來源與對帳 RPC | ⬜ 未開始 | | |
 | 11 | S3b：端點＋UI＋異常 | ⬜ 未開始 | | |
 
@@ -28,6 +29,11 @@
 **環境限制**：本容器 `supabase start` 拉不到映像（public.ecr.aws 的 CDN 被網路政策擋），DB 測試（`*.test.ts`）不能本機跑。階段 1～4、5c、5d 的紅綠證據以 CI api-tests 軌為準：紅燈 commit 單獨 push，確認 api-tests 在該測試上紅後才寫實作。deno 已以 `npm i -g deno` 安裝，`deno task check`、unit 測試可本機跑。
 
 ## Blockers(逃生口紀錄)
+
+- 2026-11-08 #521 獨立審查補強（逃生口 2；業主 2026-11-08 在本 session 授權只修下列兩支、由 Claude 刪鎖）：紅燈 666b6e0e 有兩支測試本身寫錯，實作無法也不該讓它們綠：
+  1. `AdminReferralTree.test.tsx`「搜尋載入更多在途時停用…」：mock 寫成 `search(_q, offset)`，但實際呼叫是 `search({ q, limit, offset })`，offset 永遠讀不到，第二頁永遠立即回第一頁的資料。修法：mock 改讀 `params.offset`。
+  2. `ReferralAuditSheet.test.tsx`「自癒提示只對付款的第 1 代缺漏」：前提來自獨立審查 P2-1，但現行 `repair_orphaned_payments`（20260807000001）在付款的任一代缺漏都會重跑發獎；只有任務續約要第 1 代缺漏才會補。實作依現行函式；測試要改成「付款第 2 代缺漏 → 自癒提示；任務續約只缺第 2 代 → 請回報」。
+  另：`節點列只寫到期日` 依 W6-26「已到期、停權用徽章」解讀為訂閱中與即將到期不再顯示狀態徽章（搜尋結果列不變）。
 
 - 2026-11-08 階段 9（逃生口 1）：e2e 情境與 overflow sweep 路由是在元件完成後才寫的驗收層，寫入即綠（本機 77 passed）。e2e 的 overflow sweep 只支援 375px（`MOBILE_VIEWPORT`），規劃 §4 寫的 1024／1280 寬度未另加 e2e 掃描——Sheet 內一律卡片、不靠視窗斷點，桌面寬度不會改變 Sheet 版面；記為偏離。
 

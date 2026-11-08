@@ -207,7 +207,8 @@ security definer
 set search_path = public
 as $$
 declare
-  v_name   text := nullif(btrim(coalesce(p_name, '')), '');
+  -- 姓名比對兩邊都做 NFKC（全形英數與半形視為相同），與推薦碼的正規化一致（W6-26）。
+  v_name   text := nullif(btrim(normalize(coalesce(p_name, ''), NFKC)), '');
   v_code   text := nullif(btrim(coalesce(p_code, '')), '');
   v_like   text;
   v_ids    uuid[];
@@ -224,7 +225,7 @@ begin
   from public.profiles p
   where public.admin_referral_in_scope(p.id)
     and (
-      (v_like is not null and p.name ilike v_like escape '\')
+      (v_like is not null and normalize(p.name, NFKC) ilike v_like escape '\')
       or (v_code is not null and exists (
             select 1 from public.referral_codes rc
             where rc.user_id = p.id and rc.code = v_code))

@@ -41,6 +41,7 @@ interface PaymentsState {
   items: PaymentsData['items'];
   total: number;
   loadMoreError: boolean;
+  loadingMore?: boolean;
 }
 
 interface Entry {
@@ -78,6 +79,12 @@ function Section({
       <div className="mt-2 text-sm">{children}</div>
     </section>
   );
+}
+
+// 載入更多以 eventId 去重：兩頁之間有新付款時，舊的最後一筆會被擠進下一頁。
+function mergeByEventId(prev: PaymentsData['items'], next: PaymentsData['items']) {
+  const seen = new Set(prev.map((x) => x.eventId));
+  return [...prev, ...next.filter((x) => !seen.has(x.eventId))];
 }
 
 const isNotFound = (err: unknown) =>
@@ -142,6 +149,11 @@ export function ReferralAuditSheet({
           audit: prev?.audit ?? { status: 'loading' },
           payments: { status: 'loading', items: [], total: 0, loadMoreError: false },
         }));
+      } else {
+        patch(id, (prev) => {
+          const base = prev as Entry;
+          return { ...base, payments: { ...base.payments, loadingMore: true } };
+        });
       }
       try {
         const data = await loaders.loadPayments(id, { limit: PAYMENT_PAGE, offset });
@@ -151,9 +163,10 @@ export function ReferralAuditSheet({
             ...base,
             payments: {
               status: 'ready',
-              items: offset === 0 ? data.items : [...base.payments.items, ...data.items],
+              items: offset === 0 ? data.items : mergeByEventId(base.payments.items, data.items),
               total: data.total,
               loadMoreError: false,
+              loadingMore: false,
             },
           };
         });
@@ -165,7 +178,7 @@ export function ReferralAuditSheet({
             payments:
               offset === 0
                 ? { status: 'error', items: [], total: 0, loadMoreError: false }
-                : { ...base.payments, loadMoreError: true },
+                : { ...base.payments, loadMoreError: true, loadingMore: false },
           };
         });
       }
@@ -243,7 +256,15 @@ export function ReferralAuditSheet({
                 <span className="font-mono">{audit.node.referralCode}</span>
               ) : null}
               <Badge variant="outline">{STATUS_TEXT[audit.node.status]}</Badge>
-              {audit.node.endDate ? <span>{formatTwDate(audit.node.endDate)} 到期</span> : null}
+              {audit.node.endDate ? (
+                <span>
+                  {`${formatTwDate(audit.node.endDate)} 到期${
+                    audit.node.status === 'expiring' && audit.node.daysToExpiry !== null
+                      ? `（剩 ${audit.node.daysToExpiry} 天）`
+                      : ''
+                  }`}
+                </span>
+              ) : null}
             </p>
           ) : null}
           {audit ? (
@@ -294,7 +315,10 @@ export function ReferralAuditSheet({
               onRetryPayments={() =>
                 void loadPayments(current, 0).then(() => focusSection('payments'))
               }
-              onMorePayments={() => void loadPayments(current, entry.payments.items.length)}
+              onMorePayments={() => {
+                if (entry.payments.loadingMore) return;
+                void loadPayments(current, entry.payments.items.length);
+              }}
             />
           ) : null}
         </section>
@@ -336,7 +360,17 @@ function AuditBody({
     }
   }
   const g = audit.rewards.byGeneration;
-  const hasMissing = payments.items.some((i) => i.generations.some((x) => x.result === 'missing'));
+  // 自癒範圍以現行函式為準（20260807000001）：repair_orphaned_payments 在付款的任一代缺漏
+  // 時都會重跑發獎；repair_orphaned_claim_rewards 只在任務續約的第 1 代缺漏時才重跑
+  // （重跑會補齊三代）。任務續約第 1 代已發、只缺第 2、3 代的不會自動補。
+  const selfHealable = (i: PaymentsData['items'][number]) =>
+    i.kind === 'payment' || i.generations.some((x) => x.generation === 1 && x.result === 'missing');
+  const hasSelfHealMissing = payments.items.some((i) =>
+    i.generations.some((x) => x.result === 'missing' && selfHealable(i)),
+  );
+  const hasOtherMissing = payments.items.some((i) =>
+    i.generations.some((x) => x.result === 'missing' && !selfHealable(i)),
+  );
 
   return (
     <>
@@ -480,10 +514,13 @@ function AuditBody({
           <p className="text-muted-foreground">這位會員沒有付款紀錄</p>
         ) : (
           <>
-            {hasMissing ? (
+            {hasSelfHealMissing ? (
               <p className="mb-2 text-xs text-muted-foreground">
                 缺漏會在該會員下次登入載入時自動補發；持續存在請回報。
               </p>
+            ) : null}
+            {hasOtherMissing ? (
+              <p className="mb-2 text-xs text-muted-foreground">這類缺漏不會自動補發，請回報。</p>
             ) : null}
             <ul className="space-y-2">
               {payments.items.map((item) => (
@@ -495,7 +532,12 @@ function AuditBody({
                 已顯示 {payments.items.length} / {payments.total} 筆
               </span>
               {payments.items.length < payments.total ? (
-                <Button tone="secondary" size="sm" onClick={onMorePayments}>
+                <Button
+                  tone="secondary"
+                  size="sm"
+                  disabled={payments.loadingMore}
+                  onClick={onMorePayments}
+                >
                   {payments.loadMoreError ? '載入失敗，重試載入更多' : '載入更多'}
                 </Button>
               ) : null}

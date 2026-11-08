@@ -40,7 +40,8 @@ const BUDGET = {
   // 第 6 波 S3a（後台推薦樹查帳）：新增的元件全在 lazy 的後台 chunk（AdminDashboard 路由層
   // lazy 載入），不影響首屏——實測 entry raw 1012.5→1012.6、gzip 315.5→315.6；總 JS raw
   // 1947.3→1971.0（+23.7 kB，推薦樹、詳情 Sheet、付款查帳卡片與純函式）。額度 +25。
-  totalRawKB: 1976, // 原 1600；S4 +350；第 6 波 S4 +1；W6 S3a +25
+  // 獨立審查修正（成環停止、去重、世代編號、提示分流）再 +1.1 kB，同在後台 lazy chunk。
+  totalRawKB: 1978, // 原 1600；S4 +350；第 6 波 S4 +1；W6 S3a +27
 };
 
 const kb = (bytes) => Math.round((bytes / 1024) * 10) / 10;

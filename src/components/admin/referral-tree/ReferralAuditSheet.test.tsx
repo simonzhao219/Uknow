@@ -377,25 +377,38 @@ describe('ReferralAuditSheet 實作審查補強', () => {
 });
 
 describe('ReferralAuditSheet 獨立審查補強', () => {
-  it('自癒提示只對付款的第 1 代缺漏；其他缺漏請回報', async () => {
+  it('付款任一代缺漏寫自癒提示；任務續約只缺第 2 代寫請回報', async () => {
+    const missing = {
+      result: 'missing' as const,
+      actualId: null,
+      actualName: null,
+      actualAmount: null,
+    };
     renderSheet(
       loaders({
         loadPayments: vi.fn(async () => ({
           total: 1,
-          items: [
-            item([
-              gen(1),
-              gen(2, { result: 'missing', actualId: null, actualName: null, actualAmount: null }),
-              gen(3),
-            ]),
-          ],
+          items: [item([gen(1), gen(2, missing), gen(3)])],
         })),
       }),
     );
     const sec = within(await screen.findByRole('region', { name: '付款與三代獎金' }));
     await sec.findByText('已顯示 1 / 1 筆');
-    expect(sec.queryByText(/下次登入載入時自動補發/)).toBeNull();
-    expect(sec.getByText('這類缺漏不會自動補發，請回報。')).toBeTruthy();
+    expect(sec.getByText(/下次登入載入時自動補發/)).toBeTruthy();
+    expect(sec.queryByText('這類缺漏不會自動補發，請回報。')).toBeNull();
+    cleanup();
+    renderSheet(
+      loaders({
+        loadPayments: vi.fn(async () => ({
+          total: 1,
+          items: [{ ...item([gen(1), gen(2, missing), gen(3)]), kind: 'claim' as const }],
+        })),
+      }),
+    );
+    const sec2 = within(await screen.findByRole('region', { name: '付款與三代獎金' }));
+    await sec2.findByText('已顯示 1 / 1 筆');
+    expect(sec2.queryByText(/下次登入載入時自動補發/)).toBeNull();
+    expect(sec2.getByText('這類缺漏不會自動補發，請回報。')).toBeTruthy();
   });
 
   it('無法判定時寫依現況鏈的人僅供參考，不寫應給', async () => {
