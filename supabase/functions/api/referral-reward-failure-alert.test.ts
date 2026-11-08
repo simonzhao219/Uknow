@@ -25,6 +25,15 @@ let seq = 0;
 const tradeNo = (tag: string) => `S1A-${tag}-${Date.now()}-${seq++}`;
 const BANNED = ['上線', '下線', '傳銷', '直銷'];
 
+// W6-24：LINE 推播每則只取 message 前 60 字（reconcile-payments.yml），行動與單號要在那裡面。
+const HEAD = '【獎金未發・請開 Claude 補發】';
+function assertLineHead(a: Alert, id: string) {
+  const line = a.message.slice(0, 60);
+  for (const w of ['獎金未發', '請開 Claude', id]) {
+    assert(line.includes(w), `LINE 前 60 字要有「${w}」：${line}`);
+  }
+}
+
 function assertReadable(a: Alert) {
   const head = a.message.slice(0, 200);
   assert(head.includes('下一步'), `前 200 字要有下一步：${a.message}`);
@@ -91,9 +100,9 @@ Deno.test('pay_referral_generations：第 2 代插入擲錯 → error 告警帶�
     assertEquals(alerts.length, 1, JSON.stringify(alerts));
     const [al] = alerts;
     assertEquals(al.severity, 'error');
-    assert(al.message.startsWith('【獎金未發】'), al.message);
-    assert(al.message.includes(`付款單 ${t}`), al.message);
-    assert(al.message.includes('第 2 代'), al.message);
+    assert(al.message.startsWith(HEAD), al.message);
+    assertLineHead(al, t);
+    assert(al.message.includes('第2代100點'), al.message);
     assert(al.message.includes(`推薦碼 ${aCode}`), al.message);
     assert(al.message.includes('系統錯誤'), al.message);
     assert(
@@ -143,7 +152,7 @@ Deno.test('pay_referral_generations：任務續約路徑失敗 → 訊息寫「�
 
     const [al] = await alertsSince(sql, since, me);
     assertEquals(al?.severity, 'error');
-    assert(al.message.includes(`任務續約 ${claimId.slice(0, 8)}`), al.message);
+    assertLineHead(al, `任務續約${claimId.slice(0, 8)}`);
     assert(!al.message.includes('付款單'), al.message);
     assertReadable(al);
   } finally {
@@ -170,7 +179,7 @@ Deno.test('pay_referral_generations：查不到付款單號 → 告警照寫、�
 
     const [al] = await alertsSince(sql, since, me);
     assertEquals(al?.severity, 'error');
-    assert(al.message.includes('付款單（查無單號）'), al.message);
+    assertLineHead(al, '（查無單號）');
     assertEquals(al.context.sqlstate, '23503');
     assertReadable(al);
   } finally {
@@ -267,8 +276,8 @@ Deno.test('complete_paid_pending_orders：舊 wrapper 與線上付款互鎖 → 
     assertEquals(a.severity, 'error');
     assertEquals(a.context.sqlstate, '40P01');
     assertEquals(a.context.beneficiary, beneficiary);
-    assert(a.message.includes(`付款單 ${trade}`), a.message);
-    assert(a.message.includes('第 1 代'), a.message);
+    assertLineHead(a, trade);
+    assert(a.message.includes('第1代100點'), a.message);
     assert(a.message.includes(`推薦碼 ${codes[beneficiary]}`), a.message);
     assert(a.message.includes('資料庫互鎖'), a.message);
     assertReadable(a);
@@ -292,7 +301,7 @@ Deno.test('apply_referral_side_effects：三代整批發獎擲錯 → error 告�
     const me = (await createTestUser(client, { name: '整批 會員' })).id;
     ids.push(me);
     await sql`update public.profiles set referred_by_user_id = ${up} where id = ${me}`;
-    const t = tradeNo('BATCH3C');
+    const t = `S1A3C-X${Date.now()}`; // 20 字元單號
     assertEquals((await payForUser(client, me, { tradeNo: t })).error, null);
     const [{ sub }] = await sql`select id as sub from public.subscriptions where user_id = ${me}`;
 
@@ -316,12 +325,61 @@ Deno.test('apply_referral_side_effects：三代整批發獎擲錯 → error 告�
     });
 
     assertEquals(al?.severity, 'error');
-    assert(al!.message.includes(`付款單 ${t}`), al!.message);
-    assert(al!.message.includes('三代推薦獎金整批'), al!.message);
+    assertLineHead(al!, t);
+    assert(al!.message.includes('三代整批每代100點'), al!.message);
     assert(al!.message.includes(`第 1 代推薦人推薦碼 ${upCode}`), al!.message);
-    assert(al!.message.includes('每代 100 點'), al!.message);
     assert(al!.message.includes('核對三代並補發'), al!.message);
     assert(!al!.message.includes('injected batch failure'), al!.message);
+    assertReadable(al!);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('claim_referral_king_reward：任務續約三代整批發獎擲錯 → error 告警、續約照常完成', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const up = (await createTestUser(client, { name: '領取 推薦人' })).id;
+    ids.push(up);
+    assertEquals((await payForUser(client, up)).error, null);
+    const upCode = await getActiveReferralCode(client, up);
+    const me = (await createTestUser(client, { name: '領取 會員' })).id;
+    ids.push(me);
+    await sql`update public.profiles set referred_by_user_id = ${up} where id = ${me}`;
+    assertEquals((await payForUser(client, me)).error, null);
+    const [{ id: rewardId }] = await sql`
+      insert into public.referral_king_rewards (user_id, month_key, round_ordinal, status, granted_at)
+      values (${me}, '2099-01', 1, 'unclaimed', now()) returning id`;
+
+    let al: Alert | undefined;
+    let claimed = '';
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`
+        create or replace function public.pay_referral_generations(
+          p_referee uuid, p_amount int, p_subscription_id uuid default null,
+          p_claim_id uuid default null, p_description_tag text default '')
+        returns text[] language plpgsql as $f$
+        begin raise exception 'injected claim failure'; end $f$;`);
+      await tx`select public.claim_referral_king_reward(${me}::uuid, ${rewardId}::uuid)`;
+      [al] = (await tx`
+        select severity, message, context from public.system_alerts
+        where source = 'claim_referral_king_reward' and context->>'referee' = ${me}
+        order by created_at desc limit 1`) as unknown as Alert[];
+      const [r] = await tx`select status from public.referral_king_rewards where id = ${rewardId}`;
+      claimed = r.status;
+      throw new Error('rollback');
+    }).catch((e) => {
+      if ((e as Error).message !== 'rollback') throw e;
+    });
+
+    assertEquals(claimed, 'claimed', '發獎失敗不回滾續約');
+    assertEquals(al?.severity, 'error');
+    assertLineHead(al!, `任務續約${String(rewardId).slice(0, 8)}`);
+    assert(al!.message.includes(`第 1 代推薦人推薦碼 ${upCode}`), al!.message);
+    assert(!al!.message.includes('injected claim failure'), al!.message);
     assertReadable(al!);
   } finally {
     await sql.end();

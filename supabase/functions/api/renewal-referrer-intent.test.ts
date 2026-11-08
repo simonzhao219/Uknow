@@ -793,3 +793,47 @@ Deno.test('complete_paid_pending_order：付款人 profiles 被占用 → 3 秒�
     await deleteTestUsers(client, ids);
   }
 });
+
+// 第 6 波 S1：lock_timeout 只包 0b 預取、之後還原——推薦人 profiles 被占用超過 3 秒時，
+// 發獎的 FK 等待不得因 55P03 變成漏發。
+Deno.test('complete_paid_pending_order：推薦人 profiles 被占用 4 秒 → 等到放鎖、第 1 代照發', async () => {
+  const client = adminClient();
+  const holder = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 15_000 } });
+  const ids: string[] = [];
+  try {
+    const up = await member(client, sql, ids, '占鎖 推薦人');
+    const m = await member(client, sql, ids, '占鎖 會員', up);
+    await expire(sql, m);
+    const t = tradeNo('HOLDUP');
+    await prepare6(sql, m, t, 'extend');
+    await sql`
+      update public.payment_orders
+      set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
+      where transaction_id = ${t}`;
+    const [{ id }] = await sql`select id from public.payment_orders where transaction_id = ${t}`;
+    const since = new Date().toISOString();
+    let call: Promise<postgres.RowList<postgres.Row[]>> | null = null;
+    await holder.begin(async (tx) => {
+      await tx`select 1 from public.profiles where id = ${up} for update`;
+      call = sql`select public.complete_paid_pending_order(${id}::uuid) as r`.execute();
+      await new Promise((res) => setTimeout(res, 4_000)); // 超過 0b 預取的 3 秒
+    }); // commit → 放掉推薦人 profiles
+    const [{ r }] = await call!;
+    assertEquals(r.outcome, 'completed');
+    const [paid] = await sql`
+      select count(*)::int as n from public.reward_transactions rt
+      join public.subscriptions s on s.id = rt.subscription_id
+      join public.payment_orders po on po.id = s.source_payment_order_id
+      where po.transaction_id = ${t} and rt.generation = 1 and rt.user_id = ${up}`;
+    assertEquals(paid.n, 1, '第 1 代獎金寫入');
+    const [al] = await sql`
+      select count(*)::int as n from public.system_alerts
+      where created_at >= ${since} and context->>'sqlstate' = '55P03'`;
+    assertEquals(al.n, 0);
+  } finally {
+    await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});

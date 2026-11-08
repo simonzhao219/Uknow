@@ -134,7 +134,8 @@ Deno.test('排程 heal：與線上付款交錯（U1←X←U2）→ 兩筆第 1 �
     );
     const deadlocks = await sql`
       select source, message from public.system_alerts
-      where created_at >= ${startedAt} and message ilike '%deadlock detected%'`;
+      where created_at >= ${startedAt}
+        and (context->>'sqlstate' = '40P01' or message ilike '%deadlock detected%')`;
     assertEquals(
       { xToU1: xToU1.n, u2ToX: u2ToX.n, deadlocks: deadlocks.length },
       { xToU1: 2, u2ToX: 1, deadlocks: 0 },
