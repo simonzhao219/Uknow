@@ -34,6 +34,10 @@
 --      訊息同 4 的格式。
 --   7. scheduler_health：基準＝20261112000001。唯一差異＝reconcile 多 healFailedStreak、
 --      healSkippedStreak（purge-photos 為 null，鍵不省略——scheduler-health.test.ts 雙向比對鍵集合）。
+--   8. invoke_internal_endpoint：基準＝20261112000001。唯一差異＝加 p_trigger（default 'pg_cron'，只收
+--      pg_cron／manual），body 與 vault_missing 列都用它（R5 P2-9）。先 drop 舊的單參數版：兩支並存時
+--      cron 的 invoke_internal_endpoint('reconcile') 會多載歧義、每輪失敗。cron.job 的指令字串在執行時
+--      才解析，同一 migration 交易內 drop＋create，指令不必改。
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -762,3 +766,57 @@ $$;
 
 revoke execute on function public.scheduler_health() from anon, authenticated, public;
 grant execute on function public.scheduler_health() to service_role;
+
+-- ------------------------------------------------------------
+-- 8. invoke_internal_endpoint（基準 20261112000001）
+-- ------------------------------------------------------------
+drop function if exists public.invoke_internal_endpoint(text);
+
+create or replace function public.invoke_internal_endpoint(
+  p_job     text,
+  p_trigger text default 'pg_cron'  -- 人工在 SQL Editor 驗證時帶 'manual'（R5 P2-9）
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_path text;
+  v_url text;
+  v_secret text;
+  v_id bigint;
+begin
+  -- 白名單：只打這兩支端點，不接受任意 URL。
+  v_path := case p_job
+    when 'reconcile' then '/internal/reconcile-pending-payments'
+    when 'purge-photos' then '/internal/purge-orphan-listing-photos'
+  end;
+  if v_path is null then
+    raise exception 'invoke_internal_endpoint: 未知的 job %', p_job;
+  end if;
+  -- github 補跑走 GitHub Actions、不經這支函式；只收這兩種，帳本才不會冒充。
+  if p_trigger is null or p_trigger not in ('pg_cron', 'manual') then
+    raise exception 'invoke_internal_endpoint: 未知的 trigger %', p_trigger;
+  end if;
+
+  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'uknow_api_base_url';
+  select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'uknow_internal_secret';
+  if coalesce(v_url, '') = '' or coalesce(v_secret, '') = '' then
+    insert into public.scheduled_job_runs (job, trigger, status, finished_at, error_code)
+    values (p_job, p_trigger, 'skipped', now(), 'vault_missing');
+    return null;
+  end if;
+
+  -- pg_net 非同步、不重試；逾時只代表 pg_net 不等了，結果以端點寫的帳本為準。
+  select net.http_post(
+    url := rtrim(v_url, '/') || v_path,
+    body := jsonb_build_object('trigger', p_trigger),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-internal-secret', v_secret),
+    timeout_milliseconds := 150000
+  ) into v_id;
+  return v_id;
+end;
+$$;
+
+revoke execute on function public.invoke_internal_endpoint(text, text) from anon, authenticated, public;
