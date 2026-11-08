@@ -16,7 +16,7 @@ import type {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { privateClass } from '../../../utils/analytics/privacy';
-import type { PaymentsData, ReferralTreeLoaders } from './loaders';
+import type { LedgerData, PaymentsData, ReferralTreeLoaders } from './loaders';
 import { ReferralAuditSheet } from './ReferralAuditSheet';
 
 afterEach(cleanup);
@@ -96,6 +96,7 @@ function loaders(over: Partial<ReferralTreeLoaders> = {}): ReferralTreeLoaders {
     search: vi.fn(),
     loadMember: vi.fn(async () => audit()),
     loadPayments: vi.fn(async (): Promise<PaymentsData> => ({ total: 0, items: [] })),
+    loadLedger: vi.fn(async (): Promise<LedgerData> => ({ total: 0, items: [], findings: [] })),
     ...over,
   };
 }
@@ -472,5 +473,238 @@ describe('ReferralAuditSheet 獨立審查補強', () => {
       }),
     );
     expect(await screen.findByText('2026/11/13 到期（剩 5 天）')).toBeTruthy();
+  });
+});
+
+describe('ReferralAuditSheet 點數來源（S3b）', () => {
+  function ledgerRow(over: Partial<LedgerData['items'][number]> = {}): LedgerData['items'][number] {
+    return {
+      id: 't1',
+      at: '2026-11-01T04:00:00Z',
+      type: 'referral_reward',
+      sourceCategory: 'referral_signup',
+      amount: 300,
+      balanceAfter: 300,
+      description: '推薦獎勵',
+      generation: 1,
+      refereeId: 'p1',
+      refereeName: '付款人甲',
+      eventAt: '2026-11-01T03:59:00Z',
+      withdrawalId: null,
+      withdrawalStatus: null,
+      subscriptionId: 's1',
+      finding: null,
+      ...over,
+    };
+  }
+
+  it('逐列寫分類、金額與異動後餘額；推薦獎勵寫第幾代與付款人', async () => {
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 2,
+          findings: [],
+          items: [
+            ledgerRow({
+              id: 't2',
+              type: 'withdrawal',
+              sourceCategory: 'withdrawal',
+              amount: -1015,
+              balanceAfter: -715,
+              generation: null,
+              refereeId: null,
+              refereeName: null,
+              eventAt: null,
+              withdrawalId: 'w1',
+              withdrawalStatus: 'pending',
+            }),
+            ledgerRow(),
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    await sec.findByText('已顯示 2 / 2 筆');
+    const rows = sec.getAllByRole('listitem');
+    expect(within(rows[0]).getByText('提領 Point')).toBeTruthy();
+    expect(within(rows[0]).getByText('−1,015 P')).toBeTruthy();
+    expect(within(rows[0]).getByText('餘額 −715 P')).toBeTruthy();
+    expect(within(rows[0]).getByText('提領單：審核中')).toBeTruthy();
+    expect(within(rows[1]).getByText('+300 P')).toBeTruthy();
+    expect(within(rows[1]).getByText(/第 1 代 · 付款人甲/)).toBeTruthy();
+    expect(sec.queryByText(/點數跨表核對不符/)).toBeNull();
+  });
+
+  it('核對不符時區塊頂部列出原因、該列加徽章，並寫清空競態說明', async () => {
+    renderSheet(
+      loaders({
+        loadMember: vi.fn(async () => audit({ anomalies: ['ledger_mismatch'] })),
+        loadLedger: vi.fn(async () => ({
+          total: 1,
+          findings: [
+            { kind: 'reset_amount' as const, transactionId: 't1', withdrawalId: null, info: false },
+            {
+              kind: 'refund_missing' as const,
+              transactionId: null,
+              withdrawalId: 'w9',
+              info: false,
+            },
+          ],
+          items: [
+            ledgerRow({
+              type: 'ledger_reset',
+              sourceCategory: 'ledger_reset',
+              amount: -300,
+              finding: 'reset_amount',
+            }),
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText('新約清空的金額與清空前的餘額不符')).toBeTruthy();
+    expect(sec.getByText('退件的提領沒有恰好一筆正確金額的退款')).toBeTruthy();
+    expect(sec.getByText(/別筆交易同時寫入/)).toBeTruthy();
+    expect(within(sec.getAllByRole('listitem').at(-1)!).getByText('核對不符')).toBeTruthy();
+  });
+
+  it('需要注意列出點數跨表核對不符，點了焦點移到點數來源標題', async () => {
+    renderSheet(
+      loaders({ loadMember: vi.fn(async () => audit({ anomalies: ['ledger_mismatch'] })) }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '點數跨表核對不符' }));
+    expect(document.activeElement?.textContent).toBe('點數來源');
+  });
+
+  it('延遲補沖只寫資訊，不列為核對不符', async () => {
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 1,
+          findings: [
+            { kind: 'reset_delayed' as const, transactionId: 't1', withdrawalId: null, info: true },
+          ],
+          items: [
+            ledgerRow({ type: 'ledger_reset', sourceCategory: 'ledger_reset', amount: -120 }),
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/^有 1 筆延遲補沖的清空/)).toBeTruthy();
+    expect(sec.getByText(/快照遺失時補沖 0，請對照系統告警/)).toBeTruthy();
+    expect(sec.queryByText(/點數跨表核對不符/)).toBeNull();
+  });
+
+  it('沒有紀錄寫空態；讀取失敗只影響這一區，重試後載入', async () => {
+    const loadLedger = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ total: 0, items: [], findings: [] });
+    renderSheet(loaders({ loadLedger }));
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText('點數來源讀取失敗')).toBeTruthy();
+    fireEvent.click(sec.getByRole('button', { name: '重試' }));
+    expect(await sec.findByText('帳本沒有紀錄')).toBeTruthy();
+    expect(screen.getByRole('region', { name: '推薦人鏈' })).toBeTruthy();
+  });
+
+  it('載入更多接著往下取，回來的結果以 id 去重', async () => {
+    const loadLedger = vi.fn(async (_id: string, p: { offset: number }) =>
+      p.offset === 0
+        ? { total: 3, findings: [], items: [ledgerRow({ id: 'a' })] }
+        : { total: 3, findings: [], items: [ledgerRow({ id: 'a' }), ledgerRow({ id: 'b' })] },
+    );
+    renderSheet(loaders({ loadLedger }));
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    fireEvent.click(await sec.findByRole('button', { name: '載入更多' }));
+    expect(await sec.findByText('已顯示 2 / 3 筆')).toBeTruthy();
+    expect(loadLedger).toHaveBeenLastCalledWith('u1', { limit: 20, offset: 1 });
+  });
+});
+
+describe('ReferralAuditSheet 點數來源實作審查補強', () => {
+  const base = {
+    id: 'r1',
+    at: '2026-11-01T04:00:00Z',
+    type: 'ledger_reset',
+    sourceCategory: 'ledger_reset',
+    amount: -300,
+    balanceAfter: 0,
+    description: '新約重置：帳本清空',
+    generation: null,
+    refereeId: null,
+    refereeName: null,
+    eventAt: '2026-11-01T03:59:00Z',
+    withdrawalId: null,
+    withdrawalStatus: null,
+    subscriptionId: 's1',
+    finding: null,
+  };
+
+  it('新約清空列寫觸發它的新約付款時點', async () => {
+    renderSheet(
+      loaders({ loadLedger: vi.fn(async () => ({ total: 1, findings: [], items: [base] })) }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/^新約付款 2026\/11\/01/)).toBeTruthy();
+  });
+
+  it.each([
+    ['withdrawal_debit', '提領單的帳本扣款不是恰好一筆，或金額不符'],
+    ['refund_unexpected', '未退件的提領卻有退款'],
+    ['orphan_debit', '有帳本扣款對不上這位會員的提領單'],
+    ['orphan_refund', '有退款列指向別人的提領單'],
+  ] as const)('核對不符 %s 寫出對應原因，並提醒可能在未載入的列', async (kind, text) => {
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 1,
+          findings: [{ kind, transactionId: null, withdrawalId: 'w1', info: false }],
+          items: [base],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(text)).toBeTruthy();
+    expect(sec.getByText(/尚未載入的列/)).toBeTruthy();
+  });
+});
+
+describe('ReferralAuditSheet 點數來源獨立審查補強', () => {
+  it('清空金額不符時說明也涵蓋批次自癒期間的清空', async () => {
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 0,
+          items: [],
+          findings: [
+            { kind: 'reset_amount' as const, transactionId: 't1', withdrawalId: null, info: false },
+          ],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/批次自癒期間的清空同樣可能有差/)).toBeTruthy();
+  });
+
+  it('延遲補沖有多筆時寫出實際筆數', async () => {
+    const delayed = (id: string) => ({
+      kind: 'reset_delayed' as const,
+      transactionId: id,
+      withdrawalId: null,
+      info: true,
+    });
+    renderSheet(
+      loaders({
+        loadLedger: vi.fn(async () => ({
+          total: 0,
+          items: [],
+          findings: [delayed('a'), delayed('b')],
+        })),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '點數來源' }));
+    expect(await sec.findByText(/^有 2 筆延遲補沖的清空/)).toBeTruthy();
   });
 });

@@ -1312,6 +1312,7 @@ app.get('/admin/referral-tree/nodes', adminReferralTreeHandlers.nodes);
 app.get('/admin/referral-tree/search', adminReferralTreeHandlers.search);
 app.get('/admin/referral-tree/members/:id', adminReferralTreeHandlers.member);
 app.get('/admin/referral-tree/members/:id/payments', adminReferralTreeHandlers.payments);
+app.get('/admin/referral-tree/members/:id/ledger', adminReferralTreeHandlers.ledger);
 
 // ============================================================
 // system_alerts 的出口（見 system-alerts-api.test.ts）：這張表自

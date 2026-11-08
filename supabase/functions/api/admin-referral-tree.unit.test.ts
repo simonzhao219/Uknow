@@ -9,6 +9,7 @@ import { assert, assertEquals } from 'jsr:@std/assert@1';
 import { Hono } from 'npm:hono@4';
 import { assertShape } from '../_shared/api-contract.ts';
 import {
+  AdminReferralLedgerResponseSchema,
   AdminReferralMemberAuditResponseSchema,
   AdminReferralNodesResponseSchema,
   AdminReferralPaymentsResponseSchema,
@@ -60,6 +61,7 @@ function setup(opts: {
   app.get('/search', h.search);
   app.get('/members/:id', h.member);
   app.get('/members/:id/payments', h.payments);
+  app.get('/members/:id/ledger', h.ledger);
   return { app, calls };
 }
 
@@ -245,6 +247,62 @@ Deno.test('referral-tree：第二道守門拒絕 → 依回傳狀態 401／403 �
     }
     assertEquals(calls.length, 0);
   }
+});
+
+Deno.test('referral-tree members/:id/ledger：轉成契約形狀並把分頁轉成 RPC 參數', async () => {
+  const { app, calls } = setup({
+    data: {
+      total: 2,
+      items: [{
+        id: ID,
+        at: '2026-11-01T00:00:00Z',
+        type: 'withdrawal',
+        source_category: 'withdrawal',
+        amount: -1015,
+        balance_after: 985,
+        description: '提領',
+        generation: null,
+        referee_id: null,
+        referee_name: null,
+        event_at: null,
+        withdrawal_id: ID,
+        withdrawal_status: 'pending',
+        subscription_id: null,
+        finding: 'withdrawal_debit',
+      }],
+      findings: [{
+        kind: 'withdrawal_debit',
+        transaction_id: null,
+        withdrawal_id: ID,
+        info: false,
+      }],
+    },
+  });
+  const body = await (await app.request(`/members/${ID}/ledger?limit=20&offset=20`)).json();
+  assertShape(AdminReferralLedgerResponseSchema, body, 'ledger');
+  assertEquals(calls[0], {
+    fn: 'admin_referral_ledger_audit',
+    args: { p_user: ID, p_limit: 20, p_offset: 20 },
+  });
+  assertEquals(body.data.items[0].balanceAfter, 985);
+  assertEquals(body.data.findings[0].withdrawalId, ID);
+});
+
+Deno.test('referral-tree ledger：壞 id 400、查無 404、錯誤 500、守門拒絕 403', async () => {
+  const bad = await setup().app.request('/members/nope/ledger');
+  assertEquals(bad.status, 400);
+  await bad.body?.cancel();
+  const missing = await setup({ data: null }).app.request(`/members/${ID}/ledger`);
+  assertEquals(missing.status, 404);
+  await missing.body?.cancel();
+  const failed = await setup({ error: { message: 'boom' } }).app.request(`/members/${ID}/ledger`);
+  assertEquals(failed.status, 500);
+  await failed.body?.cancel();
+  const { app, calls } = setup({ authorize: 403 });
+  const denied = await app.request(`/members/${ID}/ledger`);
+  assertEquals(denied.status, 403);
+  await denied.body?.cancel();
+  assertEquals(calls.length, 0);
 });
 
 Deno.test('admin-referral-tree.ts：不 import ./index.ts（依賴只經 deps 注入）', async () => {

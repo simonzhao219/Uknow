@@ -15,6 +15,7 @@ import type { WithdrawalQuery } from './admin/WithdrawalManagement';
 import type {
   AdminReferralMemberAuditResponse,
   AdminReferralNodesResponse,
+  AdminReferralLedgerResponse,
   AdminReferralPaymentsResponse,
   AdminReferralSearchResponse,
 } from '@admin-referral-contract';
@@ -138,6 +139,13 @@ const REFERRAL_TREE_API: ReferralTreeLoaders = {
     const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     const res = await apiRequestJson<AdminReferralPaymentsResponse>(
       buildApiUrl(`/admin/referral-tree/members/${encodeURIComponent(id)}/payments?${qs}`),
+    );
+    return res.data;
+  },
+  async loadLedger(id, { limit, offset }) {
+    const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const res = await apiRequestJson<AdminReferralLedgerResponse>(
+      buildApiUrl(`/admin/referral-tree/members/${encodeURIComponent(id)}/ledger?${qs}`),
     );
     return res.data;
   },

@@ -64,6 +64,7 @@ const MEMBERS = {
     search: vi.fn(),
     loadMember: vi.fn(),
     loadPayments: vi.fn(),
+    loadLedger: vi.fn(),
   },
 };
 

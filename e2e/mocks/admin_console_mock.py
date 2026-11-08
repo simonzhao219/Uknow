@@ -244,7 +244,7 @@ def build_referral_member_audit(node: dict) -> dict:
             ],
         },
         "referrerMismatch": True,
-        "anomalies": ["missing_reward", "recipient_mismatch", "cycle"],
+        "anomalies": ["missing_reward", "recipient_mismatch", "cycle", "ledger_mismatch"],
         "paymentSummary": {"missingCount": 2, "mismatchCount": 1},
     }
 
@@ -279,6 +279,36 @@ def build_referral_payments() -> dict:
         },
     ]
     return {"total": 25, "items": items}
+
+
+def build_referral_ledger() -> dict:
+    """點數來源（S3b）：推薦獎勵、提領扣款、新約清空，含兩種核對不符與延遲補沖資訊。"""
+    def row(**over):
+        base = {
+            "id": "lg-1", "at": "2026-11-01T02:00:00.000Z", "type": "referral_reward",
+            "sourceCategory": "referral_signup", "amount": 12000, "balanceAfter": 1234567,
+            "description": "推薦獎勵", "generation": 1, "refereeId": "payer-1",
+            "refereeName": _TREE_NAME + "付款人", "eventAt": "2026-11-01T01:59:00.000Z",
+            "withdrawalId": None, "withdrawalStatus": None, "subscriptionId": "sub-1",
+            "finding": None,
+        }
+        base.update(over)
+        return base
+    items = [
+        row(id="lg-3", type="ledger_reset", sourceCategory="ledger_reset", amount=-1234567,
+            balanceAfter=0, generation=None, refereeId=None, refereeName=None, eventAt=None,
+            finding="reset_amount"),
+        row(id="lg-2", type="withdrawal", sourceCategory="withdrawal", amount=-100015,
+            balanceAfter=1222567, generation=None, refereeId=None, refereeName=None,
+            eventAt=None, withdrawalId="w-1", withdrawalStatus="awaiting_collection"),
+        row(),
+    ]
+    findings = [
+        {"kind": "reset_amount", "transactionId": "lg-3", "withdrawalId": None, "info": False},
+        {"kind": "refund_missing", "transactionId": None, "withdrawalId": "w-9", "info": False},
+        {"kind": "reset_delayed", "transactionId": "lg-0", "withdrawalId": None, "info": True},
+    ]
+    return {"total": 42, "items": items, "findings": findings}
 
 
 def route_admin_referral_tree(context) -> None:
@@ -316,4 +346,8 @@ def route_admin_referral_tree(context) -> None:
     context.route(
         f"{API_BASE}/admin/referral-tree/members/*/payments**",
         lambda route: respond(route, build_referral_payments()),
+    )
+    context.route(
+        f"{API_BASE}/admin/referral-tree/members/*/ledger**",
+        lambda route: respond(route, build_referral_ledger()),
     )

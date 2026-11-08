@@ -57,6 +57,7 @@ const ADMIN_ROUTES = [
   ['GET', '/api/admin/referral-tree/search'],
   ['GET', '/api/admin/referral-tree/members/00000000-0000-0000-0000-000000000000'],
   ['GET', '/api/admin/referral-tree/members/00000000-0000-0000-0000-000000000000/payments'],
+  ['GET', '/api/admin/referral-tree/members/00000000-0000-0000-0000-000000000000/ledger'],
 ] as const;
 
 // 把路徑參數與 dummy uuid 都正規化成同一個佔位，才能拿「method＋路徑」比對。

@@ -45,6 +45,7 @@ function makeLoaders(over: Partial<ReferralTreeLoaders> = {}): ReferralTreeLoade
     search: vi.fn(async (): Promise<SearchData> => ({ total: 0, matches: [] })),
     loadMember: vi.fn(),
     loadPayments: vi.fn(),
+    loadLedger: vi.fn(),
     ...over,
   };
 }

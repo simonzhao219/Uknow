@@ -2,6 +2,7 @@
 // AdminConsole → MemberManagement 整包注入（規劃 §3，不在 MemberManagementProps 上逐一加欄位）。
 import type {
   AdminReferralMemberAudit,
+  AdminReferralLedgerResponse,
   AdminReferralNodesResponse,
   AdminReferralPaymentsResponse,
   AdminReferralSearchResponse,
@@ -14,6 +15,7 @@ export type NodesData = Omit<AdminReferralNodesResponse['data'], 'unplaceableCou
 };
 export type SearchData = AdminReferralSearchResponse['data'];
 export type PaymentsData = AdminReferralPaymentsResponse['data'];
+export type LedgerData = AdminReferralLedgerResponse['data'];
 
 export interface NodesParams {
   parentId?: string | null;
@@ -28,4 +30,6 @@ export interface ReferralTreeLoaders {
   search: (params: { q: string; limit: number; offset: number }) => Promise<SearchData>;
   loadMember: (id: string) => Promise<AdminReferralMemberAudit>;
   loadPayments: (id: string, params: { limit: number; offset: number }) => Promise<PaymentsData>;
+  /** S3b：點數來源明細與跨表核對。 */
+  loadLedger: (id: string, params: { limit: number; offset: number }) => Promise<LedgerData>;
 }
