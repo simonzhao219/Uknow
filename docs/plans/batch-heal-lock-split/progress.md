@@ -10,15 +10,16 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | 死鎖重現 → 單筆交易 heal | ⬜ 未開始 | | |
-| 2 | 發獎失敗改 error | ⬜ 未開始 | | |
-| 3 | 帳本 summary：unknownByReason、heal | ⬜ 未開始 | | |
-| 4 | scheduler_health streak＋看門狗 | ⬜ 未開始 | | |
-| 5 | invoke_internal_endpoint(p_job, p_trigger) | ⬜ 未開始 | | |
-| 6 | 收尾 | ⬜ 未開始 | | |
+| 2 | per-user 逐筆（W6-13） | ⬜ 未開始 | | |
+| 3 | 發獎失敗改 error（W6-10、W6-12） | ⬜ 未開始 | | |
+| 4 | 帳本 summary：unknownByReason、heal | ⬜ 未開始 | | |
+| 5 | scheduler_health streak | ⬜ 未開始 | | |
+| 6 | invoke_internal_endpoint(p_job, p_trigger) | ⬜ 未開始 | | |
+| 7 | 收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-規劃完成，等 /review-plan 報告與業主裁決 Q1～Q3；業主在本 session 親打 `/tdd-implement batch-heal-lock-split` 才開工。
+plan r2 已併入 W6-10～14 與 13 條 P1，重審後等主 session 親審；業主在本 session 親打 `/tdd-implement batch-heal-lock-split` 才開工。
 
 ## Blockers（逃生口紀錄）
 
