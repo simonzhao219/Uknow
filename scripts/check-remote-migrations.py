@@ -11,7 +11,9 @@ Edge Function 由 deploy-supabase.yml 部署，兩者各走各的。新 Edge 若
 尚未晉升的版本，沒有歷史漂移。
 
 讀遠端：Management API `GET /v1/projects/{ref}/database/migrations`（唯讀）。刻意不用
-`/database/query`——那個端點能跑任意 SQL。
+`/database/query`——那個端點能跑任意 SQL。回應形狀已實測（2026-11-08，develop，PR #526
+的暫時探針 run 42508744727）：HTTP 200、陣列、元素只有 `version`（14 位數字字串）與 `name`
+兩鍵、共 97 筆依版本排序；self-test 的「真實回應樣本」案例照這個形狀寫。
 
 結果三分（退出碼）：
   0 齊 —— 放行部署
@@ -181,7 +183,12 @@ def _fetcher(*responses: object) -> Callable[[], object]:
     return fetch
 
 
+# 2026-11-08 develop 實測的元素形狀（只有 version、name 兩鍵，version 為字串）。
+REAL_SAMPLE = [{"version": v, "name": f"m{i}"} for i, v in enumerate(REPO)]
+
 CHECK_CASES: list[tuple[str, Callable[[], object], float, int]] = [
+    ("真實回應樣本：鍵只有 version 與 name", _fetcher(REAL_SAMPLE), 600, OK),
+    ("真實回應樣本缺本次新增的一支", _fetcher(REAL_SAMPLE[:2]), 0, MISSING),
     ("全齊", _fetcher(_rows(*REPO)), 600, OK),
     ("遠端多出不影響", _fetcher(_rows(*REPO, "20990101000001")), 600, OK),
     ("版本為數字型別也比得到", _fetcher(_rows(*(int(v) for v in REPO))), 600, OK),
