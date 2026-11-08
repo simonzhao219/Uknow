@@ -132,7 +132,7 @@ export function ServiceProviderDetail({
   }, [status]);
 
   // ── 換篇（W5-20～22、27、W6-20）：navigate、進場動畫、頭尾回彈都在 useBrowseNav ──
-  const { motionRef, contentRef, goBrowse, arrivedByBrowse, dir } = useBrowseNav({
+  const { motionRef, goBrowse, arrivedByBrowse, dir } = useBrowseNav({
     neighbors,
     onBrowseNotice,
   });
@@ -198,7 +198,7 @@ export function ServiceProviderDetail({
   const shell = (variant: 'page' | 'notFound', body: ReactNode) => (
     <div
       ref={gestureRef}
-      className={`max-w-4xl mx-auto ${variant === 'notFound' ? 'text-center py-12' : 'space-y-6'} ${gestureClass}`}
+      className={`max-w-4xl mx-auto overflow-x-clip ${variant === 'notFound' ? 'text-center py-12' : 'space-y-6'} ${gestureClass}`}
     >
       {variant === 'notFound'
         ? browseNav && <div className="flex justify-end">{browseNav}</div>
@@ -285,7 +285,7 @@ export function ServiceProviderDetail({
 
   return shell(
     'page',
-    <div ref={contentRef} data-browse-content="" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div data-browse-content="" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
       <PhotoCarousel
         photos={serviceProvider.photos}

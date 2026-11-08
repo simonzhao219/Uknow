@@ -1,10 +1,10 @@
 import { useEffect, useRef, type RefObject } from 'react';
 import {
-  SPRING_MS,
   dragOffset,
   isInteractiveStart,
   lockAxis,
   settle,
+  springTo,
   startsInsideHorizontalScroller,
 } from '../../utils/browseDrag';
 import { browseKeyDirection } from '../../utils/browseKeys';
@@ -101,15 +101,7 @@ export default function BrowseGestures({
     const springBack = () => {
       cancelFrame();
       const target = dragTargetRef.current;
-      if (!target) return;
-      const from = target.style.transform;
-      target.style.transform = '';
-      if (from && !prefersReducedMotion() && typeof target.animate === 'function') {
-        target.animate([{ transform: from }, { transform: 'translateX(0)' }], {
-          duration: SPRING_MS,
-          easing: 'ease-out',
-        });
-      }
+      if (target) springTo(target, target.style.transform);
     };
     const abort = () => {
       start = null;

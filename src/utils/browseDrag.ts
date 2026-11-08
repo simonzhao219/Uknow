@@ -1,3 +1,4 @@
+import { prefersReducedMotion } from './motionPreference';
 import { type SwipeDirection, swipeIntent } from './swipeIntent';
 
 // 換篇跟手的純函式與常數。數值是手感起步值（W6-20），實機後在這裡一處調整。
@@ -92,5 +93,15 @@ export function startsInsideHorizontalScroller(
   return false;
 }
 
-/** 從目前位移彈回 0（階段 5 stub：行為留空）。 */
-export function springTo(_el: HTMLElement, _from: string): void {}
+/**
+ * 從目前位移（from，例如 'translateX(-30px)'）彈回 0：先清掉 inline transform，再用 WAAPI 補一段
+ * 動畫。拖曳放開未換篇、頭尾再換篇的回彈都走這一個實作。減少動態或沒有位移時只清不動。
+ */
+export function springTo(el: HTMLElement, from: string): void {
+  el.style.transform = '';
+  if (!from || prefersReducedMotion() || typeof el.animate !== 'function') return;
+  el.animate([{ transform: from }, { transform: 'translateX(0)' }], {
+    duration: SPRING_MS,
+    easing: 'ease-out',
+  });
+}
