@@ -176,3 +176,4 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 03:30 | #526 develop 驗證：deploy-supabase run 42513390673 全綠，新步驟「確認 migration 已套用」success（2 秒）、部署＋`/health` sha 比對 success；develop 有 `20261117000001／2`，`prepare_payment_order` 只剩六參數版。補記：#521 合併後的 develop push CI（42469159038）紅於 static-checks、api-tests 的「安裝 Deno」504（外部暫時性，與 S3 同時段），該次 deploy 因此 skipped；後續 #525、#526 的 push CI 含同一份程式皆綠並已部署，不需補跑 | 業主決定晉升時點 |
 | 11/09 03:30 | W6-4 複查：正式站照片清理 11/08 19:17 UTC（id 36）**仍 dryRun=true**（0 孤兒、0 刪除，影響為零）→ 業主尚未補設或未生效 | 業主補設，再看 11/09 19:17 UTC |
 | 11/09 03:35 | 業主裁 **W6-33**（先手機實測 S4 再晉升）、**W6-34**（馬上補設 PHOTO_PURGE_LIVE）。主 session 排 11/09 19:25 UTC 複查 dryRun | 等業主實測回報 → 開晉升 PR |
+| 11/09 06:40 | 業主手機實測 S4 回報「動畫 OK」（W6-33 達成）。開**晉升 PR #527**（develop c08bf88 → main，draft、已訂閱；journey 全套跑中）。晉升前正式站基線：pending 單 0、48 小時 system_alerts 0、最後 migration `20261113000003`。#519 於晉升後合併 | journey 綠 → 合 main → 4a 核對 → 業主核准 production → 乙段 |
