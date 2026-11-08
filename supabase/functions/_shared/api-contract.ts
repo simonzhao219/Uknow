@@ -162,6 +162,9 @@ export const RenewalInfoSchema = obj({
   // S6（W5-51）：新約留空時會不會綁預設推薦人（只給布林，§7.4 不揭露碼與姓名）。
   // optional：前端先上、Edge 後上的空窗不得讓整個 renewal 解析失敗；缺值視為 false（keep）。
   freshDefaultReferrerAvailable: optional(bool()),
+  // 第 6 波 S6（W5-63、W6-28）：預設推薦人可用且就是現任推薦人＝留空推薦人不變（確認框寫
+  // 「維持不變」）。只給布林、不揭露姓名與碼。預設不可用或讀取失敗時省略（W6-30）；缺值走既有文案。
+  freshDefaultReferrerIsCurrent: optional(bool()),
 });
 export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
 

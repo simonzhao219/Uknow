@@ -3443,6 +3443,23 @@ app.get('/subscriptions/status', async (c) => {
       if (!freshDefault.ok && freshDefault.reason === 'read_failed') {
         throw new Error('default referrer 查詢失敗');
       }
+      // 第 6 波 S6（W5-63）：預設推薦人就是現任推薦人 → 新約留空推薦人不變。純文案欄位：讀取失敗
+      // 只省略欄位、前端走既有文案（W6-30；#360「不做部分降級」的明示例外——缺值不捏造事實）。
+      let freshDefaultIsCurrent: boolean | undefined;
+      if (freshDefault.ok) {
+        const { data: me, error: meErr } = await sb().from('profiles')
+          .select('referred_by_user_id')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (meErr) {
+          console.error(
+            '[subscriptions/status] 讀現任推薦人失敗，省略 freshDefaultReferrerIsCurrent:',
+            meErr,
+          );
+        } else {
+          freshDefaultIsCurrent = freshDefault.referrerUserId === (me?.referred_by_user_id ?? null);
+        }
+      }
 
       // 補繳付款的獨有特徵：付款當下算出的效期已在過去。正常續約/首購的
       // end_date 恆在付款時點之後，永遠是 false（AC-8：老會員自然再到期
@@ -3479,6 +3496,9 @@ app.get('/subscriptions/status', async (c) => {
         freshForfeitPoints: Math.max(bal?.available ?? 0, 0),
         freshForfeitReferrals: tp?.total_referrals ?? 0,
         freshDefaultReferrerAvailable: freshDefault.ok,
+        ...(freshDefaultIsCurrent === undefined
+          ? {}
+          : { freshDefaultReferrerIsCurrent: freshDefaultIsCurrent }),
       };
     }
 
