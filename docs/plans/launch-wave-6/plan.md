@@ -39,6 +39,14 @@
 | W6-5 | W5-70 推薦樹需求 | **節點欄位**：身分與會籍（姓名、推薦碼、第幾代、會籍狀態、到期日、推薦計畫與否）＋**加入推薦計畫的時間**、獎金與點數（各代獲得、餘額、累計）、任務與提領（進度、審核中／已匯款）、換線紀錄（`referral_pair_history`）——全選。**查帳情境**：某筆付款獎金有沒有發對、某會員的整條線、提領前核對點數來源、會員來問為什麼沒獎金——全選。**大樹瀏覽**：搜尋＋逐層展開（被推翻：加匯出 CSV；一次展開整棵）。**自動標異常**：付款未發獎、成環與自領、點數對不上帳（未選：先不要標） |
 | W6-6 | W5-70 分段 | **切兩段、同一份規劃書、兩支 PR**。S3a（必上）：樹＋搜尋逐層展開＋全部節點欄位＋付款查三代獎金＋換線紀錄＋標「付款未發獎」「成環／自領」。S3b（看進度）：點數對帳（餘額 ≠ 獲得 − 提領）＋點數來源明細（被推翻：一支做完全部必上；S3b 延第 7 波） |
 | W6-7 | W5-70 預設入口 | **搜尋會員看整條線**：預設畫面是搜尋框＋頂層樹，其他情境都從「先找到一個人」進入（被推翻：異常清單；依訂單查獎金） |
+| W6-10 | S1：發獎錯誤升 error 告警的範圍 | **非預期錯誤全部升級**（unique_violation 除外）（被推翻：只升 40P01／40001） |
+| W6-11 | S1：heal 失敗要不要推 LINE | **只寫帳本＋`scheduler_health`，不推 LINE**（維持 W5-18）；amount_mismatch 不計入連續失敗（被推翻：整批失敗＋連 3 輪推；只整批失敗推） |
+| W6-12 | S1：發獎失敗告警文案 | **改「請人工核對並補發」**，前 200 字含結論＋下一步，不承諾自動補發（被推翻：維持「會自動補發」） |
+| W6-13 | S1：per-user 自癒（`/payuni/result`、`/profile`）也改逐筆 | **一起改**，加驗收測試（被推翻：本波不動） |
+| W6-15 | S3：停權／到期／未加入推薦計畫現行照發 | **不改規則，樹上如實寫「照發，但不可提領」**；成環停發如實標示（被推翻：改規則停發） |
+| W6-16 | S3：換線紀錄 | **列可取得的**：曾有過的推薦人（無順序）＋新約付款單事件（有時間）；完整換線事件表列第 7 波候選（被推翻：本波加事件表） |
+| W6-17 | S3：異常清單入口 | **不做**，異常只標在節點與詳情（被推翻：做次要入口） |
+| W6-18 | S3b：點數對帳口徑 | **改跨表核對**：每筆提領在帳本有對應扣款／退款、無孤兒 `withdrawal_id`、`ledger_reset` 金額正確（被推翻：只做點數來源明細） |
 
 **主 session 定的**
 
@@ -46,6 +54,9 @@
 |---|---|---|
 | W6-8 | S1 併入範圍 | R5 P2-7（summary 加 `unknownByReason`）、P2-8（heal 摘要寫進帳本 summary＝pay P2-14）、P2-9（`invoke_internal_endpoint` 加 `p_trigger text default 'pg_cron'`）**全併 S1**：同在 `reconcile-handler.ts`／`scheduled_job_runs` 一區，拆開會三支 PR 互相 rebase。P2-9 上線前，人工乙段驗證照 R5 建議在 §8 註明「此列是人工驗證」 |
 | W6-9 | S5 資料轉換 | 正式站 0 筆含「南鄉」，migration 仍要寫（develop 與日後資料），以 `array_replace` 冪等轉換；不需要停機或業主核准窗口 |
+| W6-14 | S1 舊 wrapper `complete_paid_pending_orders` 何時 drop | **交 S6 drop**；S1 保留並在註解寫明退場由 S6 |
+| W6-19 | S3 Q4～Q7 | 樹顯示「第 N 層」、查帳「第 1／2／3 代」、推薦人鏈「推薦人／往上第 N 位」；樹與搜尋只收曾訂閱過或有推薦對象者；S3a 不動 `pay_referral_generations`，以等價測試釘住；admin-gate 改自動列舉路由（順修 ops P2-4） |
+| W6-20 | S4 Q1～Q5 | WAAPI＋inline transform；手感數值照規劃起步、實測後微調；減少動態不保留淡入；bundle 超標授權 entry raw +2 kB／gzip +0.5 kB（PR 附實測）；手機實測三項列 PR 內文 |
 
 ## 1. 時程
 
@@ -111,6 +122,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | —（規劃已推） | 規劃交件，等業主裁決 |
 | S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
 | S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃交件，等業主裁決 |
+| S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | — | 規劃交件，修訂中 |
 | S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -123,3 +135,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 09:35 | S1 交規劃（`feature/batch-heal-lock-split`，/review-plan P0 0、P1 13、P2 15）：Edge 端逐筆呼叫單筆 RPC、舊批次函式留 wrapper；Q1～Q5 待業主。主 session 代跑正式站：pending＋PayUni SUCCESS 0 筆、近 30 天 system_alerts 0 列（不需人工補發） | 收業主裁決 |
 | 11/08 09:35 | S3 交規劃（#521 draft，/review-plan P0 0、P1 16、P2 16）。發現：停權／到期／未加入推薦計畫現行照發獎金（只是不能提領）；「自領停發」在程式裡是成環停發；`referral_pair_history` 不是換線紀錄。Q1～Q5、Q8 待業主；Q6（S3a 不動發獎函式、等價測試）、Q7（admin-gate 自動列舉路由，順修 ops P2-4）主 session 同意 | 收業主裁決 |
 | 11/08 09:50 | S2 交 **#522**：P2-1～4，同類掃描另修 `/auth/reset-registration` 的 `.json()` 容錯。主 session 審：無 P0／P1；P2：自己的碼應回專屬文案「不能使用自己的推薦碼」→ S2 已改。偏離：未走紅綠燈相位（PR 內文寫明）。CI 綠 → **#522 合進 develop（e778f75）**。首批已有合併 → 照 W6-2 開 **S4** | 等 S4 規劃；S1、S3 收業主裁決 |
+| 11/08 10:05 | S4 交規劃（/review-plan P0 0、P1 11 組、P2 9 組；純前端，WAAPI 進場、手勢跟手）。業主裁 **W6-10～13**（S1）、**W6-15～18**（S3）；主 session 定 W6-14、W6-19、W6-20（S4）。已轉達 S1、S3、S4 修訂 plan | S1、S3、S4 修訂 → 主 session 親審 → 業主親打 `/tdd-implement` |
