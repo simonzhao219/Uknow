@@ -264,7 +264,7 @@ function reconcileRow(minutesAgo: number, heal: Heal | null, over: Record<string
   };
 }
 
-Deno.test('scheduler-health：heal 連續失敗三輪 → healFailedStreak＝3，github 與 vault_missing 列不計', async () => {
+Deno.test('scheduler-health：heal 連續失敗三輪 → streak＝3，github／vault_missing 列不計', async () => {
   await resetLedger();
   await seed([
     reconcileRow(300, null), // 本案上線前的舊列
