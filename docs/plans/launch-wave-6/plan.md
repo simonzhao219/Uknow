@@ -68,6 +68,7 @@
 | W6-29 | S6：自己填碼剛好填到預設推薦人者，新約留空付款後標成預設帶入 | **接受**（被推翻：推薦人實際改變才設旗標）（業主 2026-11-08） |
 | W6-30 | S6 Q2／Q3／Q5／Q7 | drop wrapper（W6-14）延第 7 波，等正式站跑過 S1 的 Edge 一輪；#514 P2-3 競態本波不處理、規格書寫明；status 現任推薦人讀取失敗降級成欄位缺；workflow 規則 14＋timeout 都做 |
 | W6-31 | S6 R2-9：自動綁預設者手動填入＝現任的碼，確認框寫「將改為」與留空的「維持不變」不一致 | **接受**，規格書 §6.2 寫一句；改寫成「維持不變」會讓人逐碼試出自己的預設推薦人，與 W6-28 衝突 |
+| W6-32 | S3b bundle 總 raw 1978→1983 | 核准：增量全在後台 lazy chunk、entry 不變 |
 
 ## 1. 時程
 
@@ -164,3 +165,4 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 | 11/08 18:00 | S3 修 #521 獨立審查（P0 renderLayer 帶祖先路徑；P1 焦點回名稱鈕、profiles≠edge 判無法判定；P2 1～6；W6-26），rebase 到 1bcc377、CI 全綠；主 session 核 P0 修法 → **#521 合進 develop（47cf195）**。**本波必上四項（S1、S2、S3a、S5）全數合併**。bundle total 1977.1／1978、entry gzip 316／316 已頂上限 | S3b 施工；S6 規劃 v2；業主手機實測 S4、補設 PHOTO_PURGE_LIVE |
 | 11/08 18:00 | S6 交規劃（P0 0、P1 8、P2 15）。業主裁 **W6-27～29**；主 session 定 **W6-30**。代查：正式站 schema_migrations 91 支（缺的正是本波未晉升 6 支），develop 97 支與 repo 逐支相同 → 無歷史漂移；兩環境 pending fresh 單 0 | S6 修 plan v2 → 主 session 親審 → 業主親打 |
 | 11/08 18:25 | S6 plan v2.1（5726e4eb；第 2 輪四視角 P0 0、P1 2 皆處置）主 session 親審通過，定 **W6-31**；施工提醒：Management API migrations 端點要以 develop 真實回應驗證格式後才合 | 業主到 S6 親打 `/tdd-implement renewal-deploy-closeout` |
+| 11/08 19:00 | S3b 交 **#525**（CI 綠；階段 10 紅燈撞 setup-deno 504 無 CI 證據、已如實記錄；實作審查 P1 2 已修）。主 session 定 **W6-32**，派獨立 Opus 審查：**P0 0、P1 0、P2 8**（四條核對對照現行寫入函式核實、0005 對 0004 唯一差異 ledger_mismatch、突變會紅）。P2-1 批次自癒期間清空可能誤報 → 主 session 代查正式站 `reward_transactions` 無任何 ledger_reset／adjustment／withdrawal 列，只補說明；其餘 P2（孤兒擴到 adjustment、延遲補沖筆數、重複扣款與真寫入函式測試、姓名快照、退款列徽章、刪規劃檔）本 PR 修 | S3 修 → CI 綠 → 合 #525 |
