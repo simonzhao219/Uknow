@@ -55,7 +55,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25＝10（確認 migration 的輪詢上限，--max-wait 600）＋約 3（部署重試）＋約 2（煙霧測試）＋餘裕。
+    # production 的人工核准等待不計入 job timeout。改任一項時重算這個數字。
+    timeout-minutes: 25
     permissions:
       contents: read
       issues: write
@@ -118,6 +120,21 @@ jobs:
           fi
           echo "SUPABASE_PROJECT_REF=$ref_from_git" >> "$GITHUB_ENV"
           echo "分支 $DEPLOY_BRANCH → project $ref_from_git"
+
+      # ----------------------------------------------------------------
+      # 部署前確認目標環境已套用 repo 內每一支 migration（W5-62；第 6 波 S6）。
+      #
+      # Migration 由 Supabase 原生整合套用，Edge 由本 workflow 部署，兩者各走各的。
+      # 新 Edge 先於它依賴的 migration 上線時，建單等 RPC 會全部 500（第 5 波 #514
+      # 審查 P2-2）——之前靠晉升清單 4a 人工查 schema_migrations。整合通常在 CI 跑完前
+      # 就套好；晚到時腳本每 30 秒重讀、最多等 10 分鐘。讀不到（401／5xx／逾時／格式
+      # 不符）立即失敗：讀不到不等於沒套，但也不能當成套了。
+      # 必須排在「寫入 DEPLOY_SHA」之前、不得加 continue-on-error／if:／|| true
+      # （check-workflows.py 規則 14）。輪詢期間同分支有新 push 會因 cancel-in-progress
+      # 取消本次——預期語意，新的部署會重跑這一步。
+      # ----------------------------------------------------------------
+      - name: 確認 migration 已套用
+        run: python3 scripts/check-remote-migrations.py --project-ref "$SUPABASE_PROJECT_REF" --max-wait 600
 
       # 先寫 DEPLOY_SHA 再部署：函式啟動時就讀得到，煙霧測試才驗得出
       # 「線上跑的是這一版」而不只是「有東西回應」。

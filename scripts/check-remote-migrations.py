@@ -89,14 +89,41 @@ def check(
     max_wait_s: float,
     interval_s: float,
 ) -> tuple[int, str]:
-    """（紅燈 stub）"""
-    return OK, ""
+    """輪詢到齊或逾時。讀取錯誤立即回 UNREADABLE，不輪詢。"""
+    waited = 0.0
+    while True:
+        try:
+            remote = parse_remote(fetch())
+        except ReadError as e:
+            return UNREADABLE, f"讀不到目標環境的 migration 套用紀錄（{e}）"
+        lacking = missing_versions(repo, remote)
+        if not lacking:
+            return OK, f"目標環境已套用 repo 內全部 {len(repo)} 支 migration"
+        if waited >= max_wait_s:
+            return MISSING, (
+                f"等了 {int(waited)} 秒，目標環境仍缺 {len(lacking)} 支 migration：{'、'.join(lacking)}"
+            )
+        sleep(interval_s)
+        waited += interval_s
 
 
 def http_fetch(project_ref: str, token: str) -> Callable[[], object]:
-    """（紅燈 stub）"""
     def fetch() -> object:
-        return []
+        req = urllib.request.Request(
+            f"{API_BASE}/{project_ref}/database/migrations",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
+                body = resp.read()
+        except urllib.error.HTTPError as e:
+            raise ReadError(f"HTTP {e.code}") from None
+        except Exception as e:  # 逾時、DNS、連線重置等一律正規化成「讀不到」
+            raise ReadError(type(e).__name__) from None
+        try:
+            return json.loads(body)
+        except ValueError:
+            raise ReadError("回應不是 JSON") from None
 
     return fetch
 

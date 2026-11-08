@@ -37,6 +37,9 @@ WORKFLOW_DIR = ROOT / ".github" / "workflows"
 STEP_START = re.compile(r"^(\s*)-\s+(uses|name)\s*:")
 # 負向 pattern:list item 的值以 ! 開頭(引號可有可無)
 NEGATED = re.compile(r"""^\s*-\s*['"]?!""")
+MIGRATION_GATE = re.compile(r"scripts/check-remote-migrations\.py")
+DEPLOY_SENSITIVE = re.compile(r"supabase\s+(secrets\s+set|functions\s+deploy)")
+GATE_BYPASS = re.compile(r"^\s*(continue-on-error|if)\s*:", re.MULTILINE)
 QUANTIFIER = re.compile(r"""^\s*predicate-quantifier\s*:\s*['"]?([A-Za-z]+)""")
 
 
@@ -288,6 +291,31 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
                 "(迴圈沒有 sleep 等於連環硬打限流)。"
             )
 
+    # 規則 14:deploy-supabase.yml 寫 DEPLOY_SHA 或部署 Edge 之前,必須先跑
+    #         scripts/check-remote-migrations.py,且那一步不得被改成不擋(W5-62)。
+    #         只看非註解行(同規則 12:_steps() 會把 step 前的註解歸給上一個 step)。
+    if filename == DEPLOY_GATE_WORKFLOW:
+        codes = [
+            "\n".join(l for l in bl.splitlines() if not l.lstrip().startswith("#"))
+            for bl in _steps(text)
+        ]
+        gate = next((i for i, c in enumerate(codes) if MIGRATION_GATE.search(c)), None)
+        first = next((i for i, c in enumerate(codes) if DEPLOY_SENSITIVE.search(c)), None)
+        if first is not None and (gate is None or gate > first):
+            found.append(
+                "deploy-supabase.yml 在寫 DEPLOY_SHA／部署 Edge 之前沒有先跑 "
+                "scripts/check-remote-migrations.py——新 Edge 先於它依賴的 migration 上線時,"
+                "建單等 RPC 會全部 500(第 5 波 #514 審查 P2-2、W5-62)。"
+                "修法:把確認 step 放在第一個 supabase secrets set／functions deploy 之前。"
+            )
+        if gate is not None:
+            block = codes[gate]
+            if GATE_BYPASS.search(block) or "|| true" in block:
+                found.append(
+                    "deploy-supabase.yml 的 migration 確認 step 帶 continue-on-error、if: 或 "
+                    "|| true——失敗時部署照樣繼續,這道閘門等於不存在。拿掉它們。"
+                )
+
     # 規則 13:`payment_mode: webhook` 同一行或上一行必須帶「暫時至 YYYY-MM-DD」且未過期
     lines = text.splitlines()
     for i, line in enumerate(lines):
@@ -457,7 +485,12 @@ DEPLOY_GATE_WORKFLOW = "deploy-supabase.yml"
 
 def required_workflow_violations(filenames: list[str]) -> list[str]:
     """規則 14 的前提:被管的 workflow 必須存在(改名會讓規則靜默失效)。"""
-    return []
+    if DEPLOY_GATE_WORKFLOW in filenames:
+        return []
+    return [
+        f"找不到 .github/workflows/{DEPLOY_GATE_WORKFLOW}——規則 14(部署前確認 migration)以這個檔名"
+        "為對象,改名後規則會靜默失效。改名時同步改 check-workflows.py 的 DEPLOY_GATE_WORKFLOW。"
+    ]
 
 
 REQUIRED_CASES: list[tuple[str, list[str], int]] = [
@@ -495,6 +528,10 @@ def scan() -> int:
         return 0  # 沒有 workflow 目錄視為通過
 
     fail = 0
+    names = [p.name for p in WORKFLOW_DIR.glob("*.yml")] + [p.name for p in WORKFLOW_DIR.glob("*.yaml")]
+    for msg in required_workflow_violations(names):
+        print(f"FAIL: {msg}")
+        fail = 1
     for path in sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml")):
         text = path.read_text(encoding="utf-8")
         for msg in list(violations(text)) + naming_violations(text, path.name):
