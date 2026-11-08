@@ -13,7 +13,7 @@
 | 2 | 樹節點／搜尋 RPC | ✅ 綠（CI 3437af9b：含 in_scope 修正後全過） | fcdf06a9（CI api-tests：11 failed／551 passed，皆為階段 2 新測試） | c5ecd3be＋階段 3 綠燈 commit 的 in_scope 修正 |
 | 3 | 會員查帳 RPC（鏈、換線、成環） | ✅ 綠（CI 3437af9b） | 5c09b834（CI api-tests：階段 3 九支「function does not exist」） | a9dbcdb9 |
 | 4 | 付款查帳＋異常 RPC | 🟡 待 CI 確認綠 | 3437af9b（CI api-tests：9 failed／571 passed，皆為階段 4 新測試） | 3a91e5e9 |
-| 5 | Edge 端點＋契約＋守門（5a～5d） | 🔴 紅燈中 | （本 commit；本機 deno task test:unit：5a／5b 17 failed，皆新測試） | |
+| 5 | Edge 端點＋契約＋守門（5a～5d） | 🟡 本機 unit 218 全綠；DB 側（5c）待 CI | ae25f1be（本機 deno task test:unit：5a／5b 17 failed，皆新測試） | （本 commit） |
 | 6 | 前端純函式 | ⬜ 未開始 | | |
 | 7 | `AdminReferralTree` | ⬜ 未開始 | | |
 | 8 | `ReferralAuditSheet`＋次分頁＋私密 | ⬜ 未開始 | | |
@@ -35,5 +35,7 @@
 - 2026-11-08 階段 2：c5ecd3be 綠燈後 CI 仍有 2 支搜尋測試紅（`ancestor_ids 由頂層到父`、`成環與超過 50 層`）。根因在實作不在測試：`admin_referral_in_scope` 漏了「有 edge 指向自己」，自己沒訂閱的子節點搜不到，違反 plan §2.2「搜尋與樹收同一群人」。已 push 的 migration 不改，修正放在階段 3 的 migration（`create or replace admin_referral_in_scope`），測試未動。
 
 ## 框架摩擦
+
+- `profile-transient.unit.test.ts` 以 `requireAuth(` 出現次數守 index.ts 的呼叫點總數；新端點的第二道守門若在 index.ts 直接呼叫會讓它紅。改比照 referral-invite 傳函式參照（`adminAuthorizer(requireAuth, isAdminUser)`），計數不變。這類「計數式守衛」對新增端點不友善，值得在 friction-log 討論改成白名單。
 
 - 雲端容器拉不到 supabase 映像（cloudfront 被擋）→ /tdd-implement 第 7 步「起一次 supabase start」做不到，DB 階段的紅綠只能靠 CI，一階段多一輪 push 等待。

@@ -33,6 +33,8 @@ import {
 import { healPaidPendingOrders, type HealRpc } from './paid-pending-heal.ts';
 import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
+import { adminAuthorizer, createAdminReferralTreeHandlers } from './admin-referral-tree.ts';
+import { deriveNodeStatus } from './node-status.ts';
 import {
   ACCOUNT_SUSPENDED,
   ALREADY_ACTIVE_MESSAGE,
@@ -1296,6 +1298,21 @@ app.use('/admin/*', async (c, next) => {
   if (!(await isAdminUser(user.id))) return c.json({ error: '僅限管理員' }, 403);
   await next();
 });
+
+// 後台推薦樹查帳（第 6 波 S3a）：必須掛在上面的 /admin/* 守門之後；
+// handler 在 admin-referral-tree.ts，資料由 admin_referral_* RPC 組裝。
+const adminReferralTreeHandlers = createAdminReferralTreeHandlers({
+  rpc: async (fn, args) => {
+    const { data, error } = await sb().rpc(fn, args);
+    return { data, error };
+  },
+  // 比照 referral-invite 的 deps 注入：index.ts 只傳函式參照，呼叫在 admin-referral-tree.ts。
+  authorize: adminAuthorizer(requireAuth, isAdminUser),
+});
+app.get('/admin/referral-tree/nodes', adminReferralTreeHandlers.nodes);
+app.get('/admin/referral-tree/search', adminReferralTreeHandlers.search);
+app.get('/admin/referral-tree/members/:id', adminReferralTreeHandlers.member);
+app.get('/admin/referral-tree/members/:id/payments', adminReferralTreeHandlers.payments);
 
 // ============================================================
 // system_alerts 的出口（見 system-alerts-api.test.ts）：這張表自
@@ -4075,17 +4092,6 @@ app.get('/rewards/history', async (c) => {
 // active 且距 end_date ≤30 天 → expiring（RENEWAL_NOTICE_DAYS，與前端續訂提醒同一個
 // 契約常數）。
 // ============================================================
-function deriveNodeStatus(acct: any, suspendedAt: string | null) {
-  if (suspendedAt) return { status: 'suspended' as const, daysToExpiry: null };
-  if (acct?.status !== 'active') return { status: 'expired' as const, daysToExpiry: null };
-  const dl = acct?.end_date
-    ? Math.ceil((new Date(acct.end_date).getTime() - Date.now()) / 86_400_000)
-    : null;
-  if (dl !== null && dl >= 0 && dl <= RENEWAL_NOTICE_DAYS) {
-    return { status: 'expiring' as const, daysToExpiry: dl };
-  }
-  return { status: 'active' as const, daysToExpiry: dl };
-}
 
 // 姓名遮罩：一代（直推）全顯；二、三代部分遮罩。CJK 保留首末字、中間逐字○；
 // 英數保留首末、中間固定 •••（不洩漏長度）。
