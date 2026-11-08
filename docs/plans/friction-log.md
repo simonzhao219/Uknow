@@ -3533,3 +3533,12 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：1 列入下次框架整併（pre-commit 已擋命名，問題在紅燈通道只跑靜態閘門之前的手動 chain）；2、4 為紀錄；3 為紀錄；5 交主 session；
 6 寫進下次 `/plan-feature` 的「外部通道」檢查題，sqlerrm 那條列第 7 波候選。
+
+## 2026-11-08｜誤擋／漏網（環境、流程、測試）｜第 6 波 S3 admin-referral-tree（PR #521、#525，從 progress.md 整併）
+
+- **雲端容器沒有本機 DB**：`supabase start` 拉不到映像（CDN 被網路政策擋），`/tdd-implement` 第 7 步做不到。DB 階段的紅綠只能靠 CI：紅燈 commit 單獨 push、等 api-tests 紅，再寫實作。每個階段多一輪 push 等待。#525 的階段 10 又遇到 GitHub 下載 Deno 連續 504，紅燈完全沒有 CI 證據，只能在 progress 註明「該 commit 時函式不存在」。處置：待裁決（雲端環境 setup script 預拉映像，或接受以 CI 為準）。
+- **pre-commit 對 `supabase/functions` 不跑 `deno lint`**：只跑 fmt 與 check，未用的 import 要到 CI static-checks 才紅（682de3fb）。處置：待裁決（pre-commit 補 deno lint）。
+- **計數式守衛對新增端點不友善**：`profile-transient.unit.test.ts` 用 `requireAuth(` 的出現次數守 index.ts 的呼叫點，新端點在 index.ts 直接呼叫第二道守門就會紅。這次改成比照 referral-invite 傳函式參照（`adminAuthorizer(requireAuth, isAdminUser)`）繞過。處置：待裁決（改成白名單）。
+- **推薦碼正規化有 4 份複本**：`admin-referral-tree.ts` 的 `normalizeCode`，加上 index.ts 三處內嵌的 `.normalize('NFKC').toLowerCase().trim()`。處置：存量債，收進 `_shared`。
+- **本機 e2e 的 playwright 版本與容器預裝的 chromium 不符**：requirements 釘 1.56.0（chromium 1194），容器是 1243，要在拋棄式容器裡 symlink 才跑得動。處置：存量債。
+- **紅燈期寫錯測試的代價**：#521 的紅燈 commit 有兩支測試寫錯（mock 讀錯參數、照審查員錯誤的自癒前提寫）。按 tdd-test-guard 規定記入 Blockers、取得業主授權後才修。另一次（#521 節點列精簡）是依裁決原文 W6-26 的合理解讀改實作，讓測試成立，沒有動測試。處置：流程運作正常；教訓是寫紅燈前先對照被測函式的實際簽章與現行行為，不要只信審查摘要。
