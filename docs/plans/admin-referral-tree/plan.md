@@ -9,7 +9,13 @@
 - W6-7：預設入口是搜尋框加頂層樹。
 - 業主 2026-11-08 經主 session 的裁決：W6-15～W6-19，對應 §6。
 
-修訂紀錄：第 1 版 fd5bf0e，審查見 `review.md`。第 2 版併入 W6-15～19 與 16 條 P1，各條處置見 §8。
+修訂紀錄（審查見 `review.md`）：
+
+- 第 1 版：fd5bf0e。
+- 第 2 版：併入 W6-15～19 與第 1 輪的 16 條 P1。
+- 第 3 版：併入第 2 輪的 1 條 P0 與 15 條 P1。
+
+各條處置見 §8。
 
 ## 0. 一句話
 
@@ -56,7 +62,11 @@
    - S3a 只**部分滿足**：給各代獲得、可提領餘額、累計已發、提領審核中與已匯款金額。
    - 逐筆的點數來源明細與跨表對帳在 S3b，S3b 合併後才算完整滿足。
 6. **自動標異常**（只標在節點與詳情，不做清單入口，W6-17）
-   - S3a 標四種：付款了但三代獎金缺漏、收獎人不符、推薦關係成環或自己推薦自己、推薦關係兩處不一致。
+   - S3a 標三種：
+     - 付款了但三代獎金缺漏。
+     - 收獎人不符：「有沒有發對」的細分，對應 W6-5 情境①「誰該拿、實際有沒有拿」。
+     - 推薦關係成環或自己推薦自己。
+   - 「推薦人資料兩處不一致」不算異常、不上節點標示，只在詳情裡當**資訊提示**出現（§2.2，屬執行 session 加選）。
    - S3b 再加「點數跨表核對不符」。
 
 **節點欄位**（W6-5，全要）：
@@ -75,6 +85,7 @@
 - 顯示身分證、銀行帳號、電話、生日。
 - 改任何發獎、換線、提領規則（W6-15）。
 - 完整的換線事件表，列入第 7 波候選（W6-16）。
+- 推薦樹的入口只有兩個：會員次分頁本身，以及會員詳情裡的「在推薦樹中查看」（§3 選配）。
 
 ## 2. 系統設計
 
@@ -135,6 +146,12 @@
 | 成環停發 | `stop_reason='cycle'`；這一代和之後各代都是這個結果 |
 | 無法判定 | 未通過可判定閘門。若列存在，照樣列出實際拿到的人與金額，供人工判斷 |
 
+**判定順序**：先過可判定閘門，再判其他結果。例如付款人現在沒有推薦人，但 `referred_by_changed_at` 晚於付款時點，結果是「無法判定」，而不是「不適用」。
+
+**找不到對應訂閱**的已完成付款單（`source_payment_order_id` 查無訂閱，或是舊資料）：三代都標「無法判定」，原因寫「找不到對應訂閱」。
+
+**金額**：畫面一律顯示**實拿金額**，不比對「應得金額」。`reward_config.referral_reward_amount` 會隨時間調整，歷史的應得值無法重建，所以文案不寫「金額正確」。
+
 **補充說明：**
 
 - 「缺漏」一定已通過付款人本人的閘門，也就是自癒會補的範圍。所以「付款與三代獎金」區塊頂部可以提示一次：「缺漏會在該會員下次登入載入時自動補發；持續存在請回報」。「無法判定」與「收獎人不符」不套用這句提示。
@@ -147,7 +164,8 @@
 - 後端由 RPC 組裝資料，Edge 只做守門與轉換格式。現況慣例：`admin_list_members`、`admin_member_detail`。
 - **每支 RPC 都回單一 `jsonb`**，不回 `setof`。單一值不受 PostgREST `max_rows=1000` 截斷（第 4 波 ref P1-3）。
 - 分頁與 `total` 都在 SQL 裡算。`limit` 預設 50、上限 200，與 `parsePageParams` 一致。
-- 每支函式都是 `security definer`、`set search_path = public`、`set statement_timeout = '5s'`。
+- 每支函式都是 `security definer`、`set search_path = public`。
+- **不依賴** `statement_timeout`：函式上的 `SET` 擋不住已在跑的最外層 statement，repo 也沒有先例。成本改以「有界」設計控制，見下方 `anomalyKinds`。
 - 授權：`revoke execute … from anon, authenticated, public`，只 `grant` 給 service_role。
 
 **端點**（都在 `/admin/*` middleware 之下，handler 內再查一次 admin）：
@@ -164,22 +182,32 @@
 
 - 推薦碼：在 TS 端先用 `normalizeReferralCode` 正規化，再精確比對 `referral_codes.code`。已失效的碼也比對。
 - 姓名：`ilike` 部分比對，`%`、`_`、`\` 先跳脫。
+- **搜尋與樹收同一群人**（W6-19）：曾有過訂閱，或至少有一條 edge 指向他（有推薦對象）。
+  - edge 是付款時才寫入，所以樹上的子節點必然曾付款，一定在這群人裡。
+  - 階段 2 斷言：沒訂閱、也沒有推薦對象的人搜不到。
 - admin 看的是真名，與 §7.3 會員端的遮罩無關。
 
 **樹的單一來源是 `referral_edges`：**
 
 - 子層：`referrer_user_id = parent`，用 `idx_referral_edges_referrer` 查。排序固定為 `referred_at, referee_user_id`，分頁才不會重複或漏列。
 - 頂層：收「沒有一條 edge 指向自己」的會員。依 W6-19，只收「曾有過訂閱」或「至少有一條 edge 指向他」的人，也就是有推薦對象的人。排序固定為 `profiles.created_at, id`。
-- 這個篩選**只套在頂層**。子層與 `directCount` 都直接數 edges，兩者一定對得上。
+- 這個篩選在頂層才實際生效（子層必然符合），子層與 `directCount` 都直接數 edges，兩者一定對得上。
 - 註冊中的空殼列從既有的會員列表找。
-- **推薦關係兩處不一致（異常）**：曾有訂閱、但 `profiles.referred_by_user_id` 不等於 edge 的 referrer。
-  - 發獎的第 1 代讀 profiles，樹讀 edges，兩邊不一致時查帳會看到矛盾，所以要明標。
-  - 只算曾付款的會員，因為註冊中還沒付款的人本來就還沒有 edge。
+- **推薦人資料兩處不一致（資訊提示，不算異常）**：
+  - 條件：曾有訂閱，且 `profiles.referred_by_user_id IS DISTINCT FROM`（該人 edge 的 referrer）。edge 不存在時取 null，所以「profiles 有、edge 沒有」與「profiles 為 null、edge 存在」都算。
+  - 只在詳情的「推薦人鏈」下方寫一行說明：「發獎的第 1 代依會員資料，樹依推薦關係，兩者目前不一致」。
+  - 理由：發獎第 1 代讀 profiles，樹讀 edges，不說明的話查帳會看到矛盾。
+  - 這不是業主列的異常種類，屬執行 session 加選，主 session 可以拿掉。
 
 **`ensureId` 與 `pinned`**（給自動展開用）：
 
-- 子層請求帶 `ensureId` 時，若目標不在本頁，就另外回傳 `pinned`。
+- **頂層與子層**請求都能帶 `ensureId`。目標不在本頁時，另外回傳 `pinned`。
 - 本頁 `nodes` 與 `total` 不受 `pinned` 影響。
+- **搜尋命中定位不到樹上時**，`ancestorIds` 回 `null`，並附 `unplaceableReason`：
+  - `cycle`：在環上，或往上接進環。
+  - `truncated`：往上超過 50 層。
+  - 前端改成「只開詳情、不展開樹」，並寫出原因，例如「這位會員的推薦關係成環，無法在樹上定位」。
+  - 階段 2 與階段 7 各造一個這類案例。
 - 前端的規則見 §4，也就是 offset 怎麼算、X 怎麼數。
 
 **往上的推薦人鏈：**
@@ -201,9 +229,12 @@
 
 **節點摘要的 `anomalyKinds`：**
 
-- 每頁最多 200 個節點，每個節點的付款數 × 三代都要逐筆判定。
-- 量級假設是單一會員付款不超過 50 筆，這個上限就足夠。
-- 超過 `statement_timeout` 就回 500，前端顯示讀取失敗，不回空清單。
+- 每頁最多 200 個節點，每個節點只判定**最近 `ADMIN_TREE_ANOMALY_SCAN = 50` 筆**付款與任務續約。
+  - 用 CTE 先依時間取前 50 筆，再逐筆判定。每頁最多 200 × 50 × 3 次比對。
+  - 超過 50 筆的節點回 `anomalyScanTruncated: true`，節點上加註「只檢查最近 50 筆」。
+  - 詳情的付款查帳採分頁，逐頁判定，不受這個上限影響。
+- 施工前請主 session 代查：正式站單一會員的最大付款筆數。
+- 查詢錯誤一律回 500，前端顯示讀取失敗，不回空清單。
 
 **換線紀錄**（W6-16 的 (a') 版本，不承諾完整的順序）：
 
@@ -226,8 +257,13 @@
 
 **資料庫變更：**
 
-- **一支 migration**，版本號排在同波 S1 的 migration 之後。各階段在同一支 migration 裡依序追加函式。
+- **每個新增 SQL 的階段各一支 migration**（階段 1～4 最多四支；S3b 另一支），版本號遞增，並排在同波 S1 之後。
+  - 不在已 push 的 migration 上追加內容：Supabase preview 分支與 develop 的 persistent branch 已套用過的檔案，改了不會重跑，新函式會靜默不存在。
+- 紅燈 commit 只放測試，migration 在綠燈 commit 才寫入。
 - rebase 後必跑 `check-migration-versions.py`。
+- **DB 測試不在 `npm run check` 內**。階段 1～4、5b、5c 的紅綠證據要靠以下其中之一，並記進 progress.md：
+  - CI 的 api-tests 軌。
+  - 本機 `supabase start` 加 `deno task test`（容器裝得起來的話）。
 - 內容：
   - 新函式，含授權設定。
   - 新索引 `referral_pair_history (referee_user_id)`：現況只有 PK `(referrer, referee)`，查「本人有過哪些推薦人」需要這條。
@@ -245,14 +281,23 @@
   - 提領與退款：`withdrawal_id` 與提領狀態。
   - ledger_reset：觸發的訂閱。
 
-**跨表核對**（取代「餘額 ≠ 獲得 − 提領」，因為那條式子在同一張表上是恆等式）。下列任一條不成立，就標「點數跨表核對不符」：
+**跨表核對**（取代「餘額 ≠ 獲得 − 提領」，因為那條式子在同一張表上是恆等式）。金額與 type 已對照現行函式：
 
-1. 每筆非退件的 `withdrawals`，帳本恰有一列 `withdrawal` 的扣款，金額等於 −(amount＋fee)。
-2. 每筆 `rejected` 的提領，帳本恰有一列退款（`adjustment` 加 `withdrawal_id`），金額等於 +(amount＋fee)。
-3. 帳本上沒有孤兒 `withdrawal_id`：它指向的提領必須存在，且屬於同一人。
-4. 每列 `ledger_reset` 的金額，等於該列之前的 `balance_after` 取負號，也就是清空當下的餘額。
+- `request_withdrawal`：每筆提領都寫一列 `type='withdrawal'`，金額 −(amount＋fee)。
+- `admin_update_withdrawal_status`：退件時**追加**一列 `type='adjustment'`，帶 `withdrawal_id`，金額 +(amount＋fee)，有唯一索引；扣款列不刪。
+- `process_successful_payment` 的新約清空：寫 `-greatest(清空當下的 sum, 0)`。
+- `repair_orphaned_forfeitures` 的延遲補沖：寫告警快照額；快照遺失寫 0，description 帶「延遲補沖」。
 
-金額與符號的實際寫法，S3b 開工時以 `request_withdrawal`、`admin_update_withdrawal_status`、fresh forfeit 的現行函式為準，在 S3b 的 PR 內文列出對照。
+下列任一條不成立，就標「點數跨表核對不符」：
+
+1. **所有狀態**的 `withdrawals`（含 rejected），帳本恰有一列 `type='withdrawal'` 扣款，金額等於 −(amount＋fee)。扣款列沒有唯一索引，所以「恰有一列」確實可能被違反。
+2. 每筆 `rejected` 的提領，帳本恰有一列 `adjustment`＋`withdrawal_id` 退款，金額 +(amount＋fee)。**反向**也要成立：非 rejected 的提領不得有這種退款列。
+3. **孤兒**：`type='withdrawal'` 但 `withdrawal_id is null`（提領被刪後 FK 設成 null 留下的），或 `withdrawal_id` 指向別人的提領。FK 是 `on delete set null`，所以「id 指向不存在的提領」在結構上不會發生，不另查。
+4. 每列正常路徑的 `ledger_reset`，金額 = −greatest(該列之前的 `balance_after`, 0)。
+   - description 含「延遲補沖」的列不算不符，只標「資訊：延遲補沖，以告警快照為準」。
+   - 已知競態：`balance_after` 依 `(created_at, id)` 排序，`created_at` 是交易起始時間。別筆交易先開始、但在清空的 sum 之後才提交，就可能差一筆。詳情中的說明要寫出這點，避免 admin 誤判。
+
+**舊資料**：`20260718000101` 加 `fee` 之前建立的提領單，帳本扣款可能不含手續費。這類單標「舊資料，未核對」，不算不符。S3b 開工前請主 session 代查正式站有沒有這類單。
 
 ## 3. 架構影響
 
@@ -265,19 +310,23 @@
 - **元件**放 `src/components/admin/referral-tree/`：
   - `AdminReferralTree`：搜尋、頂層樹、懶展開、自動展開。
   - `ReferralAuditSheet`：節點詳情。
-  - `PaymentAuditList`：手機卡片與桌面表格擇一渲染。
+  - `PaymentAuditList`：付款與三代獎金的卡片列表（Sheet 內一律用卡片）。
   - `referralAudit.ts`：純函式，處理展開路徑、`pinned` 合併與去重、結果與原因的文案、層級標示。
 - **資料注入鏈**
-  - `AdminDashboard.tsx` 定義 `REFERRAL_TREE_API: ReferralTreeLoaders`，包含 `loadNodes`、`search`、`loadMember`、`loadPayments`，S3b 再加 `loadLedger`。
-  - 往下傳的路徑：`AdminConsole` 的 `members` props → `MemberManagement` → `AdminReferralTree`、`ReferralAuditSheet`。
-  - 整包傳一個物件，不在 `MemberManagementProps` 上逐一加欄位。這個檔案已超過 900 行。
+  - 在 `MemberManagementProps` 加一個欄位 `referralTree: ReferralTreeLoaders`，包含 `loadNodes`、`search`、`loadMember`、`loadPayments`；S3b 再加 `loadLedger`。
+  - 實作放進 `AdminDashboard.tsx` 既有的 `MEMBER_API` 整包物件，沿用現有形狀。
+  - `AdminConsole` 的 `members` 型別是 `Omit<MemberManagementProps,…>`，會自動帶上新欄位，不另開頂層常數。
+  - 新增的是必填欄位，`MemberManagement.test.tsx`、`AdminConsole.test.tsx`、`AdminDashboard.test.tsx` 的 fixture 要一起補上，列在階段 8。
 - **跨次分頁導覽**：從 `MemberDetailSheet` 點「在推薦樹中查看」：
   - 跳轉目標由 `MemberManagement` 用 `treeFocusId` state 持有，依序執行：
     1. 關閉 Sheet，焦點交還原處（照 Radix 的行為）。
     2. `setMemberTab('referral-tree')`。
     3. `AdminReferralTree` 收到 `focusId` 後，先 `GET members/:id` 取得 `ancestorIds`，再走自動展開（與點搜尋命中同一條路）。
   - 寫入在途、分頁被鎖時，連結停用，並 `aria-describedby` 指向鎖定說明。
-  - 「推薦樹」**不寫入** `writeView({memberTab})`，`writeView` 維持上一個非推薦樹的子分頁。理由：推薦樹每次都要重讀，回到後台時不該直接落在一個重頁。
+  - 「推薦樹」**不寫入** `writeView({memberTab})`。理由：推薦樹每次都要重讀，回到後台時不該直接落在一個重頁。
+    - 落點：`MemberManagement.tsx` 的 `onValueChange` 現在無條件寫入，改成 `next !== 'referral-tree'` 才寫。
+    - 從推薦樹切回其他次分頁時照常寫入。
+    - 階段 8 斷言：切到推薦樹後，`readView().memberTab` 仍是原值。
 - **不共用會員端的 `ReferralTreeView`**：
   - 它的節點型別是遮罩名，loader 綁的是 viewer 的三代子樹。
   - 它的展開鈕是 24px，`treeitem` 裡又包 `button`，有既有的技術債。
@@ -291,23 +340,30 @@
   - 新檔**不得 import `./index.ts`**，複製 `referral-invite-deps.unit.test.ts` 的反向匯入守衛。
 - **`deriveNodeStatus` 抽到 `supabase/functions/api/node-status.ts`**：
   - index.ts 與新 handler 都從這裡 import。
-  - 現有呼叫點的行為不變，由既有測試把關，例如 network-endpoints、members/verify。
+  - 這一步在階段 5 最先做，先於 handler。
+  - 新增 `node-status.unit.test.ts`，做 characterization：停權優先、非 active、≤30 天 expiring、剛好 30 天、end_date 為 null。紅燈來自檔案不存在。
+  - 既有呼叫點的行為不變，由既有測試把關，例如 network-endpoints、members/verify。
+- **四態一律由 Edge 的 TS 推導**：RPC 回原始欄位（`account_status`、`end_date`、`suspended_at`），Edge 用 `deriveNodeStatus` 算四態，所以 DB 測試不斷言四態。
+- **路由掛載位置**：新路由掛在 index.ts 的 admin 區段，必須在 `app.use('/admin/*')` 守門之後；Hono 的 middleware 只套用在註冊於它之後的路由。
 - 與 S2 改動的 index.ts validate 段不同區。
 
 ### 守門（W6-19：自動列舉路由）
 
-- `admin-gate.test.ts` 新增一條覆蓋斷言：從 `app.routes` 列舉所有 `/api/admin/` 路由。
-  - 排除 `ALL` 型的 middleware 項。
-  - 列舉結果必須是手寫 `ADMIN_ROUTES` 的子集，漏列一條就紅燈。
-- 手寫清單保留 method 與帶入參數，`:id` 一律代入一個合法的 dummy uuid。只打匿名與一般會員，不會真的執行寫入。
-- 補上清單漏掉的 4 條寫入端點（ops P2-4）與本次的新端點。
+- `admin-gate.test.ts` 新增一條覆蓋斷言：
+  - 從 `app.routes` 列舉路由。app 是 `basePath('/api')`，所以前綴過濾用 `'/api/admin/'`，含結尾斜線，才不會誤收 `/api/admin-setup/*`。
+  - 排除 `method==='ALL'` 的 middleware 項。
+  - 把所有 `:param` 正規化成同一個佔位（例如 `:id` 與 `:userId` 都換成 `:p`），再用「method＋正規化路徑」做子集比較：列舉結果必須是手寫 `ADMIN_ROUTES` 的子集，漏列一條就紅燈。
+- 手寫清單保留 method 與帶入參數，所有 `:param` 一律代入合法的 dummy uuid。只打匿名與一般會員，不會真的執行寫入。
+- 清單的 method 型別補上 `DELETE`。
+- 補上清單漏掉的 4 條寫入端點：`POST /admin/system-alerts/:id/resolve`、`POST /admin/withdrawals/:id/status`、`POST /admin/members/:id/suspend`、`DELETE /admin/announcements/:id`。另加本次的新端點。
 - 每支新 RPC 都測「authenticated／anon 不得 EXECUTE」。
 
 ### 個資
 
 - RPC 本身不 select `national_id`、`bank_code`、`bank_account`、`phone`、`birth_date`。測試斷言回應的 key 集合不含這些欄位。
 - `ReferralAuditSheet` 會走 portal，所以 `<SheetContent className={privateClass(…)}` 要寫在**同一行**，並列入 `SENSITIVE_PORTALS`。`analyticsReviewHardening.test.ts` 要求 anchor 與 `privateClass(` 在同一行。
-- 本次要動 `MemberDetailSheet`（加連結），順手把它的 `SheetContent` 一併補成同樣寫法、列入清單。
+- `ReferralAuditSheet.tsx` 同一檔內只能有一個 `<SheetContent`，而且要確認 `biome check` 不會把那一行拆開。
+- `MemberDetailSheet` **不在本次**補進 `SENSITIVE_PORTALS`：它的 `<SheetContent` 跨多行，又夾著註解，改寫會和 biome 的格式化衝突，風險不值得。它已經在 `/admin` 的 `PrivateRegion` 底下；portal 漏網的問題列為第 7 波候選。
 
 ### 快取與規格書
 
@@ -317,129 +373,160 @@
 ### 其他
 
 - 本功能沒有多步驟流程，multi-step-flow 四契約不適用。
-- **選配範圍**（不是 W6 需求，是工程決定）：
+- **選配範圍**（不是業主直接列出的需求，是執行 session 的工程或導覽決定，主 session 可以推翻）：
   - 自動列舉路由（W6-19 已定）。
-  - `MemberDetailSheet` 補進 `SENSITIVE_PORTALS`。
   - `referral_pair_history` 索引。
   - 規格書 §13 的快取清單。
+  - **推薦人鏈每一位都可點**，在 Sheet 內跳到該人：服務情境②「往上幾代、往下推薦了誰」，沒有它就得關掉 Sheet 再重新搜尋。
+  - **`MemberDetailSheet` 的「在推薦樹中查看」連結**：服務 W6-7「先找到一個人」。會員列表是 admin 已經習慣的找人入口，加這條連結就不用再搜一次。
+  - 「推薦人資料兩處不一致」的資訊提示。
+  - 換線紀錄「已生效／未能確認」的判定：從 W6-16 衍生，W6-16 本身只要求列出事件。
+  - 「不做」清單補一句：推薦樹沒有上面兩條以外的入口。
 
 ## 4. UI/UX
 
-### 畫面草圖（手機 375px）
+### 畫面草圖（手機 375px，〔〕代表 lucide 圖示，實作不用 emoji）
 
 ```
 [會員列表] [證件審核] [推薦樹]          ← 次分頁，推薦樹在第三格
-┌ 搜尋姓名或推薦碼 ───────────── 🔍 ┐
+推薦樹（區塊標題，tabIndex=-1）
+┌〔Search〕搜尋姓名或推薦碼 ─────〔X 清除〕┐   ← role="search"
 已顯示 20 / 24 位（頂層）
-[›] 王大明 · 8048876
-    訂閱中 · 2027-03-01 到期 · 直接推薦 12 位 · ⚠ 獎金缺漏
-  [⌄] 陳小華 · 8048890
-      即將到期 剩 12 天 · 直接推薦 3 位
+[〔ChevronRight〕展開王大明]  王大明 · 8048876                    ← 名稱鈕：開詳情
+    第 1 層 · 訂閱中 · 2027-03-01 到期 · 直接推薦 12 位 · [〔AlertTriangle〕獎金缺漏]
+  [〔ChevronDown〕收合陳小華]  陳小華 · 8048890
+      第 2 層 · 即將到期 剩 12 天 · 直接推薦 3 位
   [載入更多（已顯示 50 / 120 位）]
 ```
 
-### 節點列
+### 節點列：巢狀清單加 disclosure 鈕（不用 `role="tree"`）
 
-- **語意**
-  - 容器用 `role="tree"`，列用 `role="treeitem"`，並加 `aria-level` 與 `aria-expanded`。
-  - 展開鈕與「開詳情」是兩個並列的 `button`，不把按鈕巢狀在 treeitem 裡（不重蹈 `ReferralTreeView` 的債）。
-  - 觸控面積用 `pointer-coarse:min-h-11 min-w-11`。
-  - 鍵盤：↑↓ 移動焦點，→← 展開或收合，Enter 開詳情。
-- **內容與換行**
-  - 第一行是姓名、推薦碼。
-  - 第二行依序是狀態徽章、到期日、直接推薦 N 位、異常文字。
-  - 一律 `min-w-0 wrap-anywhere`，**只換行、不截斷**（ui-ux §10）。
-- **縮排**
-  - 每層 12px，第 4 層以後不再縮排。
-  - 第 5 層以後在第二行開頭加「第 N 層」文字。
-- **配色**
-  - 灰階，不用 `--tree-gen-*` 世代色（§12.5(c)）：admin 樹的層級不是「相對於自己的代」。
-  - 不放頭像，不畫連接線。
-  - 狀態徽章沿用四態：訂閱中、即將到期、已失效、已停權。
-
-### 詳情 Sheet
-
-沿用 `MemberDetailSheet` 的結構：手機全寬，桌面 `sm:max-w-lg`。由上到下：
-
-1. **頁首**：姓名、推薦碼、狀態徽章、到期日。這裡回答「這個人現在是什麼狀態」。
-2. **需要注意**（`StatusCallout variant="warning"`，沒有異常就整塊不渲染，§13 第 3 條）：
-   - 逐條列出異常：獎金缺漏 N 筆、收獎人不符 N 筆、推薦關係成環、推薦關係兩處不一致。
-   - 每條附一個連結，捲動到對應的區塊。
-   - 首屏不捲動，就能回答查帳情境 ①④「有沒有發錯」。
-3. **帳號狀態說明**（停權、到期、未加入推薦計畫時才出現）：「獎金照常入帳，但目前不可提領（原因）」（W6-15）。
-4. **推薦人鏈**：推薦人、往上第 2 位、往上第 3 位……，每位都可點；`truncated` 時寫「往上超過 50 位，未全部列出」。
-5. **獎金與點數**：主數字是「可提領」，其餘降為一行小字：第 1／2／3 代各獲得、累計已發（§13 第 1 條）。
-6. **任務**：本月 x / 門檻；credit 未領與已領張數。
-7. **提領**：審核中金額、已匯款金額。
-8. **換線紀錄**：見 §2.2。
-9. **付款與三代獎金**：
-   - 手機用 `useMediaQuery` 擇一渲染，一筆付款一張卡：
-     - 卡頭：付款時點、類型（付款／任務續約）。
-     - 卡內三行：「第 N 代 · 誰 · 金額 · 結果徽章」。
-   - 桌面用表格。
-   - 支援載入更多，顯示「已顯示 X / Y 筆」。
-   - 區塊頂部只出現一次自癒提示，見 §2.1。
-
-### Sheet 內跳到另一個人
-
-- **替換內容**，不疊一層新的 Sheet。
-- 頂部常駐「返回〇〇」，可以一路返回；跳轉堆疊只存在元件 state 裡。
-- Android 返回鍵用 `useOverlayBackClose`：堆疊不為空時返回上一位，空了才關閉 Sheet。
-- 換人後捲動回頂部，焦點落在標題（`tabIndex=-1`）。
-- 不同步樹上的選取：樹的展開狀態不變，關閉 Sheet 後焦點回到開啟它的那一列。
-
-### 結果徽章
-
-- 一律「文字＋lucide 圖示」，用 `Badge` 的 subtle 變體，不用 emoji 與 ✓✗⛔ 字元，也不以色相作為唯一線索（§12.3、§12.7）。
-- 「缺漏」與「收獎人不符」用 warning，不用紅色；紅色只留給破壞性與失敗（§12.5）。
-- 已發、不適用、無法判定、成環停發，對應的色票與圖示在施工時照 §12 的色表決定。
-
-### 文案（W6-19、W5-53、§12.13）
-
-- 樹上用「第 N 層」，從頂層算。
-- 付款查帳用收獎「第 1／2／3 代」。
-- 推薦人鏈用「推薦人／往上第 N 位」。
-- 不出現「上線／下線／整條線」。`terminologyGuard.test.ts` 會掃描。
-
-### 三態（逐塊列出）
-
-| 區塊 | 載入中 | 讀取失敗 | 空態 |
-|---|---|---|---|
-| 頂層樹 | `AdminListSkeleton` | 整頁 `LoadErrorCallout`。焦點交給 `useRetryFocus`：重試仍失敗回到錯誤框，成功後回到次分頁標題 | 「目前沒有符合條件的會員」 |
-| 子層 | 該層骨架 | 只在該層顯示中性錯誤字＋「重試」，不連坐其他層 | 不會發生（`directCount` > 0 才可展開） |
-| 搜尋 | 結果區骨架 | 「搜尋失敗，請稍後再試」＋重試，與「找不到符合的會員」分開 | 「找不到符合的會員」 |
-| 詳情 Sheet 本體 | 同形骨架 | 黃框加重試。404 時寫「找不到此會員（可能已刪除）」，與失敗分開 | — |
-| 付款與三代獎金 | 卡片骨架 | 只在這一區顯示中性錯誤字＋重試，上方各區照常顯示（兩支請求互不連坐，§13 第 4 條） | 「這位會員沒有付款紀錄」 |
+- **結構**：選 disclosure 方案，因為 TalkBack 對 tree 角色支援弱，而且「載入更多」「重試」「pinned」都不是 tree 的合法子項。
+  - 每層是 `<ul>`，每個節點是 `<li>`。
+  - 列內有兩個並列的 `button`：
+    - **展開鈕**：只在 `directCount>0` 時出現，帶 `aria-expanded`、`aria-controls`，名稱「展開／收合〇〇」。
+    - **名稱鈕**：開詳情，名稱「查看〇〇的推薦與查帳資訊」。
+  - 子層 `<ul>` 的尾端放「載入更多」「重試」。
+- **操作**：
+  - 手機上點姓名開詳情，點左側箭頭展開。
+  - 鍵盤用原生 Tab 與 Enter／Space，不做方向鍵的 roving。
+- **觸控與換行**：
+  - 兩顆鈕都是 `pointer-coarse:min-h-11 min-w-11`。
+  - 文字一律 `min-w-0 wrap-anywhere`，只換行不截斷（ui-ux §10）。
+- **第 N 層**：每個節點的第二行開頭都顯示（W6-19）。
+  - 縮排每層 12px，第 4 層以後不再增加。
+- **姓名為空**：顯示「未填姓名」加推薦碼，不退回顯示 Email，個資最小化。
+- **節點異常**：
+  - 用 `warning-subtle` Badge 加 lucide 圖示，每種一顆。
+  - 超過 2 種時收成一顆「N 項異常」。
+  - `anomalyScanTruncated` 時再加一行小字「只檢查最近 50 筆」。
+- **配色**：
+  - 用灰階，不用 `--tree-gen-*` 世代色（§12.5(c)）。
+  - 不畫頭像，不畫連接線。
+  - 狀態徽章沿用四態。
 
 ### 搜尋
 
-- 輸入後 debounce 300ms。
-- 只採用與「目前 q」相同的回應，舊 q 的回應直接丟棄（第 4 波 ref P2-12）。
-- 顯示「已顯示 X / Y 筆」，並有「載入更多」。
+- 有輸入時，結果清單**就地取代樹**；清除（`X` 或清空輸入框）後回到樹，樹的展開狀態保留不變。
+- 結果列顯示：姓名（或「未填姓名」）、推薦碼、第 N 層、狀態徽章。同名的人靠這些分辨。
+- 點結果會走自動展開，見下方。`ancestorIds` 為 `null` 時只開詳情，並顯示原因（§2.2）。
+- 輸入後 debounce 300ms，只採用與目前 q 相同的回應（第 4 波 ref P2-12），清單顯示「已顯示 X / Y 筆」加「載入更多」。
+
+### 詳情 Sheet
+
+沿用 `MemberDetailSheet` 的結構：手機全寬，桌面 `sm:max-w-lg`（512px）。由上到下：
+
+1. **頁首**：姓名、推薦碼、狀態徽章、到期日，回答「這個人現在是什麼狀態」。`SheetTitle` 帶 `tabIndex=-1`。
+2. **需要注意**（`StatusCallout variant="warning"`，沒有異常就整塊不渲染，§13 第 3 條）：
+   - 逐條列出：獎金缺漏 N 筆、收獎人不符 N 筆、推薦關係成環。
+   - 每條附一個連結。點了以後，目標區塊（`tabIndex=-1`）捲到可見處並取得焦點。
+   - 有異常的付款卡自己也掛 warning 徽章。
+3. **帳號狀態說明**（中性提示，不用 warning，只在停權、到期、未加入推薦計畫時出現）：「獎金照常入帳，但目前不可提領（原因）」（W6-15）。
+4. **推薦人鏈**：
+   - 依序列出推薦人、往上第 2 位、往上第 3 位……，每位都可點。
+   - `truncated` 時寫「往上超過 50 位，未全部列出」。
+   - 兩處不一致時，下方加一行資訊提示（§2.2）。
+5. **獎金與點數**：主數字是「可提領」；第 1／2／3 代各獲得、累計已發降為一行小字。
+6. **任務**、7. **提領**、8. **換線紀錄**（見 §2.2）。
+9. **付款與三代獎金**：
+   - Sheet 內**一律用卡片**，不用表格。Sheet 最寬 512px，用視窗斷點切換的表格會塞爆。
+   - 一筆付款一張卡：
+     - 卡頭：付款時點、類型（付款／任務續約）。
+     - 每一代兩行：
+       - 第一行：「第 N 代 · 結果徽章」。
+       - 第二行：「應給 A」。
+       - 收獎人不符或無法判定、而且有實發時，加第三行「實發 B · 金額」。
+       - 已發時，第二行寫「A · 金額」。
+       - 不適用與成環停發只有第一行。
+   - 載入更多，顯示「已顯示 X / Y 筆」。
+   - 區塊頂部只出現一次自癒提示（§2.1）。
+
+### Sheet 內跳到另一個人
+
+- 跳轉方式是替換內容，不疊一層新的 Sheet。
+- 頂部常駐「返回〇〇」。
+- 堆疊存在元件 state 裡，**每一位都保留已載入的資料、付款區的頁數與捲動位置**，返回時不重讀。
+
+| 操作 | 堆疊不空 | 堆疊為空 |
+|---|---|---|
+| 「返回〇〇」鈕 | 回上一位 | 不顯示 |
+| Android 返回鍵（`useOverlayBackClose`，只掛在這張 Sheet） | 回上一位 | 關閉 Sheet |
+| Esc、右上 X | 關閉 Sheet | 關閉 Sheet |
+
+- 換人後捲回頂部，焦點落在 `SheetTitle`，常駐 live region 播報「已切換到〇〇」。
+- 關閉 Sheet 後，焦點回到開啟它的那一列。不同步樹上的選取。
+- `MemberDetailSheet` 不加返回鍵攔截，兩種 Sheet 的返回鍵行為因此不同。這個差異列為第 7 波候選。
+  - 「在推薦樹中查看」是從 `MemberDetailSheet` 出發的，不經過這個 hook，所以 cleanup 的 `history.back()` 不會和切換次分頁互相干擾。
+
+### 結果徽章（`badge.tsx` 現有的變體）
+
+| 結果 | 變體 | 圖示 |
+|---|---|---|
+| 已發 | `outline`（中性，不滿版綠） | `Check` |
+| 不適用 | `outline` | `Minus` |
+| 無法判定 | `secondary` | `HelpCircle` |
+| 缺漏 | `warning-subtle` | `AlertTriangle` |
+| 收獎人不符 | `warning-subtle` | `ArrowLeftRight` |
+| 成環停發 | `warning-subtle` | `RefreshCwOff`（或施工時選同義圖示） |
+
+- 都是文字加圖示，不以色相作為唯一線索（§12.7）；不用紅色（§12.5）。
+
+### 文案（W6-19、W5-53、§12.13）
+
+- 樹上用「第 N 層」，從頂層算；付款查帳用收獎「第 1／2／3 代」；推薦人鏈用「推薦人／往上第 N 位」。
+- 不出現「上線／下線／整條線」，`terminologyGuard.test.ts` 會掃描。
+
+### 三態與重試焦點（逐塊列出）
+
+| 區塊 | 載入中 | 讀取失敗 | 空態 | 重試焦點 |
+|---|---|---|---|---|
+| 頂層樹 | `AdminListSkeleton` | 整頁 `LoadErrorCallout` | 「目前沒有符合條件的會員」 | 用 `useRetryFocus`：成功時回到「推薦樹」區塊標題，失敗時回到錯誤框 |
+| 子層 | 該層骨架 | 該層顯示中性錯誤字＋「重試」 | `directCount>0` 但查回 0 筆時，寫一行「目前沒有可顯示的推薦對象」 | 成功時到第一個子節點的名稱鈕，失敗時到該層錯誤字（`tabIndex=-1`） |
+| 搜尋 | 結果區骨架 | 「搜尋失敗，請稍後再試」＋重試 | 「找不到符合的會員」 | 成功時到結果區標題，失敗時到錯誤字 |
+| 詳情 Sheet | 同形骨架 | 黃框＋重試。404 時寫「找不到此會員（可能已刪除）」 | — | 都落在 `SheetTitle` |
+| 付款與三代獎金 | 卡片骨架 | 只在這一區顯示中性錯誤字＋重試，上方各區照常（§13 第 4 條） | 「這位會員沒有付款紀錄」 | 成功與失敗都落在該區標題（`tabIndex=-1`） |
+
+- **載入更多失敗**（樹子層、搜尋、付款區都一樣）：已載入的列保留，尾端顯示錯誤字與「重試」，重試只重發那一頁。
 
 ### 自動展開（點搜尋命中，或從會員詳情跳來）
 
-- 依 `ancestorIds`，由頂層往下逐層請求 `nodes?parentId=…&ensureId=下一層的 id`。
-- **`pinned` 的計數規則**：
-  - `pinned` 節點接在該層已載入列的尾端，標「搜尋目標」。
-  - 不算進「已顯示 X」，也不影響 offset。
-  - 之後若在正常分頁中出現同一個 id，就去掉 pinned 那份，以正常列為準。
-  - X / Y 仍然只數正常列，所以不會跳號，也不會重複。
-- **展開中**：
-  - 列表上方顯示「正在展開到〇〇…」，`aria-busy`。
-  - 播報走常駐的單一 `aria-live` 節點，只更換文字。
-- **中途失敗**：
-  - 停在失敗的那一層，該層顯示錯誤＋「重試展開」，重試會從那一層接續。
-  - 已展開的上層保留不動。
-- **完成**：
-  - 目標列捲到可見處（`scroll-mt-20`），焦點落在該列（`tabIndex=-1`）。
-  - 播報「已展開到〇〇」。
+- **展開順序**：依 `ancestorIds` 從頂層往下逐層請求 `nodes?parentId=…&ensureId=下一層的 id`；頂層也帶 `ensureId`。
+- **展開鏈帶 token**：新操作（再點一個結果、收合正在展開的祖先、切換次分頁、關閉）會作廢舊鏈，舊鏈的回應直接丟棄。
+- **`pinned` 的規則**：
+  - pinned 節點接在該層已載入列的尾端，標「搜尋目標」，`key=id` 保持穩定。
+  - 不計入「已顯示 X」，也不影響 offset。
+  - 使用者離開該層（收合或另起一條展開鏈）之前，pinned 一直留著。
+  - 之後若正常分頁載到同一個 id，那一列**不重複渲染**，但仍計入 X，因為它已經載入，而且畫面上看得到（以 pinned 的身分）。
+  - 這樣不會發生卸載後重掛，焦點不會掉，也不會跳號。
+- **展開中**：列表上方顯示「正在展開到〇〇…」，`aria-busy`；用常駐的單一 `aria-live` 節點播報，只換文字。
+- **中途失敗**：停在失敗的那一層，該層顯示錯誤加「重試展開」，從那一層接續；已展開的上層保留。
+- **完成**：目標列捲到可見處（`scroll-mt-20`），焦點落在它的名稱鈕，並播報「已展開到〇〇」。
 
 ### e2e 版面檢查
 
-- 把推薦樹與詳情 Sheet 加進 `e2e/test_overflow_sweep.py` 的 `ROUTES`，用 `after_load` 切到推薦樹次分頁、打開一個節點。
-- 375px 與 1280px 都要掃描溢出。
-- 再驗證三格次分頁在 320px 與 375px 的寬度。
+- 把推薦樹與詳情 Sheet 加進 `e2e/test_overflow_sweep.py` 的 `ROUTES`，用 `after_load` 切到推薦樹次分頁，並打開一個有付款卡的節點。
+- 寬度掃 375、1024、1280px。
+- 三格次分頁在 320px 與 375px 的寬度要另外驗證。
 
 ## 5. 階段切分（每階段＝一個 TDD 紅綠循環）
 
@@ -448,24 +535,24 @@
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
 | 1 | `referral_award_chain`，及其與 `pay_referral_generations` 的等價 | `supabase/functions/api/referral-award-chain.test.ts`（DB） | 以下拓撲下，實發收獎者逐代等於 chain：完整三代、缺第 2 代、缺第 3 代、第 1／2／3 代分別成環、profiles 與 edges 不一致 |
-| 2 | 樹節點與搜尋 RPC | `admin-referral-tree-db.test.ts`（DB） | 涵蓋分頁、total、穩定排序、頂層篩選、ancestorIds、ensureId 與 pinned、個資排除、GRANT。一位推薦人有 1,005 位直接推薦時，total 精確，第 21 頁有資料且不重複；全形碼命中；`%` 被跳脫；回應的 key 不含敏感欄位；anon 與 authenticated 被拒 |
-| 3 | 會員查帳 RPC | 同上 | 涵蓋全部欄位、往上鏈與深度上限、換線紀錄、成環／rho 形／自己推薦自己、兩處不一致。具體斷言：回填形態的 pair-history（`created_at` 都相同）列為無序集合；新約單 keep 不列入；只有最新一筆可能標「已生效」；兩人成環與 rho 形都標異常且不會無窮迴圈；超過 50 層回 `truncated` |
-| 4 | 付款查帳 RPC 與節點的 `anomalyKinds` | 同上 | 六種結果都要造出來。具體斷言：刪掉第 2 代那一列 → 缺漏；改 `user_id` → 收獎人不符；付款後祖先換線 → 無法判定，且「實拿」照列；任務續約用 `claimed_at`；ledger_reset 不誤判；自癒後缺漏消失 |
-| 5 | Edge 端點、契約、守門 | 下列三組 | 見下列三組 |
-| 5a | 參數與錯誤路徑（假 deps，不連 DB） | `admin-referral-tree.unit.test.ts` | 400（非 uuid、空 q）、404、RPC 錯誤回 500 而不是空清單；反向匯入守衛 |
-| 5b | 守門與回應形狀（DB） | `admin-referral-tree.test.ts`、`api-contract.test.ts` | 401、403；回應通過 `assertShape` |
-| 5c | admin 路由清單的覆蓋斷言 | `admin-gate.test.ts` | 自動列舉的路由必須是手寫清單的子集 |
-| 5d | `deriveNodeStatus` 搬到 `node-status.ts` | 既有 network-endpoints、verify 測試 | 既有測試全綠；新 handler 與 index.ts import 同一份 |
+| 2 | 樹節點與搜尋 RPC | `admin-referral-tree-db.test.ts`（DB） | 涵蓋分頁、total、穩定排序、頂層與搜尋共用的收人範圍、ancestorIds 與無法定位的原因、頂層與子層的 ensureId／pinned、個資排除、GRANT。沒訂閱也沒推薦對象的人搜不到；在環上的人 `ancestorIds=null` 且 reason 為 cycle。一位推薦人有 1,005 位直接推薦時，total 精確，第 21 頁有資料且不重複；全形碼命中；`%` 被跳脫；回應的 key 不含敏感欄位；anon 與 authenticated 被拒 |
+| 3 | 會員查帳 RPC | 同上 | 涵蓋全部欄位（原始欄位，不斷言四態）、往上鏈與深度上限、換線紀錄、成環／rho 形／自己推薦自己、兩處不一致的資訊提示（兩種 null 情境各一案）。具體斷言：回填形態的 pair-history（`created_at` 都相同）列為無序集合；新約單 keep 不列入；只有最新一筆可能標「已生效」；兩人成環與 rho 形都標異常且不會無窮迴圈；超過 50 層回 `truncated` |
+| 4 | 付款查帳 RPC 與節點的 `anomalyKinds` | 同上 | 六種結果都要造出來，另驗判定順序與「找不到對應訂閱」。單一會員有 60 筆付款時，節點回 `anomalyScanTruncated`。具體斷言：刪掉第 2 代那一列 → 缺漏；改 `user_id` → 收獎人不符；付款後祖先換線 → 無法判定，且「實拿」照列；任務續約用 `claimed_at`；ledger_reset 不誤判；自癒後缺漏消失 |
+| 5 | Edge 端點、契約、守門 | 依序做 5a～5d | 見 5a～5d |
+| 5a | `deriveNodeStatus` 搬到 `node-status.ts`（最先做） | `node-status.unit.test.ts`（characterization）＋既有 network-endpoints、verify 測試 | 紅燈：檔案不存在。綠燈後既有測試全綠，index.ts 改成 import 這一份 |
+| 5b | 參數與錯誤路徑（假 deps，不連 DB） | `admin-referral-tree.unit.test.ts` | 400（非 uuid、空 q）、404、RPC 錯誤回 500 而不是空清單；四態由 Edge 推導；反向匯入守衛 |
+| 5c | 守門與回應形狀（DB） | `admin-referral-tree.test.ts`、`api-contract.test.ts` | 401、403；回應通過 `assertShape` |
+| 5d | admin 路由清單的覆蓋斷言 | `admin-gate.test.ts` | 現有清單漏的 4 條會先讓它紅燈；補齊並加上新端點後綠燈 |
 | 6 | 前端純函式 | `src/components/admin/referral-tree/referralAudit.test.ts`（node） | 涵蓋展開路徑、`pinned` 合併、去重與計數、結果與原因的文案、層級標示。所有情境綠燈，文案不含禁用詞 |
-| 7 | `AdminReferralTree` | `AdminReferralTree.test.tsx`（jsdom） | 涵蓋搜尋、頂層、懶展開、載入更多、自動展開、中途失敗後續展、三態、丟棄過期回應、`role=tree` 與鍵盤。具體斷言：點命中結果會逐層展開並聚焦到目標；子層失敗只影響那一層；X / Y 不受 pinned 影響 |
-| 8 | `ReferralAuditSheet`、`PaymentAuditList`、次分頁、跨分頁導覽、私密設定 | `ReferralAuditSheet.test.tsx`、`MemberManagement.test.tsx`、`AdminDashboard.test.tsx`、`analyticsReviewHardening.test.ts` | 涵蓋需要注意區、各區三態、手機卡片與桌面表格、Sheet 內跳轉與返回、從會員詳情跳到推薦樹、`lockedTabProps`、`writeView` 不記推薦樹、portal 帶私密 class |
-| 9 | 規格書與 e2e | `e2e/features/admin_referral_tree.feature`（mock）、`test_overflow_sweep.py`、`test_admin_mobile_layout.py` | 規格書改 §13（並在 §7.2 加指向 §13 的一句），e2e 掃描 375 與 1280。CI 綠；`check-spec-drift.py` 綠 |
+| 7 | `AdminReferralTree` | `AdminReferralTree.test.tsx`（jsdom） | 涵蓋搜尋取代樹與清除、頂層、懶展開、載入更多與載入失敗、自動展開、展開鏈 token、中途失敗後續展、無法定位時降級、三態與重試焦點、disclosure 語意。具體斷言：點命中結果會逐層展開並聚焦到目標的名稱鈕；子層失敗只影響那一層；pinned 不計入 X；同一個 id 出現在正常頁時不重複，焦點也不掉 |
+| 8 | `ReferralAuditSheet`、`PaymentAuditList`、次分頁、跨分頁導覽、私密設定 | `ReferralAuditSheet.test.tsx`、`MemberManagement.test.tsx`、`AdminDashboard.test.tsx`、`analyticsReviewHardening.test.ts` | 涵蓋需要注意區與焦點目標、各區三態、付款卡的三種行數版型、Sheet 內跳轉與返回（返回鍵與 Esc 的對照表）、從會員詳情跳到推薦樹、`lockedTabProps`、`writeView` 不記推薦樹、portal 帶私密 class、fixture 補上 `referralTree` |
+| 9 | 規格書與 e2e | `e2e/features/admin_referral_tree.feature`（mock）、`test_overflow_sweep.py`、`test_admin_mobile_layout.py` | 規格書改 §13（並在 §7.2 加指向 §13 的一句），e2e 掃描 375、1024、1280。CI 綠；`check-spec-drift.py` 綠 |
 
 **S3b（看進度，S3a 合併後疊在 develop 上另開 PR）**
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 10 | 點數來源明細與跨表核對 RPC（§2.3） | `admin-referral-tree-db.test.ts` | 四條核對各造一個違反的案例，都要標成異常；正常帳本不標；明細分頁與總數正確 |
+| 10 | 點數來源明細與跨表核對 RPC（§2.3） | `admin-referral-tree-db.test.ts` | 四條核對（含反向與孤兒的新定義）各造一個違反的案例，都要標成異常。下列正常案例不標：延遲補沖、餘額為負時的 reset、舊資料標「未核對」。明細分頁與總數正確 |
 | 11 | 端點、契約、詳情的「點數來源」區塊，與異常「點數跨表核對不符」 | Deno unit 與 DB 測試、jsdom | 三態完整；需要注意區列出這類異常 |
 
 ## 6. 裁決紀錄（原開放問題 Q1～Q8，皆已裁決）
@@ -481,16 +568,24 @@
 | Q6 發獎函式 | **W6-19** | S3a 不動 `pay_referral_generations`。等價測試在 S1、S6 合併前後都要跑。改成呼叫 chain 函式留第 7 波 |
 | Q7 admin-gate | **W6-19** | 改為自動列舉，用覆蓋斷言實作，順手修掉 ops P2-4 |
 
-**第 2 版審查時，執行 session 自己決定的事**（主 session 或業主可以推翻）：
+**執行 session 自己決定的事**（主 session 或業主可以推翻；選配範圍另見 §3）：
 
-- Sheet 內跳到另一個人用「替換內容＋返回」，不疊層。
+- Sheet 內跳到另一個人用「替換內容＋返回」，不疊層；只有這張 Sheet 攔 Android 返回鍵。
+- 節點列用巢狀清單加 disclosure 鈕，不用 `role="tree"`。
 - `writeView` 不記住推薦樹這個次分頁。
-- `MemberDetailSheet` 一併補進 `SENSITIVE_PORTALS`。
 - 推薦樹這個次分頁放在第三格。
+- `MemberDetailSheet` 本次不補 `SENSITIVE_PORTALS`（第 7 波候選）。
+- 姓名為空時顯示「未填姓名」，不退回顯示 Email。
+- 延遲補沖的 ledger_reset 列只標「資訊」，不算不符。
 
-**仍待施工前確認的事實**：
+**仍待施工前確認的事實**（主 session 代跑唯讀 SQL）：
 
-- 正式站 `referred_by_changed_at` 為 null、且曾付款的會員筆數。階段 4 前請主 session 代跑唯讀 SQL 查詢。
+- 階段 4 前：
+  - 正式站曾付款、`referred_by_changed_at` 為 null 的會員筆數。
+  - 單一會員的最大付款筆數。
+  - 成環與自己推薦自己的候選數。
+  - 可判定但缺漏的筆數。
+- S3b 前：正式站有沒有加 `fee` 之前建立的提領單。
 
 ## 7. 風險與回滾
 
@@ -505,7 +600,8 @@
 - **效能**：
   - 遞迴有深度上限，並用 path 防環。
   - 每次請求最多 200 列。
-  - 加 `statement_timeout`；逾時回 500，畫面不呈現成「空的」。
+  - 異常掃描每個節點以 50 筆為上限，不依賴 `statement_timeout`。
+  - 查詢錯誤回 500，畫面不呈現成「空的」。
 - **同波衝突**：
   - S1、S6 改發獎與換線函式時，等價測試與可判定閘門會受影響。
   - 合併順序以 rebase 重跑 CI 為準。
@@ -524,15 +620,54 @@
 | 4 | pair-history 不是換線紀錄 | W6-16 (a')，改成無順序集合加有時間的事件，階段 3 改用回填形態的資料 |
 | 5 | 換線失敗的判定不穩 | 只判定最新一筆，其餘標「未能確認」，排除 keep，不靠告警種類（§2.2） |
 | 6 | 「與自癒一致」不成立 | 改寫成「比自癒更保守」；任務續約用 `claimed_at`；寫明冪等鍵的來源；自癒提示只用在缺漏（§2.1） |
-| 7 | 樹的來源不唯一 | 單一來源為 edges，篩選只套頂層，固定排序，新增「推薦關係兩處不一致」異常（§2.2） |
+| 7 | 樹的來源不唯一 | 單一來源為 edges，篩選只套頂層，固定排序；「兩處不一致」在第 3 版降為資訊提示（§2.2） |
 | 8 | 匯出 `deriveNodeStatus` 會循環匯入 | 抽出到 `node-status.ts`，加反向匯入守衛（§3、階段 5d） |
 | 9 | 前端資料注入鏈漏寫 | 用 `ReferralTreeLoaders` 物件整包傳下去，由 `treeFocusId` 持有跳轉目標（§3） |
 | 10 | 「500 不回空」在 DB 測試裡紅不了 | 拆出 unit 測試，用假 deps（階段 5a） |
 | 11 | 異常排在最後 | 改成「需要注意」置頂，頁首放主狀態（§4） |
-| 12 | 付款查帳沒有手機版面 | 手機卡片、桌面表格擇一渲染，`wrap-anywhere`，加進 overflow sweep（§4） |
+| 12 | 付款查帳沒有手機版面 | 第 3 版改成 Sheet 內一律用卡片，`wrap-anywhere`，並加進 overflow sweep（§4） |
 | 13 | Sheet 內跳轉的導覽沒定義 | 替換內容，加返回堆疊，定義 Android 返回、焦點與捲動（§4） |
 | 14 | 跨次分頁導覽沒規劃 | 跳轉三步驟、鎖定狀態、`writeView`（§3），測試在階段 8 |
 | 15 | 三態缺漏 | 五個區塊各自列出三態表（§4） |
 | 16 | 自動展開與 pinned 的一致性 | 定義計數、去重、中途失敗後續展、播報、焦點（§4） |
 
 第 1 版的 P2 已一併處理：`user_id` 比對、兩種成環的口徑、跳脫與逾時、索引精簡加 `search_path`、等價測試的跨 PR 依賴、覆蓋斷言、同一行 anchor、`writeView`、單一 migration、情境 5 為部分滿足、選配範圍、觸控語意與鍵盤、灰階、文字徽章、次分頁位置。
+
+### 第 2 輪（第 2 版的 P0 1 條、P1 15 條）
+
+| # | 發現 | 處置 |
+|---|---|---|
+| P0 | 「在推薦樹中查看」與推薦人鏈可點，追溯不到任何裁決 | 列入 §3 選配與 §6 自決，附上服務的情境，「不做」補「沒有其他入口」 |
+| 需求 1 | 「兩處不一致」不在業主的異常清單 | 降為詳情內的資訊提示，不上節點標示（§2.2） |
+| 需求 2 | 搜尋沒有套用收人範圍 | 搜尋與樹收同一群人，加斷言（§2.2、階段 2） |
+| 系統 1 | `statement_timeout` 擋不住 | 撤掉這個依賴，改成每節點掃描 50 筆的有界設計（§2.2） |
+| 系統 2 | ledger_reset 的公式會誤報 | 改成 `-greatest(prev,0)`；延遲補沖只標資訊；寫出競態說明（§2.3） |
+| 系統 3 | 核對 1、3 的範圍錯 | 1 涵蓋所有狀態；3 改定義；2 補反向（§2.3） |
+| 系統 4 | 三種命中定位不到樹上 | 頂層也能 `ensureId`；`ancestorIds=null` 附原因，前端降級（§2.2、§4） |
+| 架構 1 | node-status 沒有紅燈且順序錯 | 移到 5a 最先做，加 characterization 測試；四態由 Edge 推導 |
+| 架構 2 | 在已 push 的 migration 上追加不會重跑 | 每階段一支 migration，S3b 另一支；寫明 DB 測試不在 check 內 |
+| 架構 3 | 覆蓋斷言細節 | 前綴含斜線、排除 ALL、參數正規化、補 DELETE、掛在守門之後（§3） |
+| UI 1 | tree 語意自相矛盾 | 改用巢狀清單加 disclosure（§4） |
+| UI 2 | pinned 去重會掉焦點 | pinned 留到離開該層，正常列不重複渲染（§4） |
+| UI 3 | 返回鍵的行為沒定義 | 補對照表，資料保留，只攔這張 Sheet（§4） |
+| UI 4 | 付款卡表達不出「收獎人不符」 | 每代兩到三行的版型（§4） |
+| UI 5 | 用視窗斷點切表格會塞爆 Sheet | Sheet 內一律用卡片（§4） |
+| UI 6 | 重試焦點沒定義 | 三態表加「重試焦點」欄（§4） |
+
+第 2 輪的 P2 已一併處理：
+- 第 N 層每個節點都顯示。
+- 換線判定註明為衍生。
+- 找不到對應訂閱、判定順序、`IS DISTINCT FROM`、只顯示實拿金額。
+- 最大付款筆數與舊提領單交由代查。
+- 前端 loader 放進 `MEMBER_API`，fixture 補上。
+- `writeView` 寫明落點。
+- `MemberDetailSheet` 的 portal 改列第 7 波。
+- DB 測試不在 check 內。
+- 徽章對照表。
+- 草圖改用 lucide。
+- 需要注意的連結會移動焦點。
+- 搜尋版面。
+- 載入更多失敗、子層查回 0 筆。
+- 姓名為空。
+- 展開鏈 token。
+
