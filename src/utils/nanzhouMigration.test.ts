@@ -11,4 +11,8 @@ describe('rename_nanzhou_township migration', () => {
     expect(sql).toContain("array_replace(districts, '南鄉', '南州鄉')");
     expect(sql).toContain("where '南鄉' = any(districts)");
   });
+
+  it('同一筆刊登已含南州鄉時只移除南鄉，不產生重複的南州鄉', () => {
+    expect(sql).toContain("when '南州鄉' = any(districts) then array_remove(districts, '南鄉')");
+  });
 });
