@@ -20,6 +20,18 @@ export interface FreshReferrerInput {
   isAutoReferral: boolean;
   /** /subscriptions/status 的 renewal.freshDefaultReferrerAvailable；缺值（空窗）視為不可用。 */
   defaultAvailable: boolean | undefined;
+  /** renewal.freshDefaultReferrerIsCurrent：預設推薦人就是現任推薦人（W5-63）；缺值走既有文案。 */
+  defaultIsCurrent?: boolean;
+}
+
+/** 新約留空時推薦人會怎樣：換到預設推薦人／預設即現任而不變／預設不可用而維持原推薦人。 */
+export type BlankFreshOutcome = 'changes' | 'keeps_same' | 'keeps';
+
+export function blankFreshOutcome(
+  _available: boolean | undefined,
+  _isCurrent: boolean | undefined,
+): BlankFreshOutcome {
+  return 'keeps';
 }
 
 const sameCode = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -38,7 +50,10 @@ export function freshReferrerSentence(input: FreshReferrerInput): string | null 
   return input.defaultAvailable === true ? '您的推薦人將改變。' : null;
 }
 
-export function freshCodeHint(defaultAvailable: boolean | undefined): string {
+export function freshCodeHint(
+  defaultAvailable: boolean | undefined,
+  _defaultIsCurrent?: boolean,
+): string {
   return defaultAvailable === true
     ? '選擇新約會重新建立推薦關係。若要留在原本的推薦人底下，請填入他的推薦碼；不填則推薦人將改變。'
     : '選擇新約會重新建立推薦關係。不填推薦碼則維持原本的推薦人。';
@@ -49,6 +64,7 @@ export function freshCodePlaceholder(
   currentCode: string | null,
   isAutoReferral: boolean,
   defaultAvailable: boolean | undefined,
+  _defaultIsCurrent?: boolean,
 ): string {
   return currentCode && !isAutoReferral && defaultAvailable !== true
     ? `目前：${currentCode}`
