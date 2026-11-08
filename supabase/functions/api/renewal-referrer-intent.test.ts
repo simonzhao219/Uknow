@@ -714,3 +714,82 @@ Deno.test('complete_paid_pending_orders：換線鎖被占用 → 該筆跳過不
     await deleteTestUsers(client, ids);
   }
 });
+
+// 第 6 波 S1：單筆函式自己設 try 旗標、wrapper 不再清旗標於迴圈中——兩位會員各一張換線單、
+// 換線鎖被占用時，wrapper 的第 2 筆也必須走 try（不能阻塞等鎖）。
+Deno.test('complete_paid_pending_orders：多筆時第 2 筆仍走 try → 兩筆都跳過不阻塞', async () => {
+  const client = adminClient();
+  const holder = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 10_000 } });
+  const ids: string[] = [];
+  try {
+    const trades: string[] = [];
+    for (const name of ['批次 甲', '批次 乙']) {
+      const m = await member(client, sql, ids, name);
+      await expire(sql, m);
+      const t = tradeNo('BATCH2');
+      await prepare6(sql, m, t, 'fresh', { user: null, code: null, source: 'keep' });
+      await sql`
+        update public.payment_orders
+        set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
+        where transaction_id = ${t}`;
+      trades.push(t);
+    }
+    let r: { skipped_locked: number; completed_count: number } | null = null;
+    await holder.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext('referral_rewire'))`;
+      const [row] = await sql`select public.complete_paid_pending_orders(null, 50) as r`;
+      r = row.r;
+    });
+    assertEquals({ skipped: r!.skipped_locked >= 2, completed: r!.completed_count }, {
+      skipped: true,
+      completed: 0,
+    });
+    const orders = await sql`
+      select status from public.payment_orders where transaction_id in ${sql(trades)}`;
+    assertEquals(orders.map((o) => o.status), ['pending', 'pending']);
+  } finally {
+    await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+// 第 6 波 S1：單筆函式委派前以 lock_timeout 3s 預取付款人 profiles 鎖；拿不到 → skipped_locked、
+// 不寫錯誤告警、訂單維持 pending（不會在 HTTP 請求裡無上限地等）。
+Deno.test('complete_paid_pending_order：付款人 profiles 被占用 → 3 秒內 skipped_locked、不告警', async () => {
+  const client = adminClient();
+  const holder = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 10_000 } });
+  const ids: string[] = [];
+  try {
+    const m = await member(client, sql, ids, '預取 會員');
+    await expire(sql, m);
+    const t = tradeNo('PREFETCH');
+    await prepare6(sql, m, t, 'extend');
+    await sql`
+      update public.payment_orders
+      set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
+      where transaction_id = ${t}`;
+    const [{ id }] = await sql`select id from public.payment_orders where transaction_id = ${t}`;
+    let r: { outcome: string } | null = null;
+    const started = Date.now();
+    await holder.begin(async (tx) => {
+      await tx`select 1 from public.profiles where id = ${m} for update`;
+      const [row] = await sql`select public.complete_paid_pending_order(${id}::uuid) as r`;
+      r = row.r;
+    });
+    assertEquals(r!.outcome, 'skipped_locked');
+    assert(Date.now() - started < 8_000, '應在 lock_timeout 附近放棄，不是等到 statement_timeout');
+    const [o] = await sql`select status from public.payment_orders where id = ${id}`;
+    assertEquals(o.status, 'pending');
+    const [al] = await sql`
+      select count(*)::int as n from public.system_alerts
+      where source = 'complete_paid_pending_orders' and context->>'order_id' = ${id}::text`;
+    assertEquals(al.n, 0);
+  } finally {
+    await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
