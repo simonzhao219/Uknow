@@ -1,16 +1,13 @@
-import { prefersReducedMotion } from './motionPreference';
 import { type SwipeDirection, swipeIntent } from './swipeIntent';
 
-// 換篇跟手的純函式與常數。數值是手感起步值（W6-20），實機後在這裡一處調整。
+// 換篇跟手的純函式與常數（軸向鎖定、阻尼、放開判定、起點排除）。手感數值是起步值（W6-20）。
+// 進場／彈回的時序常數與 springTo 在 browseMotion.ts（entry 會用到，這個檔只隨手勢 chunk 載入）。
 // 換不換篇的門檻不在這裡定義：settle 直接呼叫 swipeIntent，避免兩份門檻漂移。
 export const DRAG_LOCK_PX = 10;
 export const DRAG_DAMPING = 0.5;
 export const DRAG_MAX_FRACTION = 1 / 3;
 export const DRAG_NO_NEIGHBOR_DAMPING = 0.25;
 export const DRAG_NO_NEIGHBOR_MAX_PX = 24;
-export const ENTER_OFFSET_PX = 32;
-export const ENTER_MS = 220;
-export const SPRING_MS = 180;
 
 export type DragAxis = 'horizontal' | 'vertical' | null;
 
@@ -91,17 +88,4 @@ export function startsInsideHorizontalScroller(
     node = node.parentElement;
   }
   return false;
-}
-
-/**
- * 從目前位移（from，例如 'translateX(-30px)'）彈回 0：先清掉 inline transform，再用 WAAPI 補一段
- * 動畫。拖曳放開未換篇、頭尾再換篇的回彈都走這一個實作。減少動態或沒有位移時只清不動。
- */
-export function springTo(el: HTMLElement, from: string): void {
-  el.style.transform = '';
-  if (!from || prefersReducedMotion() || typeof el.animate !== 'function') return;
-  el.animate([{ transform: from }, { transform: 'translateX(0)' }], {
-    duration: SPRING_MS,
-    easing: 'ease-out',
-  });
 }

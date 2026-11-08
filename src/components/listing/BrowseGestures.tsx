@@ -4,9 +4,9 @@ import {
   isInteractiveStart,
   lockAxis,
   settle,
-  springTo,
   startsInsideHorizontalScroller,
 } from '../../utils/browseDrag';
+import { springTo } from '../../utils/browseMotion';
 import { browseKeyDirection } from '../../utils/browseKeys';
 import { prefersReducedMotion } from '../../utils/motionPreference';
 import { SWIPE_EDGE_GUARD_PX, swipeIntent } from '../../utils/swipeIntent';

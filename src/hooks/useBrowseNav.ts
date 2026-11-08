@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import type { BrowseVia } from '../components/listing/BrowseNav';
-import { ENTER_MS, ENTER_OFFSET_PX, springTo } from '../utils/browseDrag';
+import { ENTER_MS, ENTER_OFFSET_PX, NUDGE_PX, springTo } from '../utils/browseMotion';
 import type { BrowseNeighbors } from '../utils/browseContext';
 import { setLastViewedId } from '../utils/homeListingsCache';
 import { prefersReducedMotion } from '../utils/motionPreference';
@@ -59,7 +59,7 @@ export function useBrowseNav({
       // 手勢的回彈已由 BrowseGestures 從拖曳位移彈回；按鈕與鍵盤才在這裡輕推 24px 再回原位。
       const el = motionRef.current;
       if (via !== 'swipe' && el) {
-        springTo(el, `translateX(${direction === 'next' ? -24 : 24}px)`);
+        springTo(el, `translateX(${direction === 'next' ? -NUDGE_PX : NUDGE_PX}px)`);
       }
       return;
     }
