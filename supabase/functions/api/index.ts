@@ -25,7 +25,12 @@ import {
   recentConsecutiveFailureUsers,
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
-import { type ReconcileSummary, runScheduledReconcile } from './reconcile-handler.ts';
+import {
+  type ReconcileSummary,
+  runScheduledReconcile,
+  type UnknownReason,
+} from './reconcile-handler.ts';
+import { healPaidPendingOrders, type HealRpc } from './paid-pending-heal.ts';
 import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
@@ -2584,13 +2589,16 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
 // ============================================================
 // 工具：自癒卡單訂單（pending 但 payuni_response 已存 SUCCESS，見
 // migration 0007）。best-effort——失敗只記 log；回傳是否真的補完了
-// 任何訂單，讓呼叫端知道要不要重讀最新狀態。
+// 任何訂單，讓呼叫端知道要不要重讀最新狀態。第 6 波 S1：逐筆一個交易
+// （paid-pending-heal.ts），不再一次呼叫單一交易的 complete_paid_pending_orders。
 // ============================================================
+// supabase-js 的 rpc() 回 thenable builder，await 一次包成 Promise 給 HealRpc。
+// deno-lint-ignore no-explicit-any
+const rpcOf = (client: any): HealRpc => async (fn, args) => await client.rpc(fn, args);
+
 async function healPaidPendingOrdersBestEffort(userId?: string): Promise<boolean> {
   try {
-    const { data, error } = await sb().rpc('complete_paid_pending_orders', {
-      p_user_id: userId ?? null,
-    });
+    const { data, error } = await healPaidPendingOrders(rpcOf(sb()), { userId });
     if (error) {
       console.error('[healPaidPendingOrdersBestEffort]', error);
       return false;
@@ -2782,14 +2790,14 @@ type QueryResult =
     queryFailure?: { status: string; message: string };
     unknownStatus?: {
       tradeStatus: string;
-      reason: 'unknown_code' | 'missing_field' | 'no_matching_trade' | 'incomplete_too_long';
+      reason: UnknownReason;
     };
     incomplete?: true;
   }
   | { stillProcessing: false; data: Record<string, string> };
 
 /** unknown_trade_status 告警給人看的原因（reason 是給程式用的代碼，留在 context）。 */
-const UNKNOWN_STATUS_LABEL = {
+const UNKNOWN_STATUS_LABEL: Record<UnknownReason, string> = {
   unknown_code: 'PayUni 回了待確認或碼表外的狀態',
   missing_field: 'PayUni 回應缺少交易狀態',
   no_matching_trade: 'PayUni 回應裡找不到這張單',
@@ -2838,6 +2846,12 @@ export async function reconcilePendingOrders(
     queryFailures: 0,
     expireErrors: 0,
     unknownStatus: 0,
+    unknownByReason: {
+      unknown_code: 0,
+      missing_field: 0,
+      no_matching_trade: 0,
+      incomplete_too_long: 0,
+    },
     incomplete: 0,
   };
 
@@ -2862,6 +2876,7 @@ export async function reconcilePendingOrders(
         // （去重到 resolve 為止，單子在視窗後段輪流時不會重複告警）。
         const { tradeStatus, reason } = result.unknownStatus;
         summary.unknownStatus++;
+        summary.unknownByReason[reason]++;
         await logSystemAlertOnce(
           'reconcile-pending-payments',
           { reason: 'unknown_trade_status', tradeNo: order.transaction_id! },
@@ -3126,7 +3141,7 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
       scheduledRunDeps(sb),
       parseScheduledTrigger(body),
       {
-        heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
+        heal: () => healPaidPendingOrders(rpcOf(sb())),
         reconcile: () =>
           reconcilePendingOrders(
             sb(),

@@ -247,6 +247,62 @@ Deno.test('invoke_internal_endpoint：白名單外的 job 名 → 擲錯', async
   }
 });
 
+// 第 6 波 S1（R5 P2-9）：人工在 SQL Editor 驗證時帶 'manual'，帳本不冒充 pg_cron。
+Deno.test("invoke_internal_endpoint：帶 'manual' → 請求 body 與 vault_missing 列都記 manual", async () => {
+  await resetLedger();
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    await clearVault(sql);
+    await sql`select public.invoke_internal_endpoint('reconcile', 'manual')`;
+    const { data } = await adminClient().from('scheduled_job_runs')
+      .select('trigger, error_code').eq('job', 'reconcile');
+    assertEquals(data, [{ trigger: 'manual', error_code: 'vault_missing' }]);
+
+    await sql`select vault.create_secret('http://127.0.0.1:9/functions/v1/api/', 'uknow_api_base_url')`;
+    await sql`select vault.create_secret('invoke-test-secret', 'uknow_internal_secret')`;
+    const body = await sql.begin(async (tx) => {
+      const [{ id }] =
+        await tx`select public.invoke_internal_endpoint('reconcile', 'manual') as id`;
+      const [row] = await tx`
+        select convert_from(body, 'utf8') as body from net.http_request_queue where id = ${id}`;
+      return JSON.parse(row.body);
+    });
+    assertEquals(body, { trigger: 'manual' });
+  } finally {
+    await clearVault(sql);
+    await sql.end();
+    await resetLedger();
+  }
+});
+
+Deno.test('invoke_internal_endpoint：trigger 只收 pg_cron／manual，其他值擲錯', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    let threw = false;
+    try {
+      await sql`select public.invoke_internal_endpoint('reconcile', 'github')`;
+    } catch {
+      threw = true;
+    }
+    assert(threw, 'github 補跑走 GitHub Actions，不經這支函式');
+  } finally {
+    await sql.end();
+  }
+});
+
+Deno.test('invoke_internal_endpoint：只剩一個多載，cron 指令的單參數呼叫不歧義', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    const rows = await sql`
+      select pg_get_function_identity_arguments(p.oid) as args
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'invoke_internal_endpoint'`;
+    assertEquals(rows.map((r) => r.args), ['p_job text, p_trigger text']);
+  } finally {
+    await sql.end();
+  }
+});
+
 Deno.test('cron.job：對帳、照片清理、帳本清理三個排程的時間與指令', async () => {
   const sql = postgres(DB_URL, { max: 1 });
   try {
@@ -333,7 +389,7 @@ Deno.test('W5-31 權限：anon／authenticated 不可 EXECUTE 排程函式、對
     for (const role of ['anon', 'authenticated']) {
       const [r] = await sql`
         select
-          has_function_privilege(${role}, 'public.invoke_internal_endpoint(text)', 'execute') as invoke,
+          has_function_privilege(${role}, 'public.invoke_internal_endpoint(text, text)', 'execute') as invoke,
           has_function_privilege(${role}, 'public.prune_scheduled_job_runs(integer)', 'execute') as prune,
           has_function_privilege(${role}, 'public.pause_scheduled_jobs()', 'execute') as pause,
           has_function_privilege(${role}, 'public.resume_scheduled_jobs()', 'execute') as resume,

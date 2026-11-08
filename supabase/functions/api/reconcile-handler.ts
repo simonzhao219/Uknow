@@ -14,6 +14,7 @@ import {
   type ScheduledTrigger,
   withScheduledRun,
 } from './scheduled-runs.ts';
+import type { HealResult } from './paid-pending-heal.ts';
 
 export type ReconcileSummary = {
   checked: number;
@@ -24,8 +25,18 @@ export type ReconcileSummary = {
   queryFailures: number;
   expireErrors: number;
   unknownStatus: number;
+  /** R5 P2-7：unknownStatus 依原因分計（四者和＝unknownStatus）。 */
+  unknownByReason: Record<UnknownReason, number>;
   incomplete: number;
 };
+
+export const UNKNOWN_REASONS = [
+  'unknown_code',
+  'missing_field',
+  'no_matching_trade',
+  'incomplete_too_long',
+] as const;
+export type UnknownReason = typeof UNKNOWN_REASONS[number];
 
 export type ReconcileClassification = 'ok' | 'all_failed' | 'majority_failed';
 
@@ -44,8 +55,34 @@ export function classifyReconcileOutcome(s: ReconcileSummary): ReconcileClassifi
 
 const ALERT_SOURCE = 'reconcile-pending-payments';
 
+/** 帳本 summary.heal：只放計數（camelCase、failed 是數字），不放訂單 id。SQL streak 讀這一份。 */
+export type HealLedgerSummary = {
+  candidates: number;
+  completed: number;
+  failed: number;
+  skippedLocked: number;
+  amountMismatch: number;
+  truncated: boolean;
+  error: boolean;
+};
+
+/** heal 回傳的 data 是外部（RPC／注入）來的，逐鍵防禦：形狀不符就當 0，不擲錯。 */
+export function healLedgerSummary(data: unknown, error: unknown): HealLedgerSummary {
+  const r = (data && typeof data === 'object' ? data : null) as Partial<HealResult> | null;
+  const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+  return {
+    candidates: n(r?.candidates_found),
+    completed: n(r?.completed_count),
+    failed: Array.isArray(r?.failed) ? r.failed.length : 0,
+    skippedLocked: n(r?.skipped_locked),
+    amountMismatch: n(r?.amount_mismatch),
+    truncated: r?.truncated === true,
+    error: !!error || r === null,
+  };
+}
+
 export type ReconcileHandlerDeps = {
-  heal: () => Promise<{ data: unknown; error: unknown }>;
+  heal: () => Promise<{ data: unknown; error: unknown }>; // 正式路徑回 HealResult
   reconcile: () => Promise<ReconcileSummary>;
   alertOnce: (
     source: string,
@@ -63,11 +100,10 @@ export async function handleReconcile(deps: ReconcileHandlerDeps): Promise<Sched
   // 訂閱（migration 0007），不需要 PayUni 查詢 API。補完的訂單會離開
   // pending，下面的掃描自然不會再碰到。
   const { data: healSummary, error: healError } = await deps.heal();
-  // ⚠️ 已知缺口(已評估、刻意延後,見 friction-log 2026-08-17 記債清單；
-  // 第 5 波 W5-18 再次決定不收):這裡只寫 log,而且執行會繼續、端點仍回
-  // { success: true }——安全網的第一段靜默沒跑,回應形狀斷言照樣過。
-  // 下一個做 console.error 掃描的人:這個坑已經被看過了,不用重新發現。
+  // heal 失敗：寫進帳本 summary.heal.error（第 6 波 S1，R5 P2-8），scheduler_health 的
+  // healFailedStreak 看得到連續失敗；依 W6-11（維持 W5-18）不推 LINE，端點照常對帳、回 success。
   if (healError) deps.logError('[reconcile-pending-payments] heal pass 失敗:', healError);
+  const healLedger = healLedgerSummary(healSummary, healError);
 
   const summary = await deps.reconcile();
   const heal = healSummary ?? null;
@@ -91,7 +127,7 @@ export async function handleReconcile(deps: ReconcileHandlerDeps): Promise<Sched
       return {
         status: 'failed',
         errorCode: 'query_all_failed',
-        summary: { ...summary },
+        summary: { ...summary, heal: healLedger },
         response: {
           httpStatus: 502,
           body: {
@@ -115,14 +151,14 @@ export async function handleReconcile(deps: ReconcileHandlerDeps): Promise<Sched
       const degraded = { ...summary, degraded: true };
       return {
         status: 'succeeded',
-        summary: degraded,
+        summary: { ...degraded, heal: healLedger },
         response: { httpStatus: 200, body: { success: true, data: { ...degraded, heal } } },
       };
     }
     default:
       return {
         status: 'succeeded',
-        summary: { ...summary },
+        summary: { ...summary, heal: healLedger },
         response: { httpStatus: 200, body: { success: true, data: { ...summary, heal } } },
       };
   }

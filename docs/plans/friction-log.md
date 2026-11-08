@@ -3511,3 +3511,25 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 - **紅燈期測試夾具寫錯只能停手等授權**（流程）：夾具順序錯（`mockResolvedValue` 擺在 `setup()` 之後，背景重驗已先用預設值）
   讓新測試失敗得不是因為實作缺口，被 tdd-test-guard 擋；本 session 靠互動選項取得授權解鎖。
   教訓：寫新測試的夾具時，先在「還沒 touch tdd-lock」前把測試跑到「失敗原因正確」（讀失敗訊息而非只看紅），再建鎖。
+
+## 2026-11-08｜漏網（流程、測試、環境）｜第 6 波 S1 batch-heal-lock-split（從 progress.md 整併）
+
+1. **`| tail` 吞掉檢查的 exit code**：`python3 scripts/check-test-names.py | tail -2 && touch .claude/tdd-lock && git commit …`——
+   管線回的是 tail 的 0，命名檢查 FAIL 了 chain 照走，紅燈 commit 帶著 76 字的測試名進去；紅燈期測試檔又被鎖，只好請業主授權
+   解鎖改名。教訓：驗證指令後面要接 `&&` 時不要 pipe，或 `set -o pipefail`。
+2. **postgres.js 的查詢是 lazy 的**：`const heal = sql\`select …\`` 不 await 就不會送出，雙連線編排會以「10 秒內沒被擋住」假失敗；
+   要先跑起來再輪詢就用 `.execute()`。
+3. **紅燈期測試寫錯的兩次授權**（期望值 `'2'` 應為數字、測試名超長）：都只改期望值／名稱、斷言行為不變，業主以本 session 互動選項授權。
+   PreToolUse 守衛把「斷言錯」與「名稱錯」一視同仁擋下，是正確的保守——但命名檢查若在紅燈 commit 前就擋（見 1），第二次就不必勞動業主。
+4. **worker 重啟殺掉 dockerd**：本 session 兩次。復原＝背景起 dockerd → `supabase start`（會報 db not ready 但容器其實起來）→
+   等 auth healthy → `docker restart` kong → 用 psql 重套本分支 migration。`SUPABASE_ANON_KEY` 不在 test-helpers 的預設裡，
+   本機要自己從 `supabase status -o env` 帶，否則 `W5-31 PostgREST 不暴露 net schema` 會假紅（401 而非 406）。
+5. **範圍外發現**：舊 wrapper 重現互鎖時第一個撞鎖點是 `apply_referral_side_effects` 3b 建推薦邊（warning），比發獎更早。
+   逐筆化後這條環已不存在，但 3b／3d 失敗仍只是 warning——漏建推薦邊會讓之後的第 2、3 代靜默漏發。列第 7 波候選。
+
+6. **LINE 推播只取 message 前 60 字**（`reconcile-payments.yml` 的 notify 段 `str(a['message'])[:60]`）：規劃與四視角審查都以
+   「前 200 字」設計告警，獨立審查才抓到；W6-24 把行動與單號移進前 60 字。教訓：寫告警文案前先讀推播端實際截斷。
+   另記（第 7 波）：`complete_paid_pending_order` 單筆失敗的 error 告警 message 仍是原始 sqlerrm（既有行為，未改）。
+
+處置：1 列入下次框架整併（pre-commit 已擋命名，問題在紅燈通道只跑靜態閘門之前的手動 chain）；2、4 為紀錄；3 為紀錄；5 交主 session；
+6 寫進下次 `/plan-feature` 的「外部通道」檢查題，sqlerrm 那條列第 7 波候選。

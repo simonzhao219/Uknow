@@ -13,7 +13,9 @@
         "lastPgCronRowAt": "2026-11-20T01:07:41Z",
         "lastPgCronErrorCode": null,
         "counts24h": { "succeeded": 24, "failed": 0, "skipped": 0, "abandoned": 0 },
-        "lastPurgeDryRun": null
+        "lastPurgeDryRun": null,
+        "healFailedStreak": 0,
+        "healSkippedStreak": 0
       },
       "purge-photos": {
         "cronJobPresent": true,
@@ -25,7 +27,9 @@
         "lastPgCronRowAt": "2026-11-19T19:17:20Z",
         "lastPgCronErrorCode": null,
         "counts24h": { "succeeded": 1, "failed": 0, "skipped": 0, "abandoned": 0 },
-        "lastPurgeDryRun": false
+        "lastPurgeDryRun": false,
+        "healFailedStreak": null,
+        "healSkippedStreak": null
       }
     },
     "pgNet6h": { "non2xx": 0, "timedOut": 0, "lastStatusCodes": [] }
