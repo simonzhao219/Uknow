@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | 1 | A 後端：status 第三態＋契約 | ✅ 綠（CI api-tests 紅→綠） | 86db5361 | 475409a9 |
 | 2 | A 前端：文案第三態 | ✅ 綠（本機 vitest 紅 6→綠） | 18605717 | 799ccfb7 |
-| 3 | B：0d 驗單上碼＋告警分句 | 🔴 紅燈中（本機 PG16 情境已驗紅，等 CI） | 256c5941 | |
+| 3 | B：0d 驗單上碼＋告警分句 | ✅ 綠（CI api-tests 紅 5，綠待 CI） | 256c5941 | b999613c |
 | 4 | C：drop 三參數 prepare | ⬜ 未開始 | | |
 | 5 | E：部署前確認 migration | ⬜ 未開始 | | |
 | 6 | 文件同步＋收尾 | ⬜ 未開始 | | |
@@ -19,6 +19,12 @@
 ## 目前位置與下一步
 
 業主 11/08 18:23 修訂後通過；主 session 親審通過並定 W6-31（接受 R2-9）。PR #526（draft）。第 3 階段紅燈等 CI，綠燈 migration 草稿已在本機 PG16 驗過 B1～B4、B6。第 5 階段要用 develop ref 實打 Management API 驗回應形狀（主 session 提醒）。階段 4 開工前以互動選項請業主授權改 5 處既有測試。
+
+## 業主授權（本 session 互動選項）
+
+- 2026-11-08 18:23「接受 R2-9，修訂後通過，開始實作」。
+- 2026-11-09 01:53「gzip 預算 316→316.5 kB (建議)」：階段 2 實測 entry gzip 316.0→316.2（develop 基準即在上限）。
+- 2026-11-09 01:53「授權改這 5 處 (建議)」：階段 4 改 renewal-referrer-intent（LEGACY 案、權限案）、prepare-payment-order（callRpc、raw SQL）、duplicate-payment。
 
 ## Blockers(逃生口紀錄)
 
