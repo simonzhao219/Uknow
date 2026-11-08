@@ -502,7 +502,7 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     expect(animate).toHaveBeenCalledTimes(1);
     const [keyframes] = animate.mock.calls[0];
     expect(JSON.stringify(keyframes)).toContain('translateX(-24px)');
-    expect(animate.mock.instances[0]).toBe(content());
+    expect(animate.mock.instances[0]).toBe(motion());
   });
 
   it('第一篇再按上一篇，內容區向右輕推再回原位', async () => {
@@ -513,6 +513,25 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
 
     expect(animate).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(animate.mock.calls[0][0])).toContain('translateX(24px)');
+  });
+
+  it('手勢在頭尾放開時回彈由手勢負責，換篇邏輯不再疊一段回彈', async () => {
+    setup('c');
+    const title = await screen.findByRole('heading', { name: 'CCC美容師' });
+    await settleLazy();
+
+    fireEvent.touchStart(title, { touches: [{ clientX: 250, clientY: 300 }] });
+    fireEvent.touchEnd(title, { changedTouches: [{ clientX: 120, clientY: 300 }] });
+
+    expect(await screen.findByText(/已是最後一篇/)).toBeTruthy();
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it('外層容器用 overflow-x-clip 擋住位移造成的橫向捲動', async () => {
+    setup('b');
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(motion()?.parentElement?.className).toContain('overflow-x-clip');
   });
 
   it('偏好減少動態時頭尾不回彈，仍播報已是最後一篇', async () => {

@@ -91,3 +91,6 @@ export function startsInsideHorizontalScroller(
   }
   return false;
 }
+
+/** 從目前位移彈回 0（階段 5 stub：行為留空）。 */
+export function springTo(_el: HTMLElement, _from: string): void {}
