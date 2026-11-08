@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-規劃已寫、/review-plan 待跑；之後停等業主裁決 Q1～Q6,業主親打 `/tdd-implement listing-swipe-transition`。
+規劃已依 /review-plan 與主 session 裁決 W6-20 修訂（review.md P1-1～11 已併入 plan.md），待主 session 親審後請業主在本 session 親打 `/tdd-implement listing-swipe-transition`。
 
 ## Blockers(逃生口紀錄)
 

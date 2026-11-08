@@ -57,4 +57,5 @@
 
 <!-- P0 的處置規則:必須改 plan 並重跑 /review-plan,或由人在此明文豁免。 -->
 
-- [ ] 人審完成,裁決:□ 通過 □ 修訂後通過(豁免理由:) □ 退回重規劃
+- 2026-11-08 主 session 裁決 W6-20：修訂後通過；P1-1～11 已併入 plan.md（固定 wrapper、不傳 dx、useLayoutEffect、touchstart cancel、邊緣／互動元素／選字起點、hasPrev/hasNext、階段 3/6 量 bundle 等）。待業主親審並親打 /tdd-implement。
+- [ ] 人審完成,裁決:□ 通過 ☑ 修訂後通過(豁免理由:P0=0，P1 全數併入規劃，不重跑完整審查) □ 退回重規劃
