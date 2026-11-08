@@ -95,3 +95,18 @@
 4. 測試：常數與座標表 key 一致（若已有就確認涵蓋）；migration 的轉換有 Deno 或 SQL 層測試（照 repo 慣例）。
 流程：`git checkout -B fix/nanzhou-township origin/develop`，跑 `/fix-bug`。新 migration 後跑 check-migration-versions.py；若規格書有鄉鎮清單，check-spec-drift.py。
 ```
+
+## S4. 換篇過場動畫（Sonnet，三段式，`feature/listing-swipe-transition`）
+
+```text
+工項 S4（plan.md §2，裁決 W5-69、W6-1）。有完成才上（不是必上），11/22 22:00 收件。
+問題：業主正式站實測刊登詳情頁左右滑／點「‹ ›」換篇——順，但「突然」：內容瞬間換掉，沒有方向感。
+要的結果：換篇時有短的過場（例如依方向 slide-in／淡入），手勢跟手時內容跟著位移、放開後補完動畫；尊重「減少動態」偏好；不拖慢換篇（不等動畫完才能再滑）。
+併入 S7（#509）留下的 P2 五項（逐條讀 #509 的 PR 內文「未修／留待」段與審查留言，以原文為準）：reduced-motion 未併 `motionPreference`、抽 hook、手勢 chunk 缺 error boundary、slide-in、手勢起點。
+規劃必答：動畫做在哪一層（ServiceProviderDetail 換 :id 時元件狀態重設——S7 的 P0 教訓，見 #509）；與照片輪播手勢的衝突；bundle 預算（S7 的 W5-43：entry raw／gzip 上限，build-bundle 軌有機械把關）；PostHog 錄影遮罩不受影響（`privateClass`、`maskTextSelector`）；e2e 怎麼驗（mock e2e 的詳情頁 feature）。
+流程：
+1. `git checkout -B feature/listing-swipe-transition origin/develop`，跑 `/plan-feature listing-swipe-transition`（自動接 /review-plan）。讀規格書「刊登詳情頁的換篇」段、docs/ui-ux-guidelines.md（動態與減少動態）、src/components/ServiceProviderDetail.tsx、src/components/listing/BrowseNav.tsx、src/utils/swipeIntent.ts。
+2. /review-plan 後**停下**，send_message 回報主 session（摘要、開放問題、需業主裁決的題目＋建議）。
+3. 業主會在本 session 親打 `/tdd-implement listing-swipe-transition`。
+4. 收尾照 /tdd-implement：刪規劃檔、規格書與 ui-ux-guidelines 同步；PR 內文附紅燈 hash 與手機實測步驟（業主用手機驗）。
+```

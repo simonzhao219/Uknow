@@ -108,10 +108,10 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | — | 規劃中（11/08 開） |
-| S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | — | 施工中（11/08 開） |
-| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | — | 規劃中（11/08 開） |
-| S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | — | 施工中（11/08 開） |
+| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | —（規劃已推） | 規劃交件，等業主裁決 |
+| S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521（規劃，draft） | 規劃交件，等業主裁決 |
+| S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
 
@@ -119,3 +119,7 @@ commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 sessi
 |---|---|---|
 | 11/08 | 主 session 開局：讀交接、第 5 波 plan／review、〈慣例〉。正式站照片清理首輪 dryRun＝**true**（id 11，19:17 UTC，0 孤兒）→ W6-4。S5 預查：正式站 listings 含「南鄉」0 筆。業主裁 **W6-1～7**；主 session 定 W6-8、W6-9。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S3、S5；業主補設 PHOTO_PURGE_LIVE |
 | 11/08 09:15 | 開 #519（本檔，draft，已訂閱）。開 S1、S3（Opus，規劃）與 S2、S5（Sonnet，`/fix-bug`），tag `uknow-wave-6`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S1、S3 規劃交業主審；業主補設 PHOTO_PURGE_LIVE（W6-4） |
+| 11/08 09:35 | S5 交 **#520**：常數、座標表、產生腳本別名退場、migration `20261114000001`（array_replace）。主 session 審：無 P0／P1；P2：同列已含「南州鄉」會產生重複 → S5 改成 case＋array_remove。偏離：紅綠同 commit。CI 綠（Supabase Preview migration 成功）→ **#520 合進 develop（ea6ff64）** | — |
+| 11/08 09:35 | S1 交規劃（`feature/batch-heal-lock-split`，/review-plan P0 0、P1 13、P2 15）：Edge 端逐筆呼叫單筆 RPC、舊批次函式留 wrapper；Q1～Q5 待業主。主 session 代跑正式站：pending＋PayUni SUCCESS 0 筆、近 30 天 system_alerts 0 列（不需人工補發） | 收業主裁決 |
+| 11/08 09:35 | S3 交規劃（#521 draft，/review-plan P0 0、P1 16、P2 16）。發現：停權／到期／未加入推薦計畫現行照發獎金（只是不能提領）；「自領停發」在程式裡是成環停發；`referral_pair_history` 不是換線紀錄。Q1～Q5、Q8 待業主；Q6（S3a 不動發獎函式、等價測試）、Q7（admin-gate 自動列舉路由，順修 ops P2-4）主 session 同意 | 收業主裁決 |
+| 11/08 09:50 | S2 交 **#522**：P2-1～4，同類掃描另修 `/auth/reset-registration` 的 `.json()` 容錯。主 session 審：無 P0／P1；P2：自己的碼應回專屬文案「不能使用自己的推薦碼」→ S2 已改。偏離：未走紅綠燈相位（PR 內文寫明）。CI 綠 → **#522 合進 develop（e778f75）**。首批已有合併 → 照 W6-2 開 **S4** | 等 S4 規劃；S1、S3 收業主裁決 |
