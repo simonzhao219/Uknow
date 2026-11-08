@@ -37,7 +37,10 @@ const BUDGET = {
   entryGzipKB: 316, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3
   // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
   // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。
-  totalRawKB: 1951, // 原 1600；S4 +350；第 6 波 S4 +1
+  // 第 6 波 S3a（後台推薦樹查帳）：新增的元件全在 lazy 的後台 chunk（AdminDashboard 路由層
+  // lazy 載入），不影響首屏——實測 entry raw 1012.5→1012.6、gzip 315.5→315.6；總 JS raw
+  // 1947.3→1971.0（+23.7 kB，推薦樹、詳情 Sheet、付款查帳卡片與純函式）。額度 +25。
+  totalRawKB: 1976, // 原 1600；S4 +350；第 6 波 S4 +1；W6 S3a +25
 };
 
 const kb = (bytes) => Math.round((bytes / 1024) * 10) / 10;
