@@ -48,11 +48,31 @@ interface Entry {
   payments: PaymentsState;
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+// 「需要注意」的連結與付款區重試以 data-section 找到對應標題移焦。
+const focusSection = (key: string) => {
+  const h = document.querySelector<HTMLElement>(`[role="dialog"] [data-section="${key}"]`);
+  h?.scrollIntoView?.({ block: 'start' });
+  h?.focus();
+};
+
+function Section({
+  title,
+  sectionKey,
+  children,
+}: {
+  title: string;
+  sectionKey?: string;
+  children: ReactNode;
+}) {
   const id = useId();
   return (
     <section aria-labelledby={id} className="py-4">
-      <h3 id={id} tabIndex={-1} className="text-sm font-semibold outline-none">
+      <h3
+        id={id}
+        tabIndex={-1}
+        data-section={sectionKey}
+        className="text-sm font-semibold outline-none"
+      >
         {title}
       </h3>
       <div className="mt-2 text-sm">{children}</div>
@@ -226,6 +246,13 @@ export function ReferralAuditSheet({
               {audit.node.endDate ? <span>{formatTwDate(audit.node.endDate)} 到期</span> : null}
             </p>
           ) : null}
+          {audit ? (
+            <p className="text-sm text-muted-foreground">
+              {audit.node.referralProgramJoined
+                ? `推薦計畫：已加入${audit.node.referralProgramJoinedAt ? `（${formatTwDate(audit.node.referralProgramJoinedAt)}）` : ''}`
+                : '推薦計畫：未加入'}
+            </p>
+          ) : null}
           <p aria-live="polite" className="sr-only">
             {announce}
           </p>
@@ -264,7 +291,9 @@ export function ReferralAuditSheet({
               audit={audit}
               payments={entry.payments}
               onOpenPerson={goTo}
-              onRetryPayments={() => void loadPayments(current, 0)}
+              onRetryPayments={() =>
+                void loadPayments(current, 0).then(() => focusSection('payments'))
+              }
               onMorePayments={() => void loadPayments(current, entry.payments.items.length)}
             />
           ) : null}
@@ -288,15 +317,23 @@ function AuditBody({
   onMorePayments: () => void;
 }) {
   const block = withdrawalBlockReason(audit.node);
-  const attention: string[] = [];
+  const attention: { text: string; target: 'payments' | 'upline' }[] = [];
   if (audit.paymentSummary.missingCount > 0) {
-    attention.push(`獎金缺漏 ${audit.paymentSummary.missingCount} 筆`);
+    attention.push({
+      text: `獎金缺漏 ${audit.paymentSummary.missingCount} 筆`,
+      target: 'payments',
+    });
   }
   if (audit.paymentSummary.mismatchCount > 0) {
-    attention.push(`收獎人不符 ${audit.paymentSummary.mismatchCount} 筆`);
+    attention.push({
+      text: `收獎人不符 ${audit.paymentSummary.mismatchCount} 筆`,
+      target: 'payments',
+    });
   }
   for (const kind of audit.anomalies) {
-    if (kind === 'cycle' || kind === 'self_referral') attention.push(anomalyLabel(kind));
+    if (kind === 'cycle' || kind === 'self_referral') {
+      attention.push({ text: anomalyLabel(kind), target: 'upline' });
+    }
   }
   const g = audit.rewards.byGeneration;
   const hasMissing = payments.items.some((i) => i.generations.some((x) => x.result === 'missing'));
@@ -311,7 +348,15 @@ function AuditBody({
             description={
               <ul className="list-disc pl-5">
                 {attention.map((a) => (
-                  <li key={a}>{a}</li>
+                  <li key={a.text}>
+                    <Button
+                      variant="link"
+                      className="h-auto p-0 text-left wrap-anywhere"
+                      onClick={() => focusSection(a.target)}
+                    >
+                      {a.text}
+                    </Button>
+                  </li>
                 ))}
               </ul>
             }
@@ -321,7 +366,7 @@ function AuditBody({
 
       {block ? <p className="py-3 text-sm text-muted-foreground">{block}</p> : null}
 
-      <Section title="推薦人鏈">
+      <Section title="推薦人鏈" sectionKey="upline">
         {audit.upline.length === 0 ? (
           <p className="text-muted-foreground">沒有推薦人</p>
         ) : (
@@ -396,7 +441,10 @@ function AuditBody({
         ) : (
           <ul className="flex flex-wrap gap-x-3">
             {audit.referrerHistory.pastReferrers.map((p) => (
-              <li key={p.id}>{displayName(p.name)}</li>
+              <li key={p.id} className="wrap-anywhere">
+                {displayName(p.name)}
+                {p.referralCode ? ` · ${p.referralCode}` : ''}
+              </li>
             ))}
           </ul>
         )}
@@ -415,7 +463,7 @@ function AuditBody({
         )}
       </Section>
 
-      <Section title="付款與三代獎金">
+      <Section title="付款與三代獎金" sectionKey="payments">
         {payments.status === 'loading' ? (
           <output aria-label="付款紀錄載入中" aria-busy="true" className="block space-y-2">
             <Skeleton className="h-24 w-full rounded-lg" />

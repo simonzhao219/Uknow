@@ -311,3 +311,61 @@ describe('自動展開', () => {
     expect(onOpenNode).toHaveBeenCalledWith('d');
   });
 });
+
+describe('實作審查補強', () => {
+  it('子層重試成功後焦點落在第一個子節點', async () => {
+    let fail = true;
+    const loadNodes = vi.fn(async (p: NodesParams) => {
+      if (!p.parentId)
+        return nodesData([node('1', { directCount: 1 })], 1, { unplaceableCount: 0 });
+      if (fail) throw new Error('boom');
+      return nodesData([node('c', { layer: 2 })], 1);
+    });
+    renderTree(makeLoaders({ loadNodes }));
+    fireEvent.click(await screen.findByRole('button', { name: '展開會員1' }));
+    const retry = await screen.findByRole('button', { name: '重試' });
+    fail = false;
+    fireEvent.click(retry);
+    const child = await screen.findByRole('button', { name: '查看會員c的推薦與查帳資訊' });
+    await waitFor(() => expect(document.activeElement).toBe(child));
+  });
+
+  it('自動展開進行中列表標 aria-busy，完成後解除', async () => {
+    let release: (v: NodesData) => void = () => {};
+    const loadNodes = vi.fn((p: NodesParams) =>
+      p.parentId
+        ? new Promise<NodesData>((r) => {
+            release = r;
+          })
+        : Promise.resolve(nodesData([node('r', { directCount: 1 })], 1, { unplaceableCount: 0 })),
+    );
+    const search = vi.fn(async () => ({
+      total: 1,
+      matches: [{ ...node('t', { layer: 2 }), ancestorIds: ['r'], unplaceableReason: null }],
+    }));
+    renderTree(makeLoaders({ loadNodes, search }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: '搜尋姓名或推薦碼' }), {
+      target: { value: 't' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: '在樹上展開到會員t' }));
+    const tree = await screen.findByRole('region', { name: '推薦樹' });
+    await waitFor(() => expect(tree.getAttribute('aria-busy')).toBe('true'));
+    await act(async () => release(nodesData([node('t', { layer: 2 })], 1)));
+    await waitFor(() => expect(tree.getAttribute('aria-busy')).not.toBe('true'));
+  });
+
+  it('搜尋命中成環的人時層級寫無法定位的原因，不寫層數', async () => {
+    const search = vi.fn(async () => ({
+      total: 1,
+      matches: [
+        { ...node('p', { layer: 4 }), ancestorIds: null, unplaceableReason: 'cycle' as const },
+      ],
+    }));
+    renderTree(makeLoaders({ search }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: '搜尋姓名或推薦碼' }), {
+      target: { value: 'p' },
+    });
+    expect(await screen.findByText('推薦關係成環，無法在樹上定位')).toBeTruthy();
+    expect(screen.queryByText('第 4 層')).toBeNull();
+  });
+});

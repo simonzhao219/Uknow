@@ -23,7 +23,7 @@
 
 ## 目前位置與下一步
 
-業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。S3a 九個階段全綠；下一步收尾：check:full、/review-implementation、PR 內文。
+業主 2026-11-08 親打 `/tdd-implement admin-referral-tree`，開工。S3a 九個階段全綠；/review-implementation 已跑完（`./implementation-review.md`），P0 與能小修的 P1／P2 已修，測試先寫、確認 8 支紅之後才實作。下一步：PR 內文、CI 綠後轉 ready。
 
 **環境限制**：本容器 `supabase start` 拉不到映像（public.ecr.aws 的 CDN 被網路政策擋），DB 測試（`*.test.ts`）不能本機跑。階段 1～4、5c、5d 的紅綠證據以 CI api-tests 軌為準：紅燈 commit 單獨 push，確認 api-tests 在該測試上紅後才寫實作。deno 已以 `npm i -g deno` 安裝，`deno task check`、unit 測試可本機跑。
 
@@ -36,7 +36,19 @@
 
 - 2026-11-08 階段 2：c5ecd3be 綠燈後 CI 仍有 2 支搜尋測試紅（`ancestor_ids 由頂層到父`、`成環與超過 50 層`）。根因在實作不在測試：`admin_referral_in_scope` 漏了「有 edge 指向自己」，自己沒訂閱的子節點搜不到，違反 plan §2.2「搜尋與樹收同一群人」。已 push 的 migration 不改，修正放在階段 3 的 migration（`create or replace admin_referral_in_scope`），測試未動。
 
+## 偏離規劃（實作審查後補記）
+
+- 搜尋結果：點姓名開查帳詳情，另一顆「在樹上展開到〇〇」按鈕負責展開——plan 寫「點結果展開到樹上」。分開是為了讓只想看帳的管理員不被帶到樹上。
+- MemberDetailSheet：分頁被鎖（從推薦樹開啟）時「在推薦樹中查看」直接隱藏，不做 disabled＋說明。
+- 沒用 `usePagedList`：每層要支援 pinned（ensureId），且 pinned 不重複渲染、不計入 X，單一 offset 模型裝不下。
+- migration 0004 把 `admin_referral_member_audit` 改名為 `admin_referral_member_audit_base`，外面包一層同名函式加上付款摘要；回滾要兩支一起刪。
+- 新增 `loaders.ts`（不在 plan 檔案清單）：資料載入的注入點，讓元件測試不碰 apiClient。
+- 320px 三分頁未驗證：e2e overflow sweep 只支援 375px。
+- 效能備註（不修）：`unplaceable_ids` 線性掃描；`tree_node` 呼叫 upline、payment_events 各兩次。
+
 ## 框架摩擦
+
+- `normalizeCode`（推薦碼正規化）現在有 4 份：`admin-referral-tree.ts` 的 `normalizeCode`＋`index.ts` 三處內嵌 `.normalize('NFKC').toLowerCase().trim()`，值得收進 `_shared`。
 
 - pre-commit 對 supabase/functions 只跑 deno fmt＋deno task check，不跑 deno lint；未用的 import 要到 CI static-checks 才紅（682de3fb）。
 - 本機 e2e：requirements 釘 playwright==1.56.0（chromium 1194），容器預裝的是 1243；以 sudo 把 1194 的 headless_shell 路徑 symlink 到 1243 才跑得動（只動拋棄式容器）。

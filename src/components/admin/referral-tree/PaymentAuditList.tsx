@@ -3,6 +3,7 @@
 // 收獎人不符或無法判定且有實發時再加「實發 B · 金額」（規劃 §4）。
 import type { AdminReferralGeneration, AdminReferralPaymentItem } from '@admin-referral-contract';
 import { formatTwTimestamp } from '../../../utils/twDate';
+import { AlertTriangle, CheckCircle2, CircleHelp, MinusCircle } from 'lucide-react';
 import { Badge } from '../../ui/badge';
 import { displayName, resultLabel } from './referralAudit';
 
@@ -14,8 +15,19 @@ const TONE_VARIANT = {
   warning: 'warning-subtle',
 } as const;
 
+// 徽章帶圖示：結果不只靠顏色辨識（UI 準則：狀態一律圖示＋文字）。
+const RESULT_ICON = {
+  paid: CheckCircle2,
+  missing: AlertTriangle,
+  recipient_mismatch: AlertTriangle,
+  undeterminable: CircleHelp,
+  not_applicable: MinusCircle,
+  cycle_stopped: MinusCircle,
+} as const;
+
 function GenerationRow({ g }: { g: AdminReferralGeneration }) {
   const label = resultLabel(g.result, g.reason);
+  const ResultIcon = RESULT_ICON[g.result];
   const expected = g.expectedName !== null ? displayName(g.expectedName) : null;
   const actual =
     g.actualId !== null
@@ -28,7 +40,10 @@ function GenerationRow({ g }: { g: AdminReferralGeneration }) {
     <li className="space-y-0.5 py-1.5">
       <p className="flex flex-wrap items-center gap-2 text-sm">
         <span>第 {g.generation} 代</span>
-        <Badge variant={TONE_VARIANT[label.tone]}>{label.text}</Badge>
+        <Badge variant={TONE_VARIANT[label.tone]}>
+          <ResultIcon aria-hidden="true" className="size-3.5" />
+          {label.text}
+        </Badge>
       </p>
       {g.result === 'paid' && actual ? (
         <p className="text-sm text-muted-foreground wrap-anywhere">{actual}</p>
@@ -54,7 +69,12 @@ export function PaymentCard({ item }: { item: AdminReferralPaymentItem }) {
       <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
         <span>{kind}</span>
         <span className="text-muted-foreground">{at}</span>
-        {flagged ? <Badge variant="warning-subtle">需要核對</Badge> : null}
+        {flagged ? (
+          <Badge variant="warning-subtle">
+            <AlertTriangle aria-hidden="true" className="size-3.5" />
+            需要核對
+          </Badge>
+        ) : null}
       </p>
       <ul className="divide-y">
         {item.generations.map((g) => (

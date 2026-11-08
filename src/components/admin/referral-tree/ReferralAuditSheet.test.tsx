@@ -304,3 +304,74 @@ describe('ReferralAuditSheet 讀取與跳轉', () => {
     }
   });
 });
+
+describe('ReferralAuditSheet 實作審查補強', () => {
+  it('推薦計畫顯示已加入與加入日期；未加入時寫未加入', async () => {
+    renderSheet(loaders());
+    expect(await screen.findByText('推薦計畫：已加入（2026/10/01）')).toBeTruthy();
+    cleanup();
+    renderSheet(
+      loaders({
+        loadMember: vi.fn(async () =>
+          audit({ node: node({ referralProgramJoined: false, referralProgramJoinedAt: null }) }),
+        ),
+      }),
+    );
+    expect(await screen.findByText('推薦計畫：未加入')).toBeTruthy();
+  });
+
+  it('需要注意的每一條可點，點了焦點移到對應區塊標題', async () => {
+    renderSheet(
+      loaders({
+        loadMember: vi.fn(async () =>
+          audit({
+            anomalies: ['missing_reward', 'cycle'],
+            paymentSummary: { missingCount: 2, mismatchCount: 0 },
+          }),
+        ),
+      }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '獎金缺漏 2 筆' }));
+    expect(document.activeElement?.textContent).toBe('付款與三代獎金');
+    fireEvent.click(screen.getByRole('button', { name: '推薦關係成環' }));
+    expect(document.activeElement?.textContent).toBe('推薦人鏈');
+  });
+
+  it('曾有過的推薦人同時列出推薦碼', async () => {
+    renderSheet(
+      loaders({
+        loadMember: vi.fn(async () =>
+          audit({
+            referrerHistory: {
+              pastReferrers: [{ id: 'b', name: '前推薦人B', referralCode: '8048899' }],
+              freshEvents: [],
+            },
+          }),
+        ),
+      }),
+    );
+    const sec = within(await screen.findByRole('region', { name: '換線紀錄' }));
+    expect(sec.getByText('前推薦人B · 8048899')).toBeTruthy();
+  });
+
+  it('付款區重試後焦點落在該區標題', async () => {
+    const loadPayments = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ total: 0, items: [] });
+    renderSheet(loaders({ loadPayments }));
+    fireEvent.click(await screen.findByRole('button', { name: '重試' }));
+    await screen.findByText('這位會員沒有付款紀錄');
+    await waitFor(() => expect(document.activeElement?.textContent).toBe('付款與三代獎金'));
+  });
+
+  it('結果徽章帶圖示（不只靠文字顏色）', async () => {
+    renderSheet(
+      loaders({
+        loadPayments: vi.fn(async () => ({ total: 1, items: [item([gen(1), gen(2), gen(3)])] })),
+      }),
+    );
+    const badge = await screen.findAllByText('已發');
+    expect(badge[0].closest('[data-slot="badge"]')?.querySelector('svg')).toBeTruthy();
+  });
+});

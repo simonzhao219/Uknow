@@ -118,6 +118,8 @@ export function AdminReferralTree({
   const [expandError, setExpandError] = useState<{ key: string; resume: () => void } | null>(null);
   const expandToken = useRef(0);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+  // 自動展開進行中：樹區標 aria-busy，輔助科技不會在半途讀到殘缺的樹。
+  const [expanding, setExpanding] = useState(false);
 
   // ---- 每一層的載入 ----------------------------------------------------
   const setLayer = useCallback((key: string, patch: (prev: Layer | undefined) => Layer) => {
@@ -189,6 +191,7 @@ export function AdminReferralTree({
   const toggle = useCallback(
     (key: string) => {
       expandToken.current += 1;
+      setExpanding(false);
       setExpanded((prev) => {
         const next = new Set(prev);
         if (next.has(key)) next.delete(key);
@@ -200,11 +203,22 @@ export function AdminReferralTree({
     [loadLayer],
   );
 
+  // 子層／無法接上群組的重試：成功後焦點移到第一筆（錯誤區塊已消失，焦點不能掉回 body）。
+  const retryLayer = useCallback(
+    async (key: string) => {
+      const next = await loadLayer(key);
+      const first = next ? rowsToRender(next.state)[0] : undefined;
+      if (first) setPendingFocus(first.node.id);
+    },
+    [loadLayer],
+  );
+
   // ---- 自動展開 ----------------------------------------------------------
   const runExpansion = useCallback(
     async (steps: ExpandStep[], targetId: string, targetName: string, from = 0) => {
       const token = ++expandToken.current;
       setExpandError(null);
+      setExpanding(true);
       setAnnounce(`正在展開到${targetName}…`);
       for (let i = from; i < steps.length; i++) {
         const step = steps[i];
@@ -218,6 +232,7 @@ export function AdminReferralTree({
           const result = await loadLayer(key, step.ensureId);
           if (token !== expandToken.current) return;
           if (!result) {
+            setExpanding(false);
             setAnnounce('');
             setExpandError({
               key,
@@ -228,6 +243,7 @@ export function AdminReferralTree({
         }
       }
       if (token !== expandToken.current) return;
+      setExpanding(false);
       setAnnounce(`已展開到${targetName}`);
       setPendingFocus(targetId);
     },
@@ -353,7 +369,7 @@ export function AdminReferralTree({
           <Button
             tone="secondary"
             size="sm"
-            onClick={() => (retryExpand ? retryExpand() : void loadLayer(key))}
+            onClick={() => (retryExpand ? retryExpand() : void retryLayer(key))}
           >
             {retryExpand ? '重試展開' : '重試'}
           </Button>
@@ -477,8 +493,8 @@ export function AdminReferralTree({
                 </button>
                 <p className="flex min-w-0 flex-wrap gap-x-2 text-sm text-muted-foreground">
                   <span>
-                    {m.ancestorIds === null && m.unplaceableReason === 'truncated'
-                      ? unplaceableReasonText('truncated')
+                    {m.ancestorIds === null && m.unplaceableReason
+                      ? unplaceableReasonText(m.unplaceableReason)
                       : layerLabel(m.layer)}
                   </span>
                   <Badge variant="outline">{STATUS_TEXT[m.status]}</Badge>
@@ -514,7 +530,11 @@ export function AdminReferralTree({
   const unplaceableOpen = expanded.has(UNPLACEABLE);
 
   return (
-    <section aria-labelledby="referral-tree-heading" className="space-y-3">
+    <section
+      aria-labelledby="referral-tree-heading"
+      aria-busy={expanding || undefined}
+      className="space-y-3"
+    >
       <h2
         id="referral-tree-heading"
         ref={topRetry.headingRef}
