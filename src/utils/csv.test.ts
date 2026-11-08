@@ -73,7 +73,7 @@ describe('buildCsvContent', () => {
 });
 
 describe('textCell：銀行代號與帳號保留前導 0 與長度', () => {
-  it('前導 0 的帳號以 ="…" 輸出，Excel 不會吃掉 0', () => {
+  it('前導 0 的帳號以 =\"…\" 輸出，Excel 不會吃掉 0', () => {
     expect(escapeCsvField(textCell('0081234567890'))).toBe('"=""0081234567890"""');
     expect(escapeCsvField(textCell('004'))).toBe('"=""004"""');
   });
