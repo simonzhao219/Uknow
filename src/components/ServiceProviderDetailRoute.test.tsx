@@ -56,14 +56,18 @@ const B = mk('b', 'BBB美容師');
 const C = mk('c', 'CCC美容師');
 const ROWS = [A, B, C];
 
-function setup(currentId = 'b', opts: { state?: object | null; rows?: PublicListingRow[] } = {}) {
+function setup(
+  currentId = 'b',
+  opts: { state?: object | null; rows?: PublicListingRow[]; extraState?: object } = {},
+) {
   const rows = opts.rows ?? ROWS;
   setCachedListings(rows);
   const ctx = freezeBrowseContext(
     rows.map((r) => r.id),
     currentId,
   );
-  const state = opts.state === undefined ? { browseFrom: 'home', ctx } : opts.state;
+  const state =
+    opts.state === undefined ? { browseFrom: 'home', ctx, ...opts.extraState } : opts.state;
   return render(
     <MemoryRouter
       initialEntries={['/', { pathname: `/service-providers/${currentId}`, state }]}
@@ -558,13 +562,10 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
   });
 
   it('瀏覽器上一頁／前進（POP）回到有換篇狀態的頁面時，不做進場也不捲到頂', async () => {
-    const ctx = freezeBrowseContext(
-      ROWS.map((r) => r.id),
-      'b',
-    );
-    setup('b', { state: { browseFrom: 'home', ctx, dir: 'next', via: 'button' } });
-    await screen.findByRole('heading', { name: 'BBB美容師' });
+    // 歷史項目的 state 帶著上次換篇留下的 dir／via；用 POP 進入（不是換篇的 REPLACE）
+    setup('b', { extraState: { dir: 'next', via: 'button' } });
 
+    expect(await screen.findByText('2/3')).toBeTruthy();
     expect(animate).not.toHaveBeenCalled();
     expect(window.scrollTo).not.toHaveBeenCalled();
   });
