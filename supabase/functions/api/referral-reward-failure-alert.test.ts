@@ -78,7 +78,7 @@ Deno.test('pay_referral_generations：第 2 代插入擲錯 → error 告警帶�
     const aCode = await getActiveReferralCode(client, a);
     teardown = await failRewardsFor(sql, a, 'gen2');
     const since = new Date().toISOString();
-    const t = tradeNo('GEN2');
+    const t = crypto.randomUUID(); // 36 字元：最長單號下前 200 字仍要放得下下一步
     assertEquals((await payForUser(client, c, { tradeNo: t })).error, null);
 
     const alerts = await alertsSince(sql, since, c);
@@ -90,6 +90,12 @@ Deno.test('pay_referral_generations：第 2 代插入擲錯 → error 告警帶�
     assert(al.message.includes('第 2 代'), al.message);
     assert(al.message.includes(`推薦碼 ${aCode}`), al.message);
     assert(al.message.includes('系統錯誤'), al.message);
+    assert(
+      !al.message.includes('injected reward failure'),
+      'LINE 是外部通道：原始錯誤只放 context',
+    );
+    assertEquals(al.context.sqlerrm, 'injected reward failure');
+    assertEquals(al.context.amount, 100);
     assertReadable(al);
     assertEquals(
       {
@@ -263,6 +269,55 @@ Deno.test('complete_paid_pending_orders：舊 wrapper 與線上付款互鎖 → 
   } finally {
     await holder.end();
     await healConn.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('apply_referral_side_effects：三代整批發獎擲錯 → error 告警帶第 1 代推薦碼與每代點數', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const up = (await createTestUser(client, { name: '整批 推薦人' })).id;
+    ids.push(up);
+    assertEquals((await payForUser(client, up)).error, null);
+    const upCode = await getActiveReferralCode(client, up);
+    const me = (await createTestUser(client, { name: '整批 會員' })).id;
+    ids.push(me);
+    await sql`update public.profiles set referred_by_user_id = ${up} where id = ${me}`;
+    const t = tradeNo('BATCH3C');
+    assertEquals((await payForUser(client, me, { tradeNo: t })).error, null);
+    const [{ sub }] = await sql`select id as sub from public.subscriptions where user_id = ${me}`;
+
+    // 交易內暫時讓整支發獎函式擲錯，讀完告警就回滾（函式與告警一起還原）。
+    let al: Alert | undefined;
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`
+        create or replace function public.pay_referral_generations(
+          p_referee uuid, p_amount int, p_subscription_id uuid default null,
+          p_claim_id uuid default null, p_description_tag text default '')
+        returns text[] language plpgsql as $f$
+        begin raise exception 'injected batch failure'; end $f$;`);
+      await tx`select public.apply_referral_side_effects(${me}::uuid, ${sub}::uuid, now())`;
+      [al] = (await tx`
+        select severity, message, context from public.system_alerts
+        where source = 'apply_referral_side_effects' and context->>'referee' = ${me}
+        order by created_at desc limit 1`) as unknown as Alert[];
+      throw new Error('rollback');
+    }).catch((e) => {
+      if ((e as Error).message !== 'rollback') throw e;
+    });
+
+    assertEquals(al?.severity, 'error');
+    assert(al!.message.includes(`付款單 ${t}`), al!.message);
+    assert(al!.message.includes('三代推薦獎金整批'), al!.message);
+    assert(al!.message.includes(`第 1 代推薦人推薦碼 ${upCode}`), al!.message);
+    assert(al!.message.includes('每代 100 點'), al!.message);
+    assert(al!.message.includes('人工核對三代並補發'), al!.message);
+    assert(!al!.message.includes('injected batch failure'), al!.message);
+    assertReadable(al!);
+  } finally {
     await sql.end();
     await deleteTestUsers(client, ids);
   }

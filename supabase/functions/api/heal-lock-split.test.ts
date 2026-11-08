@@ -125,6 +125,13 @@ Deno.test('排程 heal：與線上付款交錯（U1←X←U2）→ 兩筆第 1 �
     const [u2ToX] = await sql`
       select count(*)::int as n from public.reward_transactions
       where referee_user_id = ${u2} and generation = 1 and user_id = ${x}`;
+    const statuses = await sql`
+      select status from public.payment_orders where transaction_id in ${sql([tU1, tU2, tX])}`;
+    assertEquals(
+      statuses.map((r) => r.status),
+      ['completed', 'completed', 'completed'],
+      '三筆都開通',
+    );
     const deadlocks = await sql`
       select source, message from public.system_alerts
       where created_at >= ${startedAt} and message ilike '%deadlock detected%'`;
