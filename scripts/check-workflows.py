@@ -38,8 +38,11 @@ STEP_START = re.compile(r"^(\s*)-\s+(uses|name)\s*:")
 # 負向 pattern:list item 的值以 ! 開頭(引號可有可無)
 NEGATED = re.compile(r"""^\s*-\s*['"]?!""")
 MIGRATION_GATE = re.compile(r"scripts/check-remote-migrations\.py")
-DEPLOY_SENSITIVE = re.compile(r"supabase\s+(secrets\s+set|functions\s+deploy)")
-GATE_BYPASS = re.compile(r"^\s*(continue-on-error|if)\s*:", re.MULTILINE)
+# 旗標可能在子指令前(`supabase --project-ref x secrets set`),所以 supabase 與子指令之間允許任意非換行字元。
+DEPLOY_SENSITIVE = re.compile(r"supabase\b[^\n]*?\b(secrets\s+set|functions\s+deploy)")
+STEP_CONDITION = re.compile(r"^\s*(continue-on-error|if)\s*:", re.MULTILINE)
+# 讓指令失敗也回 0 的寫法:`|| true`、`||true`、`|| :`、`|| exit 0`、`; true`。
+EXIT_SWALLOW = re.compile(r"\|\|\s*(true|:|exit\s+0)\b|;\s*true\b")
 QUANTIFIER = re.compile(r"""^\s*predicate-quantifier\s*:\s*['"]?([A-Za-z]+)""")
 
 
@@ -310,11 +313,24 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
             )
         if gate is not None:
             block = codes[gate]
-            if GATE_BYPASS.search(block) or "|| true" in block:
+            if STEP_CONDITION.search(block) or EXIT_SWALLOW.search(block):
                 found.append(
-                    "deploy-supabase.yml 的 migration 確認 step 帶 continue-on-error、if: 或 "
-                    "|| true——失敗時部署照樣繼續,這道閘門等於不存在。拿掉它們。"
+                    "deploy-supabase.yml 的 migration 確認 step 帶 continue-on-error、if:,或指令以 "
+                    "|| true／|| exit 0／; true 吞掉失敗——失敗時部署照樣繼續,這道閘門等於不存在。拿掉它們。"
                 )
+            if "--project-ref" not in block or "--self-test" in block:
+                found.append(
+                    "deploy-supabase.yml 的 migration 確認 step 必須帶 --project-ref(比對哪個環境)且不得是 "
+                    "--self-test(那只驗檢查器自己,不比對遠端)。"
+                )
+        if gate is not None and first is not None:
+            for i, c in enumerate(codes):
+                if i > gate and DEPLOY_SENSITIVE.search(c) and STEP_CONDITION.search(c):
+                    found.append(
+                        "deploy-supabase.yml 寫 DEPLOY_SHA／部署 Edge 的 step 帶 if:(如 always()、!cancelled())"
+                        "——確認 migration 失敗時它仍會執行。拿掉 if:,讓它跟著前一步失敗而停。"
+                    )
+                    break
 
     # 規則 13:`payment_mode: webhook` 同一行或上一行必須帶「暫時至 YYYY-MM-DD」且未過期
     lines = text.splitlines()

@@ -245,8 +245,10 @@ PR #275(2026-08-09)為躲 sandbox 額度上限把晉升閘門改成 webhook,註�
 Migration 由 Supabase 整合套用、Edge 由這支 workflow 部署,兩者各走各的;新 Edge 先於
 它依賴的 migration 上線時,建單等 RPC 全部 500(第 5 波 #514 審查 P2-2、W5-62)。
 呼叫 `scripts/check-remote-migrations.py` 的 step 必須排在第一個 `supabase secrets set`
-(寫 DEPLOY_SHA)／`supabase functions deploy` 之前,且不得帶 `continue-on-error`、`if:`
-或 `|| true`。比順序只看非註解行(同規則 12 的理由)。範圍只有 `deploy-supabase.yml`
+(寫 DEPLOY_SHA)／`supabase functions deploy` 之前(旗標寫在子指令前也認得);確認 step
+不得帶 `continue-on-error`、`if:`,指令不得以 `|| true`／`||true`／`|| exit 0`／`; true` 吞掉
+失敗,且必須帶 `--project-ref`、不得是 `--self-test`;之後的敏感 step 不得帶 `if:`(如
+`always()`,確認失敗時它仍會執行)。比順序只看非註解行(同規則 12 的理由)。範圍只有 `deploy-supabase.yml`
 (檔案不存在即紅,防改名靜默失效);`journey.yml` 部署的是拋棄式分支,schema 由 branch
 replay 建立,不在範圍。
 

@@ -55,9 +55,13 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    # 25＝10（確認 migration 的輪詢上限，--max-wait 600）＋約 3（部署重試）＋約 2（煙霧測試）＋餘裕。
+    # 30 分＝最壞情況加總後取整：
+    #   確認 migration ≈ 11（--max-wait 600 是牆鐘上限，再加最後一次讀取最多 3 次 × 15 秒逾時＋退避 15 秒）
+    #   部署 ≈ 11（4 次嘗試，每次打包上傳約 2 分，加退避 30＋60＋90 秒）
+    #   煙霧測試 ≈ 5.3（20 次 × curl 逾時 10 秒＋間隔 6 秒）
+    #   取出程式碼／裝 CLI／解析 ref／寫 sha ≈ 1
     # production 的人工核准等待不計入 job timeout。改任一項時重算這個數字。
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
       contents: read
       issues: write
@@ -132,6 +136,8 @@ jobs:
       # 必須排在「寫入 DEPLOY_SHA」之前、不得加 continue-on-error／if:／|| true
       # （check-workflows.py 規則 14）。輪詢期間同分支有新 push 會因 cancel-in-progress
       # 取消本次——預期語意，新的部署會重跑這一步。
+      # 耦合：這份 workflow 定義取自 default branch（workflow_run 的特性），腳本與 migration 清單則取自
+      # 上面 checkout 的 head_sha。改腳本的命令列介面時，要確認 default branch 上的這一步仍呼叫得起來。
       # ----------------------------------------------------------------
       - name: 確認 migration 已套用
         run: python3 scripts/check-remote-migrations.py --project-ref "$SUPABASE_PROJECT_REF" --max-wait 600

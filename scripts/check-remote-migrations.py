@@ -17,9 +17,9 @@ Edge Function 由 deploy-supabase.yml 部署，兩者各走各的。新 Edge 若
 
 結果三分（退出碼）：
   0 齊 —— 放行部署
-  1 缺版本 —— 輪詢到 --max-wait 仍缺（整合套用通常在 CI 跑完前就完成；晚到時等一下）
-  2 讀不到 —— HTTP 錯誤、逾時、網路錯誤、回應格式不符、沒有 token。不輪詢，直接失敗：
-     讀不到不等於沒套，但也不能當成套了（fail-closed）
+  1 缺版本 —— 輪詢到 --max-wait（牆鐘，含請求耗時）仍缺（整合套用通常在 CI 跑完前就完成；晚到時等一下）
+  2 讀不到 —— 5xx／429／逾時／網路錯誤先短退避重試兩次（5、10 秒），仍失敗才算；401／403／
+     回應格式不符／沒有 token 立即失敗。不進入輪詢：讀不到不等於沒套，但也不能當成套了（fail-closed）
 
 版本解析與 check-migration-versions.py 的 M2 同一格式（14 位數字前綴）；格式不符的檔名
 略過——那是 M2 的職責，該檢查器會先在 CI 擋下。兩檔互相指向，不互相 import（scripts/ 無此慣例）。
@@ -89,6 +89,9 @@ def missing_versions(repo: list[str], remote: set[str]) -> list[str]:
     return [v for v in repo if v not in remote]
 
 
+RETRY_BACKOFF_S = (5, 10)  # 暫時性讀取錯誤的兩次重試間隔（共 3 次請求）
+
+
 def check(
     repo: list[str],
     fetch: Callable[[], object],
@@ -97,22 +100,35 @@ def check(
     interval_s: float,
     now: Callable[[], float] = time.monotonic,
 ) -> tuple[int, str]:
-    """輪詢到齊或逾時。讀取錯誤立即回 UNREADABLE，不輪詢。"""
-    waited = 0.0
+    """輪詢到齊或超過 max_wait_s（牆鐘，含請求本身耗時）。
+    暫時性讀取錯誤短退避重試兩次；非暫時性或重試用盡回 UNREADABLE，不進入輪詢。"""
+    start = now()
+
+    def read() -> set[str]:
+        for attempt in range(len(RETRY_BACKOFF_S) + 1):
+            try:
+                return parse_remote(fetch())
+            except ReadError as e:
+                if not e.retryable or attempt == len(RETRY_BACKOFF_S):
+                    raise
+                sleep(RETRY_BACKOFF_S[attempt])
+        raise AssertionError("unreachable")
+
     while True:
         try:
-            remote = parse_remote(fetch())
+            remote = read()
         except ReadError as e:
             return UNREADABLE, f"讀不到目標環境的 migration 套用紀錄（{e}）"
         lacking = missing_versions(repo, remote)
         if not lacking:
             return OK, f"目標環境已套用 repo 內全部 {len(repo)} 支 migration"
-        if waited >= max_wait_s:
+        waited = now() - start
+        if waited + interval_s > max_wait_s:
             return MISSING, (
                 f"等了 {int(waited)} 秒，目標環境仍缺 {len(lacking)} 支 migration：{'、'.join(lacking)}"
+                f"（遠端 {len(remote)} 筆／repo {len(repo)} 筆；遠端筆數遠少於 repo 時先懷疑回應被截斷）"
             )
         sleep(interval_s)
-        waited += interval_s
 
 
 def http_fetch(project_ref: str, token: str) -> Callable[[], object]:
@@ -125,9 +141,9 @@ def http_fetch(project_ref: str, token: str) -> Callable[[], object]:
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as resp:
                 body = resp.read()
         except urllib.error.HTTPError as e:
-            raise ReadError(f"HTTP {e.code}") from None
-        except Exception as e:  # 逾時、DNS、連線重置等一律正規化成「讀不到」
-            raise ReadError(type(e).__name__) from None
+            raise ReadError(f"HTTP {e.code}", retryable=e.code == 429 or e.code >= 500) from None
+        except Exception as e:  # 逾時、DNS、連線重置等一律正規化成「讀不到」，視為暫時性
+            raise ReadError(type(e).__name__, retryable=True) from None
         try:
             return json.loads(body)
         except ValueError:
@@ -214,6 +230,19 @@ CHECK_CASES: list[tuple[str, Callable[[], object], float, int]] = [
 ]
 
 
+class Clock:
+    """假時鐘：sleep 推進時間，讓輪詢上限在表格案例裡可驗、不真的等。"""
+
+    def __init__(self) -> None:
+        self.t = 0.0
+
+    def now(self) -> float:
+        return self.t
+
+    def sleep(self, s: float) -> None:
+        self.t += s
+
+
 def _http_case(exc: Exception) -> str:
     """把 urlopen 換成拋指定例外，回傳 ReadError 訊息（驗正規化）。"""
     original = urllib.request.urlopen
@@ -239,11 +268,11 @@ def self_test() -> int:
         failures.append(f"repo_versions 略過格式不符檔名：得到 {got}")
 
     for label, fetch, max_wait, want in CHECK_CASES:
-        slept: list[float] = []
-        code, _ = check(REPO, fetch, slept.append, max_wait, 30)
+        clock = Clock()
+        code, _ = check(REPO, fetch, clock.sleep, max_wait, 30, now=clock.now)
         if code != want:
             failures.append(f"{label}：期望 {want}，得到 {code}")
-        if want == UNREADABLE and label.startswith("HTTP 5xx") and slept:
+        if want == UNREADABLE and label.startswith("HTTP 5xx") and clock.t:
             failures.append(f"{label}：讀取錯誤不得輪詢")
 
     for exc, want in [
@@ -268,16 +297,6 @@ def self_test() -> int:
         failures.append(f"空 token：期望退出碼 2 並點名變數，得到 {code}")
 
     # 第 6 波 S6 獨立審查 P2-3／P2-4：暫時性讀取錯誤短退避重試；--max-wait 是牆鐘上限；缺版本訊息帶筆數。
-    class Clock:
-        def __init__(self) -> None:
-            self.t = 0.0
-
-        def now(self) -> float:
-            return self.t
-
-        def sleep(self, s: float) -> None:
-            self.t += s
-
     def counting(*responses: object) -> tuple[Callable[[], object], list[int]]:
         calls = [0]
         inner = _fetcher(*responses)
