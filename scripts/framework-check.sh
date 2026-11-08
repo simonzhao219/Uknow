@@ -174,6 +174,15 @@ if [ -f scripts/check-migration-versions.py ]; then
   fi
 fi
 
+# 10b′. 部署前確認 migration 已套用（W5-62，第 6 波 S6）。deploy-supabase.yml 在部署 Edge
+#      前呼叫它；這裡只驗檢查器自己的表格案例（實際比對要 token，只在部署 job 內跑）。
+if [ -f scripts/check-remote-migrations.py ]; then
+  if ! python3 scripts/check-remote-migrations.py --self-test; then
+    echo "FAIL: 部署前 migration 確認腳本的表格案例未過（scripts/check-remote-migrations.py）"
+    fail=1
+  fi
+fi
+
 # 10c. e2e 的必留情境。2026-08-07 的去重立了兩條規則:刪一條要什麼證據
 #      （A/B/C 三級，審查會看），以及四條關鍵旅程各自至少保留一條端到端情境
 #      （**只是一段散文**）。後者逐條審查看不見——「下層有覆蓋」在單條情境的

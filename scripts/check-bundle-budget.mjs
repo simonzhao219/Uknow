@@ -29,11 +29,20 @@ const BUDGET = {
   // 業主 2026-11-06 01:16 互動選項核准 raw 1002→1005。
   // S7（刊登換篇＋區級距離排序，W5-30／W5-43）：entry 必含首頁排序／凍結脈絡／卡片連結與詳情頁
   // 換篇控制，手勢與鍵盤、座標表已拆動態 chunk；額度 gzip +3、raw 依約 1:3.2 同比例 +10，疊在上面各項之上。
+  // 第 6 波 S4（換篇過場動畫，W6-20）：entry 含 useBrowseNav、固定 wrapper、手勢 chunk 的
+  // error boundary、browseMotion（springTo 與時序常數）；手勢純函式（browseDrag）在動態 chunk。
+  // 實測 entry 1013.1／315.9，仍在原額度內；只有總 raw 因新增的手勢 chunk 超出 1950 約 0.1 kB，
+  // 故總量 +1（W6-20 只明寫 entry 額度，總量 +1 請主 session 追認）。
   entryRawKB: 1015, // 原 1000；S4 +2；S6 +3；S7 +10
-  entryGzipKB: 316, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3
+  entryGzipKB: 316.5, // 原 310→312（H1 hotfix）；S4 +1.0；S7 +3；第 6 波 S6 +0.5（新約第三態文案，實測 316.0→316.2；業主 2026-11-09 01:53 授權）
   // S4：posthog-js 的動態 chunk（module-*.js ≈ 357 kB raw）與 analyticsConfig chunk
   // 只在 idle 之後載入，不影響首屏，實測總量 1917.8 kB（原 1555.8）。
-  totalRawKB: 1950, // 原 1600；S4 +350
+  // 第 6 波 S3a（後台推薦樹查帳）：新增的元件全在 lazy 的後台 chunk（AdminDashboard 路由層
+  // lazy 載入），不影響首屏——實測 entry raw 1012.5→1012.6、gzip 315.5→315.6；總 JS raw
+  // 1947.3→1971.0（+23.7 kB，推薦樹、詳情 Sheet、付款查帳卡片與純函式）。額度 +25。
+  // 獨立審查修正（成環停止、去重、世代編號、提示分流）再 +1.1 kB，同在後台 lazy chunk。
+  // S3b（點數來源區塊、帳本查帳 loader）再 +4.1 kB，同在後台 lazy chunk；entry 不變。
+  totalRawKB: 1983, // 原 1600；S4 +350；第 6 波 S4 +1；W6 S3a +27；S3b +5
 };
 
 const kb = (bytes) => Math.round((bytes / 1024) * 10) / 10;

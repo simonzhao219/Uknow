@@ -100,3 +100,40 @@ Feature: Public service-provider detail page
     When I reload the page
     Then I should see the text "服務介紹"
     And the detail page should have no browse controls
+
+  @listing
+  Scenario: Dragging the detail page sideways moves the content and a long drag shows the next listing
+    Given the public directory lists providers "Alice 美髮師", "Bob 美甲師", "Cara 美容師"
+    And every directory listing has a detail page
+    When I visit "/"
+    And I open the listing card for "Alice 美髮師"
+    And I drag the detail page content left by 150 pixels without releasing
+    Then the detail page content should be shifted to the left
+    And the page should not scroll horizontally
+    And the detail page container should keep room for focus rings
+    When I release the drag
+    Then I should be on the detail page for "Bob 美甲師"
+    And the page should not scroll horizontally
+
+  @listing
+  Scenario: With reduced motion the content stays put while a long drag still shows the next listing
+    Given the public directory lists providers "Alice 美髮師", "Bob 美甲師", "Cara 美容師"
+    And every directory listing has a detail page
+    And the browser prefers reduced motion
+    When I visit "/"
+    And I open the listing card for "Alice 美髮師"
+    And I drag the detail page content left by 150 pixels without releasing
+    Then the detail page content should not be shifted
+    When I release the drag
+    Then I should be on the detail page for "Bob 美甲師"
+
+  @listing
+  Scenario: A short drag springs the detail page content back and stays on the same listing
+    Given the public directory lists providers "Alice 美髮師", "Bob 美甲師", "Cara 美容師"
+    And every directory listing has a detail page
+    When I visit "/"
+    And I open the listing card for "Alice 美髮師"
+    And I drag the detail page content left by 30 pixels without releasing
+    And I release the drag
+    Then the detail page content should not be shifted
+    And the detail page position should read "1/3"

@@ -1,13 +1,23 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type Ref } from 'react';
-import { useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Skeleton } from './ui/skeleton';
-import { getCachedListing, setLastViewedId } from '../utils/homeListingsCache';
+import { getCachedListing } from '../utils/homeListingsCache';
 import { importWithRetry } from '../utils/lazyWithRetry';
-import { prefersReducedMotion } from '../utils/motionPreference';
 import { useBrowseNeighbors } from '../hooks/useBrowseNeighbors';
-import { BrowseNav, type BrowseVia } from './listing/BrowseNav';
+import { useBrowseNav } from '../hooks/useBrowseNav';
+import { BrowseGesturesBoundary } from './listing/BrowseGesturesBoundary';
+import { BrowseNav } from './listing/BrowseNav';
 import { CategoryBadge } from './common/CategoryBadge';
 import { LoadErrorCallout } from './common/LoadErrorCallout';
 import {
@@ -32,7 +42,11 @@ import type { PublicListingRow } from '../types/listing';
 // 截斷、手打錯）回 22P02。其餘（網路、5xx、沒有資料也沒有錯誤碼的怪回應）是暫時讀不到——
 // 從 LINE 分享連結進來的訪客遇到這種失敗，不能被告知「找不到」，要給重試。
 // 換篇的鍵盤與照片外滑動：只在有首頁脈絡時才載入（分享連結進來的訪客不付這段）。
-const BrowseGestures = lazy(() => importWithRetry(() => import('./listing/BrowseGestures')));
+// 手勢 chunk 載入失敗時不整頁重載（reload 設為空操作、storage 設 null 關掉記號）：換篇脈絡只在記憶體裡，
+// 重載會讓「‹ n/N ›」整組消失；失敗時由 BrowseGesturesBoundary 靜默降級為只有按鈕換篇。重試一次仍保留。
+const BrowseGestures = lazy(() =>
+  importWithRetry(() => import('./listing/BrowseGestures'), { reload: () => {}, storage: null }),
+);
 
 const NOT_FOUND_CODES = new Set(['PGRST116', '22P02']);
 
@@ -48,7 +62,6 @@ export function ServiceProviderDetail({
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const navigationType = useNavigationType();
   const neighbors = useBrowseNeighbors();
   // 從首頁點進來時，首頁快取已有同一筆公開刊登：先用它渲染（不閃骨架），背景再重驗。
   const [serviceProvider, setServiceProvider] = useState<PublicListingRow | null>(() =>
@@ -123,54 +136,13 @@ export function ServiceProviderDetail({
     target.current?.focus();
   }, [status]);
 
-  // ── 換篇（W5-20～22、27）──
-  // 換篇＝replace 成新的 id：歷史只留一筆，返回一次回首頁。state 沿用 browseFrom／ctx，
-  // 另記 dir／via 給新實例還原焦點用（鈕與鍵盤保留焦點在原鈕，手勢才移到標題）。
-  const routeState = location.state as { dir?: 'prev' | 'next'; via?: BrowseVia } | null;
-  const arrivedByBrowse = neighbors && navigationType === 'REPLACE' ? routeState?.via : undefined;
-  // 頭尾再換篇：只有內容區輕推 24px 再回原位（不動頁首與輪播以外的結構，不循環）。
-  // 偏好減少動態時不動，文字播報（「已是最後一篇」）仍照常。
-  const contentRef = useRef<HTMLDivElement>(null);
-  const bounceContent = (direction: 'prev' | 'next') => {
-    const el = contentRef.current;
-    if (!el || prefersReducedMotion() || typeof el.animate !== 'function') return;
-    const push = direction === 'next' ? -24 : 24;
-    el.animate(
-      [
-        { transform: 'translateX(0)' },
-        { transform: `translateX(${push}px)` },
-        { transform: 'translateX(0)' },
-      ],
-      { duration: 180, easing: 'ease-out' },
-    );
-  };
-  // 換篇後新內容從來的那一側滑入（200ms）；只有「換篇重掛」才有，第一次進來、重整都不動。
-  const enterClass =
-    arrivedByBrowse && !prefersReducedMotion()
-      ? `animate-in fade-in duration-200 ${routeState?.dir === 'prev' ? 'slide-in-from-left-6' : 'slide-in-from-right-6'}`
-      : '';
-
-  const goBrowse = (direction: 'prev' | 'next', via: BrowseVia) => {
-    if (!neighbors) return;
-    const target = direction === 'next' ? neighbors.nextId : neighbors.prevId;
-    if (!target) {
-      onBrowseNotice?.(direction === 'next' ? '已是最後一篇' : '已是第一篇');
-      bounceContent(direction);
-      return;
-    }
-    setLastViewedId(target);
-    navigate(`/service-providers/${target}`, {
-      replace: true,
-      state: { ...(location.state as object | null), dir: direction, via },
-    });
-  };
+  // ── 換篇（W5-20～22、27、W6-20）：navigate、進場動畫、頭尾回彈都在 useBrowseNav ──
+  const { motionRef, goBrowse, arrivedByBrowse, dir } = useBrowseNav({
+    neighbors,
+    onBrowseNotice,
+  });
   const gestureRef = useRef<HTMLDivElement>(null);
   const focusedAfterBrowse = useRef(false);
-  // 換篇後新頁一律從頂端開始。
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 只在換篇重掛時做一次
-  useEffect(() => {
-    if (arrivedByBrowse) window.scrollTo(0, 0);
-  }, []);
   // 手勢換篇：焦點移到新頁標題（載入完成後）。
   useEffect(() => {
     if (arrivedByBrowse !== 'swipe' || focusedAfterBrowse.current || status === 'loading') return;
@@ -183,13 +155,21 @@ export function ServiceProviderDetail({
     <BrowseNav
       neighbors={neighbors}
       onGo={goBrowse}
-      autoFocusDir={arrivedByBrowse && arrivedByBrowse !== 'swipe' ? routeState?.dir : undefined}
+      autoFocusDir={arrivedByBrowse && arrivedByBrowse !== 'swipe' ? dir : undefined}
     />
   ) : null;
   const gestures = neighbors ? (
-    <Suspense fallback={null}>
-      <BrowseGestures containerRef={gestureRef} onNavigate={goBrowse} />
-    </Suspense>
+    <BrowseGesturesBoundary>
+      <Suspense fallback={null}>
+        <BrowseGestures
+          containerRef={gestureRef}
+          onNavigate={goBrowse}
+          dragTargetRef={motionRef}
+          hasPrev={neighbors.prevId !== null}
+          hasNext={neighbors.nextId !== null}
+        />
+      </Suspense>
+    </BrowseGesturesBoundary>
   ) : null;
   const gestureClass = neighbors ? 'touch-pan-y touch-pinch-zoom' : '';
 
@@ -219,11 +199,34 @@ export function ServiceProviderDetail({
     backButton
   );
 
-  if (status === 'notFound') {
-    return (
-      <div ref={gestureRef} className={`max-w-4xl mx-auto text-center py-12 ${gestureClass}`}>
-        {browseNav && <div className="flex justify-end">{browseNav}</div>}
+  // 四種狀態（找不到／載入／錯誤／正常）共用同一個外殼與固定 wrapper（data-browse-motion）：
+  // 進場動畫與跟手位移只作用在 wrapper，頁首列不動；wrapper 在同一實例內是同一個 DOM 節點，
+  // 所以骨架換成內容時不會再動第二次。
+  const shell = (variant: 'page' | 'notFound', body: ReactNode) => (
+    <div
+      ref={gestureRef}
+      data-overflow-intentional="裁切層以 -mx-2 外推 8px 留聚焦環空間"
+      className={`max-w-4xl mx-auto ${variant === 'notFound' ? 'text-center py-12' : ''} ${gestureClass}`}
+    >
+      {/* 裁切層：overflow-x: clip 擋住位移造成的橫向捲動；-mx-2／px-2 讓裁切邊界在內容兩側各外推
+          8px（內容位置不變），貼邊按鈕的聚焦環與卡片陰影不被裁——不依賴 overflow-clip-margin
+          （Safari 不支援）。 */}
+      <div className={`-mx-2 overflow-x-clip px-2 ${variant === 'notFound' ? '' : 'space-y-6'}`}>
+        {variant === 'notFound'
+          ? browseNav && <div className="flex justify-end">{browseNav}</div>
+          : topBar}
         {gestures}
+        <div ref={motionRef} data-browse-motion="">
+          {body}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (status === 'notFound') {
+    return shell(
+      'notFound',
+      <>
         <h2
           ref={notFoundRef}
           tabIndex={-1}
@@ -235,29 +238,26 @@ export function ServiceProviderDetail({
         <Button onClick={() => navigate('/')} className="w-full md:w-auto">
           返回首頁
         </Button>
-      </div>
+      </>,
     );
   }
 
   if (status !== 'ready' || !serviceProvider) {
-    return (
-      <div ref={gestureRef} className={`max-w-4xl mx-auto space-y-6 ${gestureClass}`}>
-        {topBar}
-        {gestures}
-        {status === 'error' ? (
-          // 暫時讀不到＝「錯誤但可重試」（LoadErrorCallout，§12.11）；ref 是重試後的焦點落點。
-          <LoadErrorCallout
-            ref={errorRef}
-            titleAs="h2"
-            title="暫時無法載入服務者資料"
-            description="可能是網路不穩，請再試一次。"
-            retryLabel="重試"
-            onRetry={handleRetry}
-          />
-        ) : (
-          <DetailSkeleton outputRef={skeletonRef} />
-        )}
-      </div>
+    return shell(
+      'page',
+      status === 'error' ? (
+        // 暫時讀不到＝「錯誤但可重試」（LoadErrorCallout，§12.11）；ref 是重試後的焦點落點。
+        <LoadErrorCallout
+          ref={errorRef}
+          titleAs="h2"
+          title="暫時無法載入服務者資料"
+          description="可能是網路不穩，請再試一次。"
+          retryLabel="重試"
+          onRetry={handleRetry}
+        />
+      ) : (
+        <DetailSkeleton outputRef={skeletonRef} />
+      ),
     );
   }
 
@@ -296,124 +296,114 @@ export function ServiceProviderDetail({
     document.body.removeChild(textArea);
   };
 
-  return (
-    <div ref={gestureRef} className={`max-w-4xl mx-auto space-y-6 ${gestureClass}`}>
-      {topBar}
-      {gestures}
+  return shell(
+    'page',
+    <div data-browse-content="" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
+      <PhotoCarousel
+        photos={serviceProvider.photos}
+        name={serviceProvider.name}
+        onEdgeSwipe={neighbors ? (direction) => goBrowse(direction, 'swipe') : undefined}
+      />
 
-      <div
-        ref={contentRef}
-        data-browse-content=""
-        className={`grid grid-cols-1 lg:grid-cols-2 gap-6 ${enterClass}`}
-      >
-        {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
-        <PhotoCarousel
-          photos={serviceProvider.photos}
-          name={serviceProvider.name}
-          onEdgeSwipe={neighbors ? (direction) => goBrowse(direction, 'swipe') : undefined}
-        />
-
-        {/* 詳細資訊區域 */}
-        <div className="space-y-6">
-          {/* 標題列照全站畫面稿：名稱與性別徽章兩端對齊，類別灰 chip 在下一行。名稱
+      {/* 詳細資訊區域 */}
+      <div className="space-y-6">
+        {/* 標題列照全站畫面稿：名稱與性別徽章兩端對齊，類別灰 chip 在下一行。名稱
               換行不截斷——訪客要看到完整名稱（上限 10 字，NAME_MAX_LENGTH）。類別與
               性別是分類標記，不上重色（§12.5 (b)）。 */}
-          <div className="space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <h1
-                ref={headingRef}
-                tabIndex={-1}
-                className="min-w-0 text-2xl md:text-3xl font-bold scroll-mt-20 outline-none"
-              >
-                {serviceProvider.name}
-              </h1>
-              <GenderBadge gender={serviceProvider.gender} className="mt-1.5 md:mt-2" />
-            </div>
-            {/* flex（不是 inline-flex）：徽章自成一個區塊，不坐在行盒裡多吃 3px 行高 */}
-            <CategoryBadge category={serviceProvider.category} className="flex w-fit" />
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <MapPin className="h-5 w-5 shrink-0" aria-hidden="true" />
-              <span>
-                {serviceProvider.city}{' '}
-                {serviceProvider.districts.includes('全區')
-                  ? '全區'
-                  : serviceProvider.districts.join(', ')}
-              </span>
-            </div>
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <h1
+              ref={headingRef}
+              tabIndex={-1}
+              className="min-w-0 text-2xl md:text-3xl font-bold scroll-mt-20 outline-none"
+            >
+              {serviceProvider.name}
+            </h1>
+            <GenderBadge gender={serviceProvider.gender} className="mt-1.5 md:mt-2" />
           </div>
+          {/* flex（不是 inline-flex）：徽章自成一個區塊，不坐在行盒裡多吃 3px 行高 */}
+          <CategoryBadge category={serviceProvider.category} className="flex w-fit" />
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <MapPin className="h-5 w-5 shrink-0" aria-hidden="true" />
+            <span>
+              {serviceProvider.city}{' '}
+              {serviceProvider.districts.includes('全區')
+                ? '全區'
+                : serviceProvider.districts.join(', ')}
+            </span>
+          </div>
+        </div>
 
-          {/* 服務介紹 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>服務介紹</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
-                {serviceProvider.description}
-              </p>
-            </CardContent>
-          </Card>
+        {/* 服務介紹 */}
+        <Card>
+          <CardHeader>
+            <CardTitle>服務介紹</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
+              {serviceProvider.description}
+            </p>
+          </CardContent>
+        </Card>
 
-          {/* 聯絡方式 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>聯絡方式</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* 聯絡鈕的文字是使用者貼上的帳號或原始網址，不截斷、只換行：按鈕自帶
+        {/* 聯絡方式 */}
+        <Card>
+          <CardHeader>
+            <CardTitle>聯絡方式</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* 聯絡鈕的文字是使用者貼上的帳號或原始網址，不截斷、只換行：按鈕自帶
                   whitespace-nowrap 與固定高度，這裡改回可換行、高度隨內容。 */}
-              {/* Facebook 藍／Instagram 粉／LINE 綠：第三方品牌識別色，S2 色彩
+            {/* Facebook 藍／Instagram 粉／LINE 綠：第三方品牌識別色，S2 色彩
                   收斂（D3）刻意排除在外——業界慣例是保留品牌色以利使用者一眼
                   找到聯絡方式，不受「彩色只留語義色」規則約束（見
                   scripts/color-usage-baseline.json 對這個檔案的 baseline 條目）。 */}
-              {serviceProvider.contacts.facebook && (
-                <Button
-                  tone="secondary"
-                  className="w-full h-auto justify-start whitespace-normal"
-                  onClick={() => handleContactClick('facebook', serviceProvider.contacts.facebook)}
-                >
-                  <Facebook className="h-5 w-5 mr-3 text-blue-600" />
-                  <span className="min-w-0 flex-1 text-left wrap-anywhere">
-                    {serviceProvider.contacts.facebook}
-                  </span>
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
+            {serviceProvider.contacts.facebook && (
+              <Button
+                tone="secondary"
+                className="w-full h-auto justify-start whitespace-normal"
+                onClick={() => handleContactClick('facebook', serviceProvider.contacts.facebook)}
+              >
+                <Facebook className="h-5 w-5 mr-3 text-blue-600" />
+                <span className="min-w-0 flex-1 text-left wrap-anywhere">
+                  {serviceProvider.contacts.facebook}
+                </span>
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            )}
 
-              {serviceProvider.contacts.instagram && (
-                <Button
-                  tone="secondary"
-                  className="w-full h-auto justify-start whitespace-normal"
-                  onClick={() =>
-                    handleContactClick('instagram', serviceProvider.contacts.instagram)
-                  }
-                >
-                  <Instagram className="h-5 w-5 mr-3 text-pink-500" />
-                  <span className="min-w-0 flex-1 text-left wrap-anywhere">
-                    {serviceProvider.contacts.instagram}
-                  </span>
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
+            {serviceProvider.contacts.instagram && (
+              <Button
+                tone="secondary"
+                className="w-full h-auto justify-start whitespace-normal"
+                onClick={() => handleContactClick('instagram', serviceProvider.contacts.instagram)}
+              >
+                <Instagram className="h-5 w-5 mr-3 text-pink-500" />
+                <span className="min-w-0 flex-1 text-left wrap-anywhere">
+                  {serviceProvider.contacts.instagram}
+                </span>
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            )}
 
-              {serviceProvider.contacts.line && (
-                <Button
-                  tone="secondary"
-                  className="w-full h-auto justify-start whitespace-normal"
-                  onClick={() => copyLineId(serviceProvider.contacts.line)}
-                >
-                  <MessageCircle className="h-5 w-5 mr-3 text-green-500" />
-                  <span className="min-w-0 flex-1 text-left wrap-anywhere">
-                    {serviceProvider.contacts.line}
-                  </span>
-                  <Copy className="h-4 w-4" />
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+            {serviceProvider.contacts.line && (
+              <Button
+                tone="secondary"
+                className="w-full h-auto justify-start whitespace-normal"
+                onClick={() => copyLineId(serviceProvider.contacts.line)}
+              >
+                <MessageCircle className="h-5 w-5 mr-3 text-green-500" />
+                <span className="min-w-0 flex-1 text-left wrap-anywhere">
+                  {serviceProvider.contacts.line}
+                </span>
+                <Copy className="h-4 w-4" />
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </div>,
   );
 }
 

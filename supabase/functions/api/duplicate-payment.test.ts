@@ -276,8 +276,11 @@ Deno.test('payment_orders：已有未逾期 pending 單時 prepare 仍建新單�
         p_user_id: user.id,
         p_trade_no: t,
         p_renewal_mode: null,
+        p_referrer_user_id: null,
+        p_referrer_code: null,
+        p_referrer_source: null,
       });
-      assertEquals(data, 'ok');
+      assertEquals(data?.outcome, 'ok');
     }
     const { count } = await client.from('payment_orders')
       .select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'pending');

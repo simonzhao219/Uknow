@@ -34,6 +34,12 @@ function summary(over: Partial<ReconcileSummary>): ReconcileSummary {
     queryFailures: 0,
     expireErrors: 0,
     unknownStatus: 0,
+    unknownByReason: {
+      unknown_code: 0,
+      missing_field: 0,
+      no_matching_trade: 0,
+      incomplete_too_long: 0,
+    },
     incomplete: 0,
     ...over,
   };
@@ -236,4 +242,91 @@ Deno.test('reconcilePendingOrders：標 expired 失敗 → 計入 expireErrors �
   assertEquals(s.expireErrors, 2);
   assertEquals(s.queryErrors, 0);
   assertEquals(s.expired, 0);
+});
+
+// ------------------------------------------------------------
+// 第 6 波 S1（R5 P2-7）：unknownStatus 依原因分計，四者和＝unknownStatus。
+// ------------------------------------------------------------
+Deno.test('reconcilePendingOrders：無法判讀的狀態依原因分計 unknownByReason', async () => {
+  const list: FakeOrder[] = [
+    ...orders(3, RECENT),
+    { id: 'o9', transaction_id: 'T9', user_id: 'u9', created_at: OLD },
+  ];
+  const byTrade: Record<string, unknown> = {
+    T0: { stillProcessing: true, unknownStatus: { tradeStatus: '8', reason: 'unknown_code' } },
+    T1: { stillProcessing: true, unknownStatus: { tradeStatus: '', reason: 'missing_field' } },
+    T2: { stillProcessing: true, unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' } },
+    T9: { stillProcessing: true, incomplete: true }, // 超過 expire 天數仍是 B → incomplete_too_long
+  };
+  const s = await offline(() =>
+    reconcilePendingOrders(
+      fakeClient(list),
+      (t: string) => Promise.resolve(byTrade[t]) as never,
+      resolveNever,
+      opts,
+    )
+  );
+  assertEquals(s.unknownStatus, 4);
+  assertEquals(s.unknownByReason, {
+    unknown_code: 1,
+    missing_field: 1,
+    no_matching_trade: 1,
+    incomplete_too_long: 1,
+  });
+});
+
+// ------------------------------------------------------------
+// 第 6 波 S1（R5 P2-8；W6-11）：heal 結果寫進帳本 summary（計數），回應 body 保留原樣；
+// heal 失敗只記帳本、不告警。
+// ------------------------------------------------------------
+const HEAL = {
+  candidates_found: 4,
+  completed_count: 1,
+  completed_order_ids: ['a'],
+  amount_mismatch: 1,
+  skipped_locked: 1,
+  failed: [{ order_id: 'd', error: 'boom' }],
+  truncated: false,
+};
+
+Deno.test('handleReconcile：三種分支的帳本 summary 都帶 heal 計數、body 帶原樣 heal', async () => {
+  for (
+    const s of [
+      summary({ checked: 2, queryErrors: 2 }),
+      summary({ checked: 3, queryErrors: 2 }),
+      summary({ checked: 1 }),
+    ]
+  ) {
+    const { deps } = handlerDeps(s);
+    deps.heal = () => Promise.resolve({ data: HEAL, error: null });
+    const out = await handleReconcile(deps);
+    assertEquals(out.summary.heal, {
+      candidates: 4,
+      completed: 1,
+      failed: 1,
+      skippedLocked: 1,
+      amountMismatch: 1,
+      truncated: false,
+      error: false,
+    });
+    const body = out.response.body as { data: { heal: unknown } };
+    assertEquals(body.data.heal, HEAL, 'body 的 failed 是陣列、帳本的是數字');
+  }
+});
+
+Deno.test('handleReconcile：heal 失敗 → 帳本 heal.error=true、照常對帳、不告警', async () => {
+  const { deps, alerts } = handlerDeps(summary({ checked: 1 }));
+  deps.heal = () => Promise.resolve({ data: null, error: { message: 'missing fn' } });
+  const out = await handleReconcile(deps);
+  assertEquals(out.status, 'succeeded');
+  assertEquals(out.summary.heal, {
+    candidates: 0,
+    completed: 0,
+    failed: 0,
+    skippedLocked: 0,
+    amountMismatch: 0,
+    truncated: false,
+    error: true,
+  });
+  assertEquals(alerts, []);
 });

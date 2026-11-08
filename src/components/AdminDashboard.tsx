@@ -12,6 +12,14 @@ import type {
   AdminWithdrawalsResponse,
 } from '@contract';
 import type { WithdrawalQuery } from './admin/WithdrawalManagement';
+import type {
+  AdminReferralMemberAuditResponse,
+  AdminReferralNodesResponse,
+  AdminReferralLedgerResponse,
+  AdminReferralPaymentsResponse,
+  AdminReferralSearchResponse,
+} from '@admin-referral-contract';
+import type { NodesParams, ReferralTreeLoaders } from './admin/referral-tree/loaders';
 
 // 取數／送出走這裡、畫面只吃 props——與 MemberManagement 餵 IdReviewQueue
 // 的作法一致：元件測試才不用替身掉整個網路層。取數函式經 AdminConsole 往下傳；
@@ -101,6 +109,48 @@ const WITHDRAWAL_API: AdminConsoleProps['withdrawals'] = {
   batchMarkPaid,
 };
 
+// 後台推薦樹（第 6 波 S3a）：/admin/referral-tree/*。契約在 @admin-referral-contract（與
+// @contract 分檔，避免頂層 schema 進前端入口 bundle）。
+const REFERRAL_TREE_API: ReferralTreeLoaders = {
+  async loadNodes(p: NodesParams) {
+    const qs = new URLSearchParams({ limit: String(p.limit), offset: String(p.offset) });
+    if (p.parentId) qs.set('parentId', p.parentId);
+    if (p.group) qs.set('group', p.group);
+    if (p.ensureId) qs.set('ensureId', p.ensureId);
+    const res = await apiRequestJson<AdminReferralNodesResponse>(
+      buildApiUrl(`/admin/referral-tree/nodes?${qs}`),
+    );
+    return res.data;
+  },
+  async search({ q, limit, offset }) {
+    const qs = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
+    const res = await apiRequestJson<AdminReferralSearchResponse>(
+      buildApiUrl(`/admin/referral-tree/search?${qs}`),
+    );
+    return res.data;
+  },
+  async loadMember(id) {
+    const res = await apiRequestJson<AdminReferralMemberAuditResponse>(
+      buildApiUrl(`/admin/referral-tree/members/${encodeURIComponent(id)}`),
+    );
+    return res.data;
+  },
+  async loadPayments(id, { limit, offset }) {
+    const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const res = await apiRequestJson<AdminReferralPaymentsResponse>(
+      buildApiUrl(`/admin/referral-tree/members/${encodeURIComponent(id)}/payments?${qs}`),
+    );
+    return res.data;
+  },
+  async loadLedger(id, { limit, offset }) {
+    const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const res = await apiRequestJson<AdminReferralLedgerResponse>(
+      buildApiUrl(`/admin/referral-tree/members/${encodeURIComponent(id)}/ledger?${qs}`),
+    );
+    return res.data;
+  },
+};
+
 const MEMBER_API: AdminConsoleProps['members'] = {
   loadMembers,
   loadMemberDetail,
@@ -108,6 +158,7 @@ const MEMBER_API: AdminConsoleProps['members'] = {
   suspendMember,
   loadIdReviews,
   submitIdReview,
+  referralTree: REFERRAL_TREE_API,
 };
 
 export function AdminDashboard() {

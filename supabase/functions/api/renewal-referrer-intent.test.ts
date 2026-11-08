@@ -237,22 +237,6 @@ Deno.test('prepare_payment_order：曾訂閱者不帶續費模式 → mode_requi
   }
 });
 
-Deno.test('prepare_payment_order：舊三參數版也套新檢查 → 曾訂閱者不帶模式回 mode_required', async () => {
-  const client = adminClient();
-  const sql = postgres(DB_URL, { max: 1 });
-  const ids: string[] = [];
-  try {
-    const m = await member(client, sql, ids, '舊版 會員');
-    await expire(sql, m);
-    const [r] = await sql`
-      select public.prepare_payment_order(${m}::uuid, ${tradeNo('LEGACY')}, null::text) as o`;
-    assertEquals(r.o, 'mode_required');
-  } finally {
-    await sql.end();
-    await deleteTestUsers(client, ids);
-  }
-});
-
 Deno.test('prepare_payment_order：已付款待開通的單 → paid_pending 帶單號並寫一筆告警', async () => {
   const client = adminClient();
   const sql = postgres(DB_URL, { max: 1 });
@@ -496,10 +480,14 @@ Deno.test('process_successful_payment：曾訂閱者的無模式單走到付款 
   }
 });
 
-Deno.test('prepare_payment_order：六參數與三參數版都只給 service_role 執行', async () => {
+Deno.test('prepare_payment_order：六參數版只給 service_role 執行，三參數 wrapper 已移除', async () => {
   const sql = postgres(DB_URL, { max: 1 });
   try {
-    for (const sig of ['uuid, text, text', 'uuid, text, text, uuid, text, text']) {
+    // 第 6 波 S6：三參數 wrapper（部署空窗相容用）已 drop——正式站與 develop 的 Edge 皆呼叫六參數版。
+    const [legacy] = await sql`
+      select to_regprocedure('public.prepare_payment_order(uuid, text, text)') is null as gone`;
+    assertEquals(legacy.gone, true, '三參數版應已不存在');
+    for (const sig of ['uuid, text, text, uuid, text, text']) {
       for (const role of ['anon', 'authenticated']) {
         const [r] = await sql`
           select has_function_privilege(${role},
@@ -710,6 +698,285 @@ Deno.test('complete_paid_pending_orders：換線鎖被占用 → 該筆跳過不
     assertEquals(again.r.completed_count, 1, '下一輪補完');
   } finally {
     await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+// 第 6 波 S1：單筆函式自己設 try 旗標、wrapper 不再清旗標於迴圈中——兩位會員各一張換線單、
+// 換線鎖被占用時，wrapper 的第 2 筆也必須走 try（不能阻塞等鎖）。
+Deno.test('complete_paid_pending_orders：多筆時第 2 筆仍走 try → 兩筆都跳過不阻塞', async () => {
+  const client = adminClient();
+  const holder = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 10_000 } });
+  const ids: string[] = [];
+  try {
+    const trades: string[] = [];
+    for (const name of ['批次 甲', '批次 乙']) {
+      const m = await member(client, sql, ids, name);
+      await expire(sql, m);
+      const t = tradeNo('BATCH2');
+      await prepare6(sql, m, t, 'fresh', { user: null, code: null, source: 'keep' });
+      await sql`
+        update public.payment_orders
+        set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
+        where transaction_id = ${t}`;
+      trades.push(t);
+    }
+    let r: { skipped_locked: number; completed_count: number } | null = null;
+    await holder.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtext('referral_rewire'))`;
+      const [row] = await sql`select public.complete_paid_pending_orders(null, 50) as r`;
+      r = row.r;
+    });
+    assertEquals({ skipped: r!.skipped_locked >= 2, completed: r!.completed_count }, {
+      skipped: true,
+      completed: 0,
+    });
+    const orders = await sql`
+      select status from public.payment_orders where transaction_id in ${sql(trades)}`;
+    assertEquals(orders.map((o) => o.status), ['pending', 'pending']);
+  } finally {
+    await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+// 第 6 波 S1：單筆函式委派前以 lock_timeout 3s 預取付款人 profiles 鎖；拿不到 → skipped_locked、
+// 不寫錯誤告警、訂單維持 pending（不會在 HTTP 請求裡無上限地等）。
+Deno.test('complete_paid_pending_order：付款人 profiles 被占用 → 3 秒內 skipped_locked、不告警', async () => {
+  const client = adminClient();
+  const holder = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 10_000 } });
+  const ids: string[] = [];
+  try {
+    const m = await member(client, sql, ids, '預取 會員');
+    await expire(sql, m);
+    const t = tradeNo('PREFETCH');
+    await prepare6(sql, m, t, 'extend');
+    await sql`
+      update public.payment_orders
+      set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
+      where transaction_id = ${t}`;
+    const [{ id }] = await sql`select id from public.payment_orders where transaction_id = ${t}`;
+    let r: { outcome: string } | null = null;
+    const started = Date.now();
+    await holder.begin(async (tx) => {
+      await tx`select 1 from public.profiles where id = ${m} for update`;
+      const [row] = await sql`select public.complete_paid_pending_order(${id}::uuid) as r`;
+      r = row.r;
+    });
+    assertEquals(r!.outcome, 'skipped_locked');
+    assert(Date.now() - started < 8_000, '應在 lock_timeout 附近放棄，不是等到 statement_timeout');
+    const [o] = await sql`select status from public.payment_orders where id = ${id}`;
+    assertEquals(o.status, 'pending');
+    const [al] = await sql`
+      select count(*)::int as n from public.system_alerts
+      where source = 'complete_paid_pending_orders' and context->>'order_id' = ${id}::text`;
+    assertEquals(al.n, 0);
+  } finally {
+    await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+// 第 6 波 S1：lock_timeout 只包 0b 預取、之後還原——推薦人 profiles 被占用超過 3 秒時，
+// 發獎的 FK 等待不得因 55P03 變成漏發。
+Deno.test('complete_paid_pending_order：推薦人 profiles 被占用 4 秒 → 等到放鎖、第 1 代照發', async () => {
+  const client = adminClient();
+  const holder = postgres(DB_URL, { max: 1 });
+  const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 15_000 } });
+  const ids: string[] = [];
+  try {
+    const up = await member(client, sql, ids, '占鎖 推薦人');
+    const m = await member(client, sql, ids, '占鎖 會員', up);
+    await expire(sql, m);
+    const t = tradeNo('HOLDUP');
+    await prepare6(sql, m, t, 'extend');
+    await sql`
+      update public.payment_orders
+      set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
+      where transaction_id = ${t}`;
+    const [{ id }] = await sql`select id from public.payment_orders where transaction_id = ${t}`;
+    const since = new Date().toISOString();
+    let call: Promise<postgres.RowList<postgres.Row[]>> | null = null;
+    await holder.begin(async (tx) => {
+      await tx`select 1 from public.profiles where id = ${up} for update`;
+      call = sql`select public.complete_paid_pending_order(${id}::uuid) as r`.execute();
+      await new Promise((res) => setTimeout(res, 4_000)); // 超過 0b 預取的 3 秒
+    }); // commit → 放掉推薦人 profiles
+    const [{ r }] = await call!;
+    assertEquals(r.outcome, 'completed');
+    const [paid] = await sql`
+      select count(*)::int as n from public.reward_transactions rt
+      join public.subscriptions s on s.id = rt.subscription_id
+      join public.payment_orders po on po.id = s.source_payment_order_id
+      where po.transaction_id = ${t} and rt.generation = 1 and rt.user_id = ${up}`;
+    assertEquals(paid.n, 1, '第 1 代獎金寫入');
+    const [al] = await sql`
+      select count(*)::int as n from public.system_alerts
+      where created_at >= ${since} and context->>'sqlstate' = '55P03'`;
+    assertEquals(al.n, 0);
+  } finally {
+    await holder.end();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+// ============================================================
+// 第 6 波 S6（R5 P2-6、W6-27）：source＝default 的新約單，0d 驗的是**單上記的碼**（建單時的預設碼），
+// 不是付款當下 reward_config 的預設碼。舊碼仍有效就綁舊預設推薦人；失效才維持原推薦人，告警依
+// 「預設碼已更換／預設機制已停用／未換」分句，context 帶 current_default_code。
+// ============================================================
+async function withDefault(
+  sql: Sql,
+  run: (set: (code: string | null) => Promise<void>) => Promise<void>,
+) {
+  const [cfg] = await sql`select default_referrer_code from public.reward_config where id = true`;
+  const original = cfg?.default_referrer_code ?? null;
+  const set = async (code: string | null) => {
+    await sql`update public.reward_config set default_referrer_code = ${code} where id = true`;
+  };
+  try {
+    await run(set);
+  } finally {
+    await set(original);
+  }
+}
+
+async function invalidAlert(sql: Sql, userId: string) {
+  return await sql`
+    select message, context from public.system_alerts
+    where source = 'fresh_referrer_invalid' and context->>'user_id' = ${userId}`;
+}
+
+// 原推薦人 y、建單時的預設推薦人 d1、之後換上的預設推薦人 d2；會員 m 在 y 底下、已到期、
+// 以 d1 的碼建 source＝default 的新約單。回傳各 id 與碼供各案改變付款前的狀態。
+async function defaultFreshOrder(client: Client, sql: Sql, ids: string[], tag: string) {
+  const y = await member(client, sql, ids, `${tag} 原推薦人`);
+  const d1 = await member(client, sql, ids, `${tag} 舊預設`);
+  const d2 = await member(client, sql, ids, `${tag} 新預設`);
+  const m = await member(client, sql, ids, `${tag} 會員`, y);
+  await expire(sql, m);
+  const d1Code = await getActiveReferralCode(client, d1);
+  const d2Code = await getActiveReferralCode(client, d2);
+  const t = tradeNo(tag);
+  return { y, d1, d2, m, d1Code, d2Code, t };
+}
+
+Deno.test('process_successful_payment：建單後換了預設碼、舊碼仍有效 → 綁單上的舊預設推薦人、不告警', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26CHG');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(o.d2Code);
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.d1, edge: o.d1 });
+    const [p] = await sql`select referred_by_code from public.profiles where id = ${o.m}`;
+    assertEquals(p.referred_by_code, o.d1Code);
+    assertEquals((await invalidAlert(sql, o.m)).length, 0);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：預設碼已更換且單上碼失效 → 維持原推薦人、告警寫已更換', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26CHGX');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(o.d2Code);
+      await sql`update public.profiles set suspended_at = now() where id = ${o.d1}`;
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.y, edge: o.y });
+    assertEquals(await ledgerResetCount(sql, o.m), 1);
+    const a = await invalidAlert(sql, o.m);
+    assertEquals(a.length, 1);
+    assert(a[0].message.includes('已被更換'), a[0].message);
+    assertEquals(a[0].context.current_default_code, o.d2Code);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：預設碼未換但單上碼失效 → 告警寫停權或失效、不提更換', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26SAME');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await sql`update public.profiles set suspended_at = now() where id = ${o.d1}`;
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.y, edge: o.y });
+    const a = await invalidAlert(sql, o.m);
+    assertEquals(a.length, 1);
+    assert(a[0].message.includes('已停權或失效'), a[0].message);
+    assert(!a[0].message.includes('更換') && !a[0].message.includes('停用'), a[0].message);
+    assertEquals(a[0].context.current_default_code, o.d1Code);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：建單後預設碼被清空、舊碼仍有效 → 仍綁單上的舊預設推薦人', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26UNSET');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(null);
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.d1, edge: o.d1 });
+    assertEquals((await invalidAlert(sql, o.m)).length, 0);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('process_successful_payment：預設碼被清空且單上碼失效 → 維持原推薦人、告警寫機制已停用', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const o = await defaultFreshOrder(client, sql, ids, 'P26UNSETX');
+    await withDefault(sql, async (set) => {
+      await set(o.d1Code);
+      await prepare6(sql, o.m, o.t, 'fresh', { user: o.d1, code: o.d1Code, source: 'default' });
+      await set(null);
+      await sql`update public.profiles set suspended_at = now() where id = ${o.d1}`;
+      await complete(sql, o.m, o.t);
+    });
+    assertEquals(await referrerOf(sql, o.m), { profile: o.y, edge: o.y });
+    const a = await invalidAlert(sql, o.m);
+    assertEquals(a.length, 1);
+    assert(a[0].message.includes('已停用'), a[0].message);
+    assertEquals(a[0].context.current_default_code, null);
+  } finally {
     await sql.end();
     await deleteTestUsers(client, ids);
   }

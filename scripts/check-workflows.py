@@ -37,6 +37,12 @@ WORKFLOW_DIR = ROOT / ".github" / "workflows"
 STEP_START = re.compile(r"^(\s*)-\s+(uses|name)\s*:")
 # 負向 pattern:list item 的值以 ! 開頭(引號可有可無)
 NEGATED = re.compile(r"""^\s*-\s*['"]?!""")
+MIGRATION_GATE = re.compile(r"scripts/check-remote-migrations\.py")
+# 旗標可能在子指令前(`supabase --project-ref x secrets set`),所以 supabase 與子指令之間允許任意非換行字元。
+DEPLOY_SENSITIVE = re.compile(r"supabase\b[^\n]*?\b(secrets\s+set|functions\s+deploy)")
+STEP_CONDITION = re.compile(r"^\s*(continue-on-error|if)\s*:", re.MULTILINE)
+# 讓指令失敗也回 0 的寫法:`|| true`、`||true`、`|| :`、`|| exit 0`、`; true`。
+EXIT_SWALLOW = re.compile(r"\|\|\s*(true|:|exit\s+0)\b|;\s*true\b")
 QUANTIFIER = re.compile(r"""^\s*predicate-quantifier\s*:\s*['"]?([A-Za-z]+)""")
 
 
@@ -288,6 +294,44 @@ def naming_violations(text: str, filename: str = "<inline>") -> list[str]:
                 "(迴圈沒有 sleep 等於連環硬打限流)。"
             )
 
+    # 規則 14:deploy-supabase.yml 寫 DEPLOY_SHA 或部署 Edge 之前,必須先跑
+    #         scripts/check-remote-migrations.py,且那一步不得被改成不擋(W5-62)。
+    #         只看非註解行(同規則 12:_steps() 會把 step 前的註解歸給上一個 step)。
+    if filename == DEPLOY_GATE_WORKFLOW:
+        codes = [
+            "\n".join(l for l in bl.splitlines() if not l.lstrip().startswith("#"))
+            for bl in _steps(text)
+        ]
+        gate = next((i for i, c in enumerate(codes) if MIGRATION_GATE.search(c)), None)
+        first = next((i for i, c in enumerate(codes) if DEPLOY_SENSITIVE.search(c)), None)
+        if first is not None and (gate is None or gate > first):
+            found.append(
+                "deploy-supabase.yml 在寫 DEPLOY_SHA／部署 Edge 之前沒有先跑 "
+                "scripts/check-remote-migrations.py——新 Edge 先於它依賴的 migration 上線時,"
+                "建單等 RPC 會全部 500(第 5 波 #514 審查 P2-2、W5-62)。"
+                "修法:把確認 step 放在第一個 supabase secrets set／functions deploy 之前。"
+            )
+        if gate is not None:
+            block = codes[gate]
+            if STEP_CONDITION.search(block) or EXIT_SWALLOW.search(block):
+                found.append(
+                    "deploy-supabase.yml 的 migration 確認 step 帶 continue-on-error、if:,或指令以 "
+                    "|| true／|| exit 0／; true 吞掉失敗——失敗時部署照樣繼續,這道閘門等於不存在。拿掉它們。"
+                )
+            if "--project-ref" not in block or "--self-test" in block:
+                found.append(
+                    "deploy-supabase.yml 的 migration 確認 step 必須帶 --project-ref(比對哪個環境)且不得是 "
+                    "--self-test(那只驗檢查器自己,不比對遠端)。"
+                )
+        if gate is not None and first is not None:
+            for i, c in enumerate(codes):
+                if i > gate and DEPLOY_SENSITIVE.search(c) and STEP_CONDITION.search(c):
+                    found.append(
+                        "deploy-supabase.yml 寫 DEPLOY_SHA／部署 Edge 的 step 帶 if:(如 always()、!cancelled())"
+                        "——確認 migration 失敗時它仍會執行。拿掉 if:,讓它跟著前一步失敗而停。"
+                    )
+                    break
+
     # 規則 13:`payment_mode: webhook` 同一行或上一行必須帶「暫時至 YYYY-MM-DD」且未過期
     lines = text.splitlines()
     for i, line in enumerate(lines):
@@ -451,8 +495,32 @@ CASES: list[tuple[str, str, int]] = [
 ]
 
 
+# 規則 14 的對象檔名;檔案不存在時規則會靜默失效,所以 scan 要求它存在。
+DEPLOY_GATE_WORKFLOW = "deploy-supabase.yml"
+
+
+def required_workflow_violations(filenames: list[str]) -> list[str]:
+    """規則 14 的前提:被管的 workflow 必須存在(改名會讓規則靜默失效)。"""
+    if DEPLOY_GATE_WORKFLOW in filenames:
+        return []
+    return [
+        f"找不到 .github/workflows/{DEPLOY_GATE_WORKFLOW}——規則 14(部署前確認 migration)以這個檔名"
+        "為對象,改名後規則會靜默失效。改名時同步改 check-workflows.py 的 DEPLOY_GATE_WORKFLOW。"
+    ]
+
+
+REQUIRED_CASES: list[tuple[str, list[str], int]] = [
+    ("deploy-supabase.yml 存在 → 通過", ["ci.yml", "deploy-supabase.yml"], 0),
+    ("deploy-supabase.yml 被改名或刪除 → 違規", ["ci.yml", "deploy-edge.yml"], 1),
+]
+
+
 def self_test() -> int:
     failures: list[str] = []
+    for label, names, want in REQUIRED_CASES:
+        got = len(required_workflow_violations(names))
+        if got != want:
+            failures.append(f"  FAIL: {label} — 預期 {want} 筆違規,實得 {got}")
     for label, snippet, want in CASES:
         got = len(violations(snippet))
         if got != want:
@@ -467,7 +535,7 @@ def self_test() -> int:
         print("check-workflows 表格案例未過:")
         print("\n".join(failures))
         return 1
-    print(f"check-workflows self-test: OK（{len(CASES) + len(NAMING_CASES)} 條案例）")
+    print(f"check-workflows self-test: OK（{len(CASES) + len(NAMING_CASES) + len(REQUIRED_CASES)} 條案例）")
     return 0
 
 
@@ -476,6 +544,10 @@ def scan() -> int:
         return 0  # 沒有 workflow 目錄視為通過
 
     fail = 0
+    names = [p.name for p in WORKFLOW_DIR.glob("*.yml")] + [p.name for p in WORKFLOW_DIR.glob("*.yaml")]
+    for msg in required_workflow_violations(names):
+        print(f"FAIL: {msg}")
+        fail = 1
     for path in sorted(WORKFLOW_DIR.glob("*.yml")) + sorted(WORKFLOW_DIR.glob("*.yaml")):
         text = path.read_text(encoding="utf-8")
         for msg in list(violations(text)) + naming_violations(text, path.name):
@@ -486,6 +558,42 @@ def scan() -> int:
         print("check-workflows: OK")
     return fail
 
+
+
+def _r14(
+    gate_at: int | None,
+    comment_only: bool = False,
+    extra: str = "",
+    suffix: str = "",
+    gate_args: str = "--project-ref x --max-wait 600",
+    secrets_extra: str = "",
+    secrets_cmd: str = "supabase secrets set --project-ref x A=b",
+) -> str:
+    """規則 14 案例用的 deploy workflow 片段。gate_at＝確認 step 插在第幾個敏感 step 之前
+    (0＝secrets set 之前、1＝secrets set 之後 deploy 之前、None＝沒有)。"""
+    gate = (
+        "      - name: 確認 migration 已套用\n" + extra
+        + "        run: python3 scripts/check-remote-migrations.py " + gate_args
+        + suffix + "\n"
+    )
+    secrets = "      - name: 寫入 sha\n" + secrets_extra + "        run: " + secrets_cmd + "\n"
+    if comment_only:
+        secrets = "      # 之後要先跑 scripts/check-remote-migrations.py\n" + secrets
+    deploy = (
+        "      - name: 部署\n        run: |\n"
+        "          for attempt in 1 2 3; do\n"
+        "            supabase functions deploy api --project-ref x && exit 0\n"
+        "            sleep 30\n"
+        "          done\n"
+    )
+    order = [secrets, deploy]
+    if gate_at is not None:
+        order.insert(gate_at, gate)
+    return (
+        "name: Deploy Thing\njobs:\n"
+        "  deploy-edge-function:\n    timeout-minutes: 25\n    steps:\n"
+        "      - name: 取出程式碼\n        uses: actions/checkout@v4\n" + "".join(order)
+    )
 
 
 # --- 命名規則的表格案例:每筆是 (標籤, workflow 片段, 檔名, 預期違規數) ---
@@ -798,6 +906,97 @@ NAMING_CASES: list[tuple[str, str, str, int]] = [
         ),
         "ci.yml",
         1,
+    ),
+    # --- 規則 14:部署前確認 migration 已套用(W5-62;第 6 波 S6) ---
+    (
+        "deploy-supabase.yml:確認 migration 的 step 在 secrets set 之前 → 通過",
+        _r14(gate_at=0),
+        "deploy-supabase.yml",
+        0,
+    ),
+    (
+        "deploy-supabase.yml:確認 step 排在寫 DEPLOY_SHA 之後 → 違規",
+        _r14(gate_at=1),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:沒有確認 migration 的 step → 違規",
+        _r14(gate_at=None),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:只有註解提到腳本、沒有真的呼叫 → 違規(註解歸屬盲點)",
+        _r14(gate_at=None, comment_only=True),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認 step 帶 continue-on-error → 違規",
+        _r14(gate_at=0, extra="        continue-on-error: true\n"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認 step 帶 if: → 違規",
+        _r14(gate_at=0, extra="        if: github.event_name == 'never'\n"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 || true → 違規",
+        _r14(gate_at=0, suffix=" || true"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 ||true(無空格) → 違規",
+        _r14(gate_at=0, suffix=" ||true"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 || exit 0 → 違規",
+        _r14(gate_at=0, suffix=" || exit 0"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令後接 ; true → 違規",
+        _r14(gate_at=0, suffix="; true"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令沒帶 --project-ref → 違規(不知道比對哪個環境)",
+        _r14(gate_at=0, gate_args="--max-wait 600"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:確認指令只跑 --self-test → 違規(沒有比對遠端)",
+        _r14(gate_at=0, gate_args="--self-test --project-ref x"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:敏感 step 帶 if: always() → 違規(確認失敗仍會寫 sha)",
+        _r14(gate_at=0, secrets_extra="        if: always()\n"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "deploy-supabase.yml:旗標在子指令前的 secrets set 也算敏感 step → 違規",
+        _r14(gate_at=1, secrets_cmd="supabase --project-ref x secrets set A=b"),
+        "deploy-supabase.yml",
+        1,
+    ),
+    (
+        "其他 workflow(journey 拋棄式分支)沒有確認 step → 不適用規則 14",
+        _r14(gate_at=None),
+        "journey.yml",
+        0,
     ),
 ]
 

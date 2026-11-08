@@ -463,3 +463,29 @@ describe('MemberDetailSheet 管理動作只回呼父層', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
+
+describe('MemberDetailSheet 在推薦樹中查看', () => {
+  it('有 onViewInTree 時推薦關係區出現連結，點了呼叫它', () => {
+    const onViewInTree = vi.fn();
+    render(
+      <MemberDetailSheet
+        detail={detail()}
+        processingKind={null}
+        panelError={null}
+        onRequestAction={vi.fn()}
+        onClose={() => {}}
+        onViewInTree={onViewInTree}
+      />,
+    );
+    const panel = screen.getByRole('dialog');
+    fireEvent.click(
+      within(section(panel, '推薦關係')).getByRole('button', { name: '在推薦樹中查看' }),
+    );
+    expect(onViewInTree).toHaveBeenCalledTimes(1);
+  });
+
+  it('沒有 onViewInTree 時不出現連結', () => {
+    const { panel } = renderSheet();
+    expect(within(panel).queryByRole('button', { name: '在推薦樹中查看' })).toBeNull();
+  });
+});

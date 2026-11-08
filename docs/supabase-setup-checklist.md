@@ -648,7 +648,8 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
 
 4. 確認 health 不再回 404：`reconcile-payments.yml` 下一次看門狗 run 的 step summary 會顯示判讀結果（`R5` 正常、`R6` 停擺）。
    不想等，可以 dispatch 一次 `reconcile-payments.yml`，或直接做第 5 步。
-5. 立即驗證：先執行 `select public.invoke_internal_endpoint('reconcile');`，應回傳 request id。1 分鐘後查：
+5. 立即驗證：先執行 `select public.invoke_internal_endpoint('reconcile', 'manual');`（帶 `'manual'`：帳本記成人工觸發，
+   不刷新 `scheduler_health` 的 `lastPgCronCompletedAt`），應回傳 request id。1 分鐘後查：
 
    ```sql
    select status, error_code, trigger, started_at from public.scheduled_job_runs

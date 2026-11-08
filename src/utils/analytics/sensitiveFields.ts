@@ -65,4 +65,13 @@ export const PRIVATE_ROUTES = ['/payment/checkout', '/payment/result', '/admin']
  */
 export const SENSITIVE_PORTALS = [
   { file: 'components/reward/WithdrawalProcess.tsx', anchor: '<SelectContent' },
+  {
+    file: 'components/PaymentCheckout.tsx',
+    anchor: '<AlertDialogContent data-testid="fresh-confirm-dialog"',
+  },
+  // 後台推薦樹詳情：/admin 的 PrivateRegion 涵蓋不到 portal（第 6 波 S3a）。
+  {
+    file: 'components/admin/referral-tree/ReferralAuditSheet.tsx',
+    anchor: '<SheetContent',
+  },
 ];

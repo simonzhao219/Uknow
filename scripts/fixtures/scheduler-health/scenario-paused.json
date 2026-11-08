@@ -18,7 +18,9 @@
           "skipped": 0,
           "abandoned": 0
         },
-        "lastPurgeDryRun": null
+        "lastPurgeDryRun": null,
+        "healFailedStreak": 0,
+        "healSkippedStreak": 0
       },
       "purge-photos": {
         "cronJobPresent": true,
@@ -35,7 +37,9 @@
           "skipped": 0,
           "abandoned": 0
         },
-        "lastPurgeDryRun": false
+        "lastPurgeDryRun": false,
+        "healFailedStreak": null,
+        "healSkippedStreak": null
       }
     },
     "pgNet6h": {

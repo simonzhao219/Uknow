@@ -4,19 +4,13 @@ import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { FOCUS_RING_GAP } from '../ui/focusRing';
 import { cn } from '../ui/utils';
 import { swipeIntent } from '../../utils/swipeIntent';
+import { prefersReducedMotion } from '../../utils/motionPreference';
 
 interface PhotoCarouselProps {
   photos: string[];
   name: string;
   /** 起手就在最後一張再往左（next）／第一張再往右（prev）滑時觸發，給詳情頁換篇用。 */
   onEdgeSwipe?: (direction: 'prev' | 'next') => void;
-}
-
-function prefersReducedMotion() {
-  return (
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
 }
 
 /**

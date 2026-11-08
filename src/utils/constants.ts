@@ -430,7 +430,7 @@ export const TAIWAN_REGIONS: Record<string, string[]> = {
     '萬巒鄉',
     '崁頂鄉',
     '新埤鄉',
-    '南鄉',
+    '南州鄉',
     '林邊鄉',
     '東港鎮',
     '琉球鄉',

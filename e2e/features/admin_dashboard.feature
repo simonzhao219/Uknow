@@ -85,3 +85,16 @@ Feature: Admin dashboard
     And the withdrawal list is refreshing
     When the withdrawal list responds again
     Then the withdrawal list is no longer refreshing
+
+  Scenario: The referral tree sub-tab opens a member's three-generation reward check
+    Given I am logged in as an admin
+    And there are no withdrawal applications
+    And the platform has a member named "陳大文"
+    And the referral tree has audit data
+    When I visit "/admin"
+    And I open the "會員管理" tab
+    And I open the referral tree sub-tab
+    And I open the first member in the referral tree
+    Then I should see the text "需要注意"
+    And I should see the text "收獎人不符"
+    And I should see the text "已顯示 2 / 25 筆"

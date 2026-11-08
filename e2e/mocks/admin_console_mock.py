@@ -156,3 +156,198 @@ def build_worst_case_member_detail(*, name: str, email: str, points: int) -> dic
         withdrawnPoints=points,
         recentWithdrawals=withdrawals,
     )
+
+
+# --- 後台推薦樹（第 6 波 S3a）---------------------------------------------------------
+# 欄位與契約 `admin-referral-contract.ts` 一一對應（這份 mock 沒有型別守護）。測資取最壞
+# 但可達：長姓名、多徽章、深層級、收獎人不符與無法判定的付款卡（每代三行）。
+
+_TREE_NAME = "專業美髮師小美工作室ABCDEFGHIJKLMNOP"
+
+
+def build_referral_tree_node(**overrides) -> dict:
+    node = {
+        "id": "tree-node-1",
+        "name": _TREE_NAME,
+        "referralCode": "8048876",
+        "layer": 7,
+        "directCount": 128,
+        "status": "expiring",
+        "daysToExpiry": 12,
+        "endDate": "2026-11-20T15:59:59.000Z",
+        "referralProgramJoined": True,
+        "referralProgramJoinedAt": "2026-10-01T00:00:00.000Z",
+        "anomalyKinds": ["missing_reward", "recipient_mismatch"],
+        "anomalyScanTruncated": True,
+    }
+    node.update(overrides)
+    return node
+
+
+def _gen(generation: int, result: str, **overrides) -> dict:
+    row = {
+        "generation": generation,
+        "result": result,
+        "reason": None,
+        "expectedId": f"exp-{generation}",
+        "expectedName": _TREE_NAME,
+        "actualId": f"act-{generation}",
+        "actualName": _TREE_NAME,
+        "actualAmount": 100,
+    }
+    row.update(overrides)
+    return row
+
+
+def build_referral_member_audit(node: dict) -> dict:
+    return {
+        "node": node,
+        "upline": [
+            {"id": f"up-{i}", "name": _TREE_NAME, "referralCode": f"80488{i:02d}"}
+            for i in range(6)
+        ],
+        "uplineStatus": "truncated",
+        "rewards": {
+            "byGeneration": {"g1": 1234500, "g2": 234500, "g3": 34500},
+            "available": 1503500,
+            "totalEarned": 1503500,
+        },
+        "tasks": {
+            "monthKey": "2026-11",
+            "monthlyCount": 7,
+            "threshold": 8,
+            "creditsUnclaimed": 3,
+            "creditsClaimed": 12,
+        },
+        "withdrawals": {
+            "pendingAmount": 8000,
+            "awaitingCollectionAmount": 8000,
+            "completedAmount": 1200000,
+        },
+        "referrerHistory": {
+            "pastReferrers": [
+                {"id": f"past-{i}", "name": _TREE_NAME, "referralCode": None} for i in range(3)
+            ],
+            "freshEvents": [
+                {
+                    "completedAt": "2026-10-15T02:00:00.000Z",
+                    "newReferrerId": "past-0",
+                    "newReferrerName": _TREE_NAME,
+                    "effective": "confirmed",
+                },
+                {
+                    "completedAt": "2026-09-01T02:00:00.000Z",
+                    "newReferrerId": "past-1",
+                    "newReferrerName": _TREE_NAME,
+                    "effective": "unknown",
+                },
+            ],
+        },
+        "referrerMismatch": True,
+        "anomalies": ["missing_reward", "recipient_mismatch", "cycle", "ledger_mismatch"],
+        "paymentSummary": {"missingCount": 2, "mismatchCount": 1},
+    }
+
+
+def build_referral_payments() -> dict:
+    items = [
+        {
+            "kind": "payment",
+            "eventId": "ev-1",
+            "at": "2026-11-01T02:00:00.000Z",
+            "subscriptionId": "sub-1",
+            "claimId": None,
+            "generations": [
+                _gen(1, "recipient_mismatch", actualId="other", actualName=_TREE_NAME + "他人"),
+                _gen(2, "missing", actualId=None, actualName=None, actualAmount=None),
+                _gen(3, "undeterminable", reason="changed_after"),
+            ],
+        },
+        {
+            "kind": "claim",
+            "eventId": "ev-2",
+            "at": "2026-10-01T02:00:00.000Z",
+            "subscriptionId": None,
+            "claimId": "claim-1",
+            "generations": [
+                _gen(1, "paid"),
+                _gen(2, "cycle_stopped", expectedId=None, expectedName=None, actualId=None,
+                     actualName=None, actualAmount=None),
+                _gen(3, "cycle_stopped", expectedId=None, expectedName=None, actualId=None,
+                     actualName=None, actualAmount=None),
+            ],
+        },
+    ]
+    return {"total": 25, "items": items}
+
+
+def build_referral_ledger() -> dict:
+    """點數來源（S3b）：推薦獎勵、提領扣款、新約清空，含兩種核對不符與延遲補沖資訊。"""
+    def row(**over):
+        base = {
+            "id": "lg-1", "at": "2026-11-01T02:00:00.000Z", "type": "referral_reward",
+            "sourceCategory": "referral_signup", "amount": 12000, "balanceAfter": 1234567,
+            "description": "推薦獎勵", "generation": 1, "refereeId": "payer-1",
+            "refereeName": _TREE_NAME + "付款人", "eventAt": "2026-11-01T01:59:00.000Z",
+            "withdrawalId": None, "withdrawalStatus": None, "subscriptionId": "sub-1",
+            "finding": None,
+        }
+        base.update(over)
+        return base
+    items = [
+        row(id="lg-3", type="ledger_reset", sourceCategory="ledger_reset", amount=-1234567,
+            balanceAfter=0, generation=None, refereeId=None, refereeName=None, eventAt=None,
+            finding="reset_amount"),
+        row(id="lg-2", type="withdrawal", sourceCategory="withdrawal", amount=-100015,
+            balanceAfter=1222567, generation=None, refereeId=None, refereeName=None,
+            eventAt=None, withdrawalId="w-1", withdrawalStatus="awaiting_collection"),
+        row(),
+    ]
+    findings = [
+        {"kind": "reset_amount", "transactionId": "lg-3", "withdrawalId": None, "info": False},
+        {"kind": "refund_missing", "transactionId": None, "withdrawalId": "w-9", "info": False},
+        {"kind": "reset_delayed", "transactionId": "lg-0", "withdrawalId": None, "info": True},
+    ]
+    return {"total": 42, "items": items, "findings": findings}
+
+
+def route_admin_referral_tree(context) -> None:
+    """GET /admin/referral-tree/* — 推薦樹次分頁與節點詳情 Sheet（最壞但可達的測資）。"""
+    top = [build_referral_tree_node(id=f"tree-node-{i}", layer=1) for i in range(1, 4)]
+    children = [build_referral_tree_node(id=f"tree-child-{i}", layer=2) for i in range(1, 4)]
+
+    def respond(route, data):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"success": True, "data": data}),
+        )
+
+    def nodes(route):
+        url = route.request.url
+        if "parentId=" in url:
+            respond(route, {"total": 128, "nodes": children, "pinned": None})
+        elif "group=unplaceable" in url:
+            respond(route, {"total": 1, "nodes": [build_referral_tree_node(
+                id="tree-cycle", layer=None, anomalyKinds=["cycle"])], "pinned": None})
+        else:
+            respond(route, {"total": 24, "nodes": top, "pinned": None, "unplaceableCount": 1})
+
+    def search(route):
+        respond(route, {"total": 1, "matches": [
+            {**top[0], "ancestorIds": [], "unplaceableReason": None}]})
+
+    context.route(f"{API_BASE}/admin/referral-tree/nodes**", nodes)
+    context.route(f"{API_BASE}/admin/referral-tree/search**", search)
+    context.route(
+        f"{API_BASE}/admin/referral-tree/members/*",
+        lambda route: respond(route, build_referral_member_audit(top[0])),
+    )
+    context.route(
+        f"{API_BASE}/admin/referral-tree/members/*/payments**",
+        lambda route: respond(route, build_referral_payments()),
+    )
+    context.route(
+        f"{API_BASE}/admin/referral-tree/members/*/ledger**",
+        lambda route: respond(route, build_referral_ledger()),
+    )

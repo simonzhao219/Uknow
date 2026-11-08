@@ -663,6 +663,45 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
       '輸入推薦碼',
     );
   });
+
+  // 第 6 波 S6（W5-63、W6-28）：現任推薦人就是預設推薦人時，留空推薦人不變。
+  it('確認框寫推薦人維持不變、說明寫維持原本的推薦人、不提示目前的碼', async () => {
+    spyFetch();
+    setSubscription({
+      ...RENEWAL,
+      freshDefaultReferrerAvailable: true,
+      freshDefaultReferrerIsCurrent: true,
+    });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    expect(screen.getByTestId('fresh-code-hint').textContent).toContain('維持原本的推薦人');
+    expect(screen.getByTestId('fresh-code-hint').textContent).not.toContain('將改變');
+    expect((screen.getByTestId('new-referral-code-input') as HTMLInputElement).placeholder).toBe(
+      '輸入推薦碼',
+    );
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    const dialog = await screen.findByTestId('fresh-confirm-dialog');
+    expect(dialog.textContent).toContain('您的推薦人維持不變');
+    expect(dialog.textContent).not.toContain('推薦人將改變');
+  });
+
+  it('新推薦碼欄平時以說明文字為描述', async () => {
+    spyFetch();
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedLongExpired();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const hint = screen.getByTestId('fresh-code-hint');
+    expect(hint.id).toBe('fresh-code-hint');
+    expect(screen.getByTestId('new-referral-code-input').getAttribute('aria-describedby')).toBe(
+      'fresh-code-hint',
+    );
+  });
 });
 
 // R0 審查回填（#380 必修 2）：換推薦人驗證的「查無」與「暫時讀不到」分開
@@ -696,6 +735,17 @@ describe('PaymentCheckout 換推薦人驗證', () => {
     fireEvent.change(input, { target: { value: code } });
     fireEvent.blur(input);
   }
+
+  it('推薦碼無效時，描述先指錯誤訊息再指說明文字', async () => {
+    stubValidate(
+      async () => ({ ok: true, status: 200, json: async () => ({ valid: false }) }) as Response,
+    );
+    await enterNewCode('8048999');
+    await waitFor(() => expect(screen.getByText('推薦碼不存在或已失效')).toBeTruthy());
+    expect(screen.getByTestId('new-referral-code-input').getAttribute('aria-describedby')).toBe(
+      'new-referral-code-error fresh-code-hint',
+    );
+  });
 
   it('429 時顯示稍後再試，不說推薦碼不存在或已失效', async () => {
     stubValidate(
@@ -1068,7 +1118,7 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
       | 'pending'
       | 'error'
       | Array<Record<string, unknown> | 'error'>;
-    prepare?: { status: number; body: unknown };
+    prepare?: { status: number; body: unknown; raw?: string } | 'network-error';
     validateName?: string;
   }) {
     const calls: string[] = [];
@@ -1091,8 +1141,13 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
             { status: 200 },
           );
         }
-        if (String(url).includes('/payuni/prepare') && opts.prepare) {
-          return new Response(JSON.stringify(opts.prepare.body), { status: opts.prepare.status });
+        const prepare = opts.prepare;
+        if (String(url).includes('/payuni/prepare') && prepare) {
+          if (prepare === 'network-error') throw new TypeError('Failed to fetch');
+          if (prepare.raw !== undefined) {
+            return new Response(prepare.raw, { status: prepare.status });
+          }
+          return new Response(JSON.stringify(prepare.body), { status: prepare.status });
         }
         return new Response(JSON.stringify({ success: true }), { status: 200 });
       }),
@@ -1106,6 +1161,7 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
         <Routes>
           <Route path="/payment/checkout" element={<PaymentCheckout />} />
           <Route path="/payment/result" element={<p>開通中頁</p>} />
+          <Route path="/dashboard" element={<p>會員中心頁</p>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -1261,6 +1317,57 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
     fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
     expect(await screen.findByText('此推薦碼屬於您的推薦網絡成員，無法作為推薦人')).toBeTruthy();
     expect(input.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  async function startFreshSubmit(prepare: Parameters<typeof stubBackend>[0]['prepare']) {
+    stubBackend({ profile: RENEWER_PROFILE, validateName: '一代會員', prepare });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderWithRoutes();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048777' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('new-referrer-name');
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
+    return input;
+  }
+
+  it('送單 400 說推薦碼不可用時，欄位改無效、清掉推薦人名並聚焦', async () => {
+    const input = await startFreshSubmit({
+      status: 400,
+      body: { success: false, error: '不能使用自己的推薦碼' },
+    });
+    expect(await screen.findByText('不能使用自己的推薦碼')).toBeTruthy();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(screen.queryByTestId('new-referrer-name')).toBeNull();
+    expect(document.activeElement).toBe(input);
+  });
+
+  it('送單遇非 JSON 的閘道頁時，顯示友善文案而不是解析錯誤', async () => {
+    await startFreshSubmit({ status: 502, body: null, raw: '<html>Bad Gateway</html>' });
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('暫時無法建立訂單，請稍後再試', 'error'),
+    );
+    expect(showToast).not.toHaveBeenCalledWith(expect.stringMatching(/Unexpected token/), 'error');
+  });
+
+  it('送單斷網時，顯示暫時無法建立訂單而不是 Failed to fetch', async () => {
+    await startFreshSubmit('network-error');
+    await waitFor(() =>
+      expect(showToast).toHaveBeenCalledWith('暫時無法建立訂單，請稍後再試', 'error'),
+    );
+    expect(showToast).not.toHaveBeenCalledWith('Failed to fetch', 'error');
+  });
+
+  it('送單 400 已有有效訂閱時，重抓會員資料後導向 /dashboard', async () => {
+    await startFreshSubmit({
+      status: 400,
+      body: { success: false, error: '已有有效訂閱，請到期後再續約' },
+    });
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
   });
 
   it('REFERRAL_CYCLE 標記後離開碼欄位不重驗，環的原因留在欄位上', async () => {

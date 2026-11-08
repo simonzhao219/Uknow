@@ -30,8 +30,8 @@ Deno.env.set('FRONTEND_URL', 'https://frontend.test');
 const { app } = await import('./index.ts');
 
 // 新增 /admin/** 端點時把它加進這裡——這份清單就是「哪些路徑受守門
-// 保護」的規格。漏加一條，這裡不會紅，所以 code review 要盯的是
-// 「新端點有沒有進清單」。
+// 保護」的規格。漏加一條時，下方「覆蓋斷言」會紅（第 4 波 ops P2-4：
+// 原本漏加不會紅，清單曾漏 4 條寫入端點）。
 const ADMIN_ROUTES = [
   ['GET', '/api/admin/features'],
   ['GET', '/api/admin/withdrawals'],
@@ -47,7 +47,33 @@ const ADMIN_ROUTES = [
   // 帶路徑參數的端點也要進來：守門在讀 param 之前就該擋下，
   // 所以隨便一個合法形狀的 uuid 就足以驗證 401/403。
   ['POST', '/api/admin/id-reviews/00000000-0000-0000-0000-000000000000/review'],
+  // 第 4 波 ops P2-4 漏列的 4 條寫入端點。只打匿名與一般會員，守門先擋下，不會真的寫入。
+  ['POST', '/api/admin/system-alerts/00000000-0000-0000-0000-000000000000/resolve'],
+  ['POST', '/api/admin/withdrawals/00000000-0000-0000-0000-000000000000/status'],
+  ['POST', '/api/admin/members/00000000-0000-0000-0000-000000000000/suspend'],
+  ['DELETE', '/api/admin/announcements/00000000-0000-0000-0000-000000000000'],
+  // 後台推薦樹（第 6 波 S3a）。
+  ['GET', '/api/admin/referral-tree/nodes'],
+  ['GET', '/api/admin/referral-tree/search'],
+  ['GET', '/api/admin/referral-tree/members/00000000-0000-0000-0000-000000000000'],
+  ['GET', '/api/admin/referral-tree/members/00000000-0000-0000-0000-000000000000/payments'],
+  ['GET', '/api/admin/referral-tree/members/00000000-0000-0000-0000-000000000000/ledger'],
 ] as const;
+
+// 把路徑參數與 dummy uuid 都正規化成同一個佔位，才能拿「method＋路徑」比對。
+const UUID_SEGMENT = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+const normalizePath = (path: string) =>
+  path.replace(UUID_SEGMENT, ':p').replace(/:[A-Za-z_]+/g, ':p');
+
+Deno.test('admin 守門：app 上每一條 /api/admin/ 路由都列在 ADMIN_ROUTES（覆蓋斷言）', () => {
+  const listed = new Set(ADMIN_ROUTES.map(([m, p]) => `${m} ${normalizePath(p)}`));
+  const registered = app.routes
+    // app.use('/admin/*') 這類 middleware 的 method 是 ALL，不是端點。
+    .filter((r) => r.method !== 'ALL' && r.path.startsWith('/api/admin/'))
+    .map((r) => `${r.method} ${normalizePath(r.path)}`);
+  const missing = [...new Set(registered)].filter((k) => !listed.has(k));
+  assertEquals(missing, [], `以下 /admin 路由沒有列進 ADMIN_ROUTES：${missing.join('、')}`);
+});
 
 Deno.test('admin 守門：匿名請求一律 401', async () => {
   for (const [method, path] of ADMIN_ROUTES) {

@@ -59,6 +59,13 @@ const MEMBERS = {
   suspendMember: vi.fn(),
   loadIdReviews: vi.fn(),
   submitIdReview: vi.fn(),
+  referralTree: {
+    loadNodes: vi.fn(),
+    search: vi.fn(),
+    loadMember: vi.fn(),
+    loadPayments: vi.fn(),
+    loadLedger: vi.fn(),
+  },
 };
 
 type ObservedCache = AdminCache & {

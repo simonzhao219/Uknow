@@ -122,6 +122,25 @@ Deno.test('referrals/validate：有效推薦碼 → 只回推薦人姓名與刊�
   }
 });
 
+Deno.test('referrals/validate：填自己的推薦碼 → valid=false 並說明是自己的碼', async () => {
+  const client = adminClient();
+  const me = await createTestUser(client, { name: '自己' });
+  try {
+    await payForUser(client, me.id);
+    const code = await getActiveReferralCode(client, me.id);
+    const token = await getUserAccessToken(client, me.email);
+
+    const res = await validateReq(token, code);
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), {
+      valid: false,
+      error: { message: '不能使用自己的推薦碼' },
+    });
+  } finally {
+    await cleanup(client, [me.id]);
+  }
+});
+
 Deno.test('referrals/validate：推薦人有刊登 → listingName 為刊登名（不去刊登名）', async () => {
   // 總綱 v1 曾寫錯「去刊登名」；規格書 §4.2 不變，刊登名照回。
   const client = adminClient();

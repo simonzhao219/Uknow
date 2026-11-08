@@ -162,6 +162,9 @@ export const RenewalInfoSchema = obj({
   // S6（W5-51）：新約留空時會不會綁預設推薦人（只給布林，§7.4 不揭露碼與姓名）。
   // optional：前端先上、Edge 後上的空窗不得讓整個 renewal 解析失敗；缺值視為 false（keep）。
   freshDefaultReferrerAvailable: optional(bool()),
+  // 第 6 波 S6（W5-63、W6-28）：預設推薦人可用且就是現任推薦人＝留空推薦人不變（確認框寫
+  // 「維持不變」）。只給布林、不揭露姓名與碼。預設不可用或讀取失敗時省略（W6-30）；缺值走既有文案。
+  freshDefaultReferrerIsCurrent: optional(bool()),
 });
 export type RenewalInfo = Infer<typeof RenewalInfoSchema>;
 
@@ -858,6 +861,9 @@ export const REFERRAL_CHECK_UNAVAILABLE = 'REFERRAL_CHECK_UNAVAILABLE';
 // 一律用 NOT_APPLICABLE（同形，不洩漏碼是否存在）。
 export const REFERRAL_CODE_NOT_APPLICABLE_MESSAGE = '推薦碼不存在或已失效';
 export const REFERRAL_CODE_SELF_MESSAGE = '不能使用自己的推薦碼';
+
+// /payuni/prepare 的 400：已有有效訂閱（`{ success: false, error: string }`）。前端據此重抓會員資料並導 /dashboard。
+export const ALREADY_ACTIVE_MESSAGE = '已有有效訂閱，請到期後再續約';
 
 // 第 5 波 S2（W5-5）：停權者打 /payuni/prepare 的 403 錯誤碼（`{ success: false, error: { code, message } }`）。
 // 前端據此把結帳頁切到停權說明（快照過時、頁面上沒看到停權時的最後一道）。
