@@ -26,6 +26,7 @@ import {
 } from './payuni-rejection.ts';
 import { createListingPhotoHandlers, LISTING_PHOTOS_BUCKET } from './listing-photos.ts';
 import { type ReconcileSummary, runScheduledReconcile } from './reconcile-handler.ts';
+import { healPaidPendingOrders, type HealRpc } from './paid-pending-heal.ts';
 import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import {
@@ -2584,13 +2585,16 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
 // ============================================================
 // 工具：自癒卡單訂單（pending 但 payuni_response 已存 SUCCESS，見
 // migration 0007）。best-effort——失敗只記 log；回傳是否真的補完了
-// 任何訂單，讓呼叫端知道要不要重讀最新狀態。
+// 任何訂單，讓呼叫端知道要不要重讀最新狀態。第 6 波 S1：逐筆一個交易
+// （paid-pending-heal.ts），不再一次呼叫單一交易的 complete_paid_pending_orders。
 // ============================================================
+// supabase-js 的 rpc() 回 thenable builder，await 一次包成 Promise 給 HealRpc。
+// deno-lint-ignore no-explicit-any
+const rpcOf = (client: any): HealRpc => async (fn, args) => await client.rpc(fn, args);
+
 async function healPaidPendingOrdersBestEffort(userId?: string): Promise<boolean> {
   try {
-    const { data, error } = await sb().rpc('complete_paid_pending_orders', {
-      p_user_id: userId ?? null,
-    });
+    const { data, error } = await healPaidPendingOrders(rpcOf(sb()), { userId });
     if (error) {
       console.error('[healPaidPendingOrdersBestEffort]', error);
       return false;
@@ -3126,7 +3130,7 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
       scheduledRunDeps(sb),
       parseScheduledTrigger(body),
       {
-        heal: async () => await sb().rpc('complete_paid_pending_orders', { p_user_id: null }),
+        heal: () => healPaidPendingOrders(rpcOf(sb())),
         reconcile: () =>
           reconcilePendingOrders(
             sb(),
