@@ -3,8 +3,9 @@
 // 換篇手勢 chunk 載入失敗時的降級（W5-69 / #509 P2-c）：動態 import 拒絕不得讓整個詳情頁掉到
 // 路由層錯誤頁；頁面與「‹ ›」按鈕照常，只是少了滑動與鍵盤（靜默降級，只寫 console.error）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { CHUNK_RELOADED_KEY } from '../utils/lazyWithRetry';
 import type { PublicListingRow } from '../types/listing';
 
 const { singleFor } = vi.hoisted(() => ({
@@ -21,9 +22,10 @@ vi.mock('../utils/supabase/client', () => ({
 vi.mock('./notifications/NotificationContext', () => ({
   useNotification: () => ({ showToast: vi.fn() }),
 }));
-vi.mock('../utils/lazyWithRetry', () => ({
-  importWithRetry: () => Promise.reject(new Error('chunk 載入失敗')),
-}));
+// 讓動態 import 本身失敗（而不是把 importWithRetry 整個換掉），才看得到它的重載自癒有沒有被觸發。
+vi.mock('./listing/BrowseGestures', () => {
+  throw new Error('chunk 載入失敗');
+});
 
 import { ServiceProviderDetailRoute } from './ServiceProviderDetailRoute';
 import {
@@ -49,6 +51,7 @@ const mk = (id: string, name: string): PublicListingRow => ({
 const ROWS = [mk('a', 'AAA美容師'), mk('b', 'BBB美容師')];
 
 beforeEach(() => {
+  window.sessionStorage.removeItem(CHUNK_RELOADED_KEY);
   resetHomeListingsCache();
   singleFor.mockImplementation(async (id) => ({
     data: ROWS.find((r) => r.id === id) ?? null,
@@ -84,18 +87,17 @@ function renderDetail() {
 }
 
 describe('ServiceProviderDetail 手勢 chunk 載入失敗', () => {
-  it('詳情內容與換篇按鈕照常顯示，錯誤只寫 console.error', async () => {
+  it('詳情內容與換篇按鈕照常顯示，錯誤只寫 console.error，且不整頁重載', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     renderDetail();
     await screen.findByRole('heading', { name: 'AAA美容師' });
-    // 讓 lazy 的拒絕走完（沒有 boundary 時，這一步會把整棵樹卸掉）。
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    // 邊界接到錯誤時，importWithRetry 的重試與重載判斷都已走完。
+    await waitFor(() => expect(error).toHaveBeenCalled());
 
     expect(screen.getByRole('heading', { name: 'AAA美容師' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '下一篇' })).toBeTruthy();
-    expect(error).toHaveBeenCalled();
+    // 要整頁重載時 importWithRetry 會先寫下這個記號；換篇脈絡只在記憶體，重載會讓「‹ n/N ›」整組消失。
+    expect(window.sessionStorage.getItem(CHUNK_RELOADED_KEY)).toBeNull();
   });
 
   it('手勢不可用時仍能用按鈕換到下一篇', async () => {

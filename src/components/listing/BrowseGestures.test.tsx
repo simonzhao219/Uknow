@@ -150,13 +150,6 @@ describe('BrowseGestures 跟手', () => {
     expect(animate).toHaveBeenCalledTimes(1);
     expect(animate.mock.calls[0][0][0]).toEqual({ transform: 'translateX(-15px)' });
   });
-
-  it('touchstart 時清掉上一次殘留的位移', () => {
-    const { text, target } = mount();
-    target.style.transform = 'translateX(-20px)';
-    touch(text, 'touchstart', 200, 300);
-    expect(target.style.transform).toBe('');
-  });
 });
 
 describe('BrowseGestures 中斷與清理', () => {
@@ -190,11 +183,22 @@ describe('BrowseGestures 中斷與清理', () => {
     expect(target.style.transform).toBe('');
   });
 
-  it('touchstart 時取消目標元素上進行中的動畫', () => {
+  it('只是碰一下（尚未判定為水平拖曳）不打斷進行中的進場動畫', () => {
     const { text, target } = mount();
     const cancel = vi.fn();
     (target as unknown as { getAnimations: () => unknown[] }).getAnimations = () => [{ cancel }];
     touch(text, 'touchstart', 200, 300);
+    touch(text, 'touchmove', 202, 320);
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('判定為水平拖曳時才取消目標元素上進行中的動畫', () => {
+    const { text, target } = mount();
+    const cancel = vi.fn();
+    (target as unknown as { getAnimations: () => unknown[] }).getAnimations = () => [{ cancel }];
+    touch(text, 'touchstart', 200, 300);
+    expect(cancel).not.toHaveBeenCalled();
+    touch(text, 'touchmove', 170, 301);
     expect(cancel).toHaveBeenCalledTimes(1);
   });
 

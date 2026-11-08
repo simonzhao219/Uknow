@@ -544,13 +544,29 @@ describe('ServiceProviderDetailRoute 換篇動畫', () => {
     expect(animate.mock.instances[0]).toBe(motion());
   });
 
-  it('外層容器用 overflow-x-clip 擋住位移造成的橫向捲動', async () => {
+  it('位移外層用 overflow-x-clip 擋橫向捲動，並以 -mx-2／px-2 在兩側留出聚焦環空間', async () => {
     setup('b');
     await screen.findByRole('heading', { name: 'BBB美容師' });
 
-    expect(motion()?.parentElement?.className).toContain('overflow-x-clip');
-    // 貼邊按鈕的聚焦環與卡片陰影不被裁掉
-    expect(motion()?.parentElement?.className).toContain('overflow-clip-margin');
+    const clipLayer = motion()?.parentElement;
+    expect(clipLayer?.className).toContain('overflow-x-clip');
+    expect(clipLayer?.className).toContain('-mx-2');
+    expect(clipLayer?.className).toContain('px-2');
+    expect(clipLayer?.className).not.toContain('overflow-clip-margin');
+    // 頁首列與位移 wrapper 都在同一個裁切層內
+    expect(clipLayer?.contains(nextButton())).toBe(true);
+  });
+
+  it('瀏覽器上一頁／前進（POP）回到有換篇狀態的頁面時，不做進場也不捲到頂', async () => {
+    const ctx = freezeBrowseContext(
+      ROWS.map((r) => r.id),
+      'b',
+    );
+    setup('b', { state: { browseFrom: 'home', ctx, dir: 'next', via: 'button' } });
+    await screen.findByRole('heading', { name: 'BBB美容師' });
+
+    expect(animate).not.toHaveBeenCalled();
+    expect(window.scrollTo).not.toHaveBeenCalled();
   });
 
   it('偏好減少動態時頭尾不回彈，仍播報已是最後一篇', async () => {
