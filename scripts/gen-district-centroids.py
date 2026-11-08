@@ -24,10 +24,6 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-# 官方名稱 → 應用程式 TAIWAN_REGIONS 的寫法。
-# 程式裡「屏東縣」的區寫成「南鄉」，官方是「南州鄉」；程式側的區名清單不在本工項範圍內修改
-# （既有刊登可能存著「南鄉」），所以座標表沿用程式的鍵，並把這個差異留在這裡。
-OFFICIAL_TO_APP_ALIAS = {"屏東縣|南州鄉": "屏東縣|南鄉"}
 
 SHP_STEM = "TOWN_MOI_1140318"
 REPO = Path(__file__).resolve().parent.parent
@@ -78,7 +74,6 @@ def main() -> int:
         for sr in reader.iterShapeRecords():
             rec = sr.record.as_dict()
             key = f"{rec['COUNTYNAME']}|{rec['TOWNNAME']}"
-            key = OFFICIAL_TO_APP_ALIAS.get(key, key)
             key = app_by_norm.get(norm(key), key)  # 「臺／台」寫法以程式為準（例：霧臺鄉）
             geom = shape(sr.shape.__geo_interface__)
             point = geom.centroid
@@ -115,7 +110,7 @@ def main() -> int:
  *
  * 衍生說明：本表為上述界線資料的衍生物——每區取多邊形質心（不在區界內者取界內代表點），
  * 座標取小數 3 位（約 110 公尺）。鍵的區名沿用應用程式 TAIWAN_REGIONS 的寫法
- * （臺/台寫法以程式為準；屏東縣「南州鄉」在程式裡是「南鄉」，見產生腳本的別名表）。
+ * （臺/台寫法以程式為準）。
  */
 """
     # 依縣市分組輸出（縣市名只寫一次，省下約 1.5 kB；載入時展開成「縣市|區」鍵，bundle 預算緊）。
