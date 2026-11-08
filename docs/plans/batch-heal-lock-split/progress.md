@@ -13,13 +13,13 @@
 | 2 | per-user 逐筆（W6-13） | ✅ 綠（逃生口 1） | —（一寫就綠） | 9abf8017 |
 | 3 | 發獎失敗改 error（W6-10、W6-12） | ✅ 綠 | 1d2ea7ba | d7dcb0fc |
 | 4 | 帳本 summary：unknownByReason、heal | ✅ 綠 | 4cdb2ba7 | cec602fa |
-| 5 | scheduler_health streak | 🔴 紅燈中 | b04414a5（＋改名 commit） | |
+| 5 | scheduler_health streak | ✅ 綠 | b04414a5、d46469d5（改名） | （見下一個 commit） |
 | 6 | invoke_internal_endpoint(p_job, p_trigger) | ⬜ 未開始 | | |
 | 7 | 收尾 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 
-業主 2026-11-08 在本 session 親打 `/tdd-implement batch-heal-lock-split` 開工（主 session 已親審 r3 通過）。階段 1～4 綠；下一步階段 5（scheduler_health streak）。
+業主 2026-11-08 在本 session 親打 `/tdd-implement batch-heal-lock-split` 開工（主 session 已親審 r3 通過）。階段 1～5 綠；下一步階段 6（invoke_internal_endpoint p_trigger）。
 本機環境：dockerd 背景起、`npm i -g supabase@2.109.1`、`SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io supabase start -x studio,logflare,vector,supavisor,imgproxy,edge-runtime`；新 migration 以 psql 直接套。
 
 ## Blockers（逃生口紀錄）
