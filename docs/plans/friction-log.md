@@ -3498,3 +3498,16 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：第 1、2 條列入下次框架整併（第 2 條含 `scripts/` 換新腳本）；第 3、4 條為規劃寫法教訓，寫進下次 `/plan-feature`
 「外部依賴」檢查題；第 5 條列入下次框架整併（hook 落檔失敗測試名）；第 6、7 條為紀錄。
+
+## 2026-11-08 第 6 波 S4（listing-swipe-transition）
+
+- **本機跑 e2e 的瀏覽器版本不符**（環境，雲端 session）：`e2e/requirements.txt` 釘 playwright 1.56（需要 chromium build 1194），
+  雲端容器預裝的是 1243，pytest 一開瀏覽器就 `Executable doesn't exist`。不動釘版的前提下，把
+  `/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell` symlink 到 1243 的 headless shell 即可本機跑（環境級做法、不入庫）。
+  候選：雲端環境設定腳本加這條 symlink，或 README 記一行。
+- **e2e 偶發 `[e2e] blocked unmocked request: public_listing_categories`**（誤擋／漏網，測試）：首頁類別查詢（`useCustomCategories`）
+  沒有對應 mock，idle 時才發出，若落在測試收尾與下一場景之間就被安全網擋掉。同批 10 場景出現過 2 次、單跑 12 次 0 次，非該 feature 引入。
+  候選：`rest_mock` 補 `public_listing_categories` 預設回空陣列。
+- **紅燈期測試夾具寫錯只能停手等授權**（流程）：夾具順序錯（`mockResolvedValue` 擺在 `setup()` 之後，背景重驗已先用預設值）
+  讓新測試失敗得不是因為實作缺口，被 tdd-test-guard 擋；本 session 靠互動選項取得授權解鎖。
+  教訓：寫新測試的夾具時，先在「還沒 touch tdd-lock」前把測試跑到「失敗原因正確」（讀失敗訊息而非只看紅），再建鎖。
