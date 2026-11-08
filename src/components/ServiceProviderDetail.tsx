@@ -16,6 +16,7 @@ import { getCachedListing } from '../utils/homeListingsCache';
 import { importWithRetry } from '../utils/lazyWithRetry';
 import { useBrowseNeighbors } from '../hooks/useBrowseNeighbors';
 import { useBrowseNav } from '../hooks/useBrowseNav';
+import { BrowseGesturesBoundary } from './listing/BrowseGesturesBoundary';
 import { BrowseNav } from './listing/BrowseNav';
 import { CategoryBadge } from './common/CategoryBadge';
 import { LoadErrorCallout } from './common/LoadErrorCallout';
@@ -154,15 +155,17 @@ export function ServiceProviderDetail({
     />
   ) : null;
   const gestures = neighbors ? (
-    <Suspense fallback={null}>
-      <BrowseGestures
-        containerRef={gestureRef}
-        onNavigate={goBrowse}
-        dragTargetRef={motionRef}
-        hasPrev={neighbors.prevId !== null}
-        hasNext={neighbors.nextId !== null}
-      />
-    </Suspense>
+    <BrowseGesturesBoundary>
+      <Suspense fallback={null}>
+        <BrowseGestures
+          containerRef={gestureRef}
+          onNavigate={goBrowse}
+          dragTargetRef={motionRef}
+          hasPrev={neighbors.prevId !== null}
+          hasNext={neighbors.nextId !== null}
+        />
+      </Suspense>
+    </BrowseGesturesBoundary>
   ) : null;
   const gestureClass = neighbors ? 'touch-pan-y touch-pinch-zoom' : '';
 
