@@ -14,7 +14,7 @@
 | 3 | 會員查帳 RPC（鏈、換線、成環） | ✅ 綠（CI 3437af9b） | 5c09b834（CI api-tests：階段 3 九支「function does not exist」） | a9dbcdb9 |
 | 4 | 付款查帳＋異常 RPC | 🟡 待 CI 確認綠 | 3437af9b（CI api-tests：9 failed／571 passed，皆為階段 4 新測試） | 3a91e5e9 |
 | 5 | Edge 端點＋契約＋守門（5a～5d） | 🟡 本機 unit 218 全綠；DB 側（5c）待 CI | ae25f1be（本機 deno task test:unit：5a／5b 17 failed，皆新測試） | （本 commit） |
-| 6 | 前端純函式 | ⬜ 未開始 | | |
+| 6 | 前端純函式 | 🔴 紅燈中 | （本 commit；本機 vitest 16 failed／1 passed——「沒有說明」一支 stub 回 null 碰巧綠） | |
 | 7 | `AdminReferralTree` | ⬜ 未開始 | | |
 | 8 | `ReferralAuditSheet`＋次分頁＋私密 | ⬜ 未開始 | | |
 | 9 | 規格書＋e2e | ⬜ 未開始 | | |
