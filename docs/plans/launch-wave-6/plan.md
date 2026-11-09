@@ -71,6 +71,7 @@
 | W6-32 | S3b bundle 總 raw 1978→1983 | 核准：增量全在後台 lazy chunk、entry 不變 |
 | W6-33 | 晉升時點 | **業主先在 develop 預覽手機實測 S4（#523 三項），回報後才開晉升 PR**（被推翻：現在就開；等 11/22）（業主 2026-11-09） |
 | W6-34 | 照片清理仍 dry-run | **業主尚未設，馬上補設**正式站 Edge Secret `PHOTO_PURGE_LIVE=true`；主 session 11/09 19:25 UTC 複查（業主 2026-11-09） |
+| W6-35 | R6 審查 session 何時開 | **上線滿 48 小時後再開**（正式站部署 11/08 23:19 UTC → 11/10 23:30 UTC 主 session 先跑現場查詢寫 §8，再開 R6）（被推翻：現在就開）（業主 2026-11-09） |
 
 ## 1. 時程
 
@@ -179,3 +180,4 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 06:40 | 業主手機實測 S4 回報「動畫 OK」（W6-33 達成）。開**晉升 PR #527**（develop c08bf88 → main，draft、已訂閱；journey 全套跑中）。晉升前正式站基線：pending 單 0、48 小時 system_alerts 0、最後 migration `20261113000003`。#519 於晉升後合併 | journey 綠 → 合 main → 4a 核對 → 業主核准 production → 乙段 |
 | 11/09 07:13 | #527 journey 全套綠（28 分，22:43–23:11 UTC）、PR run ci-ok 綠 → 轉 ready → **晉升 #527 合進 main（653e31e）**；main push CI 42534061674 綠。**4a 核對通過**：正式站 schema_migrations 已含 `20261114000001`～`20261117000002` 共 9 支；`complete_paid_pending_order(uuid)`、`invoke_internal_endpoint(p_job, p_trigger)`、六參數 `prepare_payment_order` 在，三參數已 drop。deploy-supabase run 42534091645 狀態 waiting（等 production 核准） | 業主核准 production → 確認步驟／health sha → deploy-smoke → 乙段 |
 | 11/09 08:10 | 業主核准 production → deploy-supabase run 42534091645 全綠（23:19 UTC）：「確認 migration 已套用」success（正式站首次實跑）、部署、`/health` sha 比對 success；Deploy Smoke 42534625913 success。**乙段通過**：pg_cron 00:07 UTC（id 41）與人工 `invoke_internal_endpoint('reconcile','manual')`（id 42，帳本 trigger 正確記成 manual，R5 P2-9 解）皆 succeeded，summary 含 `heal`（全 0、error false）與 `unknownByReason`。**第 6 波上線完成** | 24～48 小時現場查詢（W4-26）；W6-34 照片清理；開 R6 |
+| 11/09 08:30 | 業主裁 **W6-35**（48 小時後開 R6）。主 session 排 11/10 23:30 UTC 跑 W4-26 現場查詢並開 R6 | 等 48 小時；W6-34 照片清理 |
