@@ -123,7 +123,7 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | **W6-4**：正式站 Edge Secret 補設 `PHOTO_PURGE_LIVE=true`；確認 GitHub repo variable `PHOTO_PURGE_LIVE` 也是 `true` | **11/08 19:17 UTC 那輪仍 dryRun=true**（id 36），待業主補設 |
+| 1 | **W6-4**：正式站 Edge Secret 補設 `PHOTO_PURGE_LIVE=true`；確認 GitHub repo variable `PHOTO_PURGE_LIVE` 也是 `true` | ✅ 11/09 19:17 UTC 那輪（id 62）dryRun=false，正式站實刪已生效 |
 | 2 | 審 S1、S3 規劃與 `/review-plan` 報告，通過後在各自 session 親打 `/tdd-implement` | 等規劃 |
 | 3 | 實機確認（第 4 波起帶過來）：H1 邀請連結、`uknow.pages.dev` 導向、正式站實際登入一次 | 待回報 |
 | 4 | PayUni 商店後台確認第一筆付款（11/03）發票已開立 | 待回報 |
@@ -182,3 +182,4 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 08:10 | 業主核准 production → deploy-supabase run 42534091645 全綠（23:19 UTC）：「確認 migration 已套用」success（正式站首次實跑）、部署、`/health` sha 比對 success；Deploy Smoke 42534625913 success。**乙段通過**：pg_cron 00:07 UTC（id 41）與人工 `invoke_internal_endpoint('reconcile','manual')`（id 42，帳本 trigger 正確記成 manual，R5 P2-9 解）皆 succeeded，summary 含 `heal`（全 0、error false）與 `unknownByReason`。**第 6 波上線完成** | 24～48 小時現場查詢（W4-26）；W6-34 照片清理；開 R6 |
 | 11/09 08:30 | 業主裁 **W6-35**（48 小時後開 R6）。主 session 排 11/10 23:30 UTC 跑 W4-26 現場查詢並開 R6 | 等 48 小時；W6-34 照片清理 |
 | 11/09 15:10 | 業主轉來兩則 LINE 告警。① [P2] 照片清理開關不一致（purge-listing-photos run 42538019964，00:02 UTC 看門狗）：正式站 pg_cron 仍 dry-run、repo variable 已 true → 即 W6-34，Edge Secret 未生效，待業主核對 Digest。② [P1] PayUni 閘門探測失敗（deploy-smoke 排程 run 42576456933，06:59 UTC）：sandbox `sandbox-api.payuni.com.tw/api/upp` 回 403、正式 `api.payuni.com.tw/api/upp` 200；先前 7 輪排程與 11/08 晉升 journey（sandbox）皆通過。主 session 重跑失敗 job（attempt 2，07:02 UTC）→ **兩端點皆通過**，判 PayUni sandbox 暫時性拒絕，與 Uknow 程式無關、正式付款不受影響；再出現就記 friction-log 並請業主詢問 PayUni | 持續看排程；W6-34 |
+| 11/10 03:30 | **W6-4／W6-34 結案**：正式站照片清理 11/09 19:17 UTC 那輪（id 62，pg_cron）`dryRun=false`、succeeded，孤兒 0、刪除 0；前一輪（id 36）仍 true → 業主於兩輪之間補設的 Edge Secret 已生效 | 11/10 23:30 UTC 現場查詢＋開 R6（W6-35） |
