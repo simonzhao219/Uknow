@@ -1,61 +1,185 @@
-# 第 6 波：交接（第 5 波主 session 寫，2026-11-07）
+# 第 6 波：批次自癒互鎖＋結帳頁錯誤分支＋後台推薦樹（11/22 收件）
 
 <!-- plans-keep: 跨 session 鷹架（第 6 波主／執行／審查 session 的共同事實來源）；退場條件＝第 6 波審查 session 結案後，值得長留的升級進規格書／friction-log，其餘隨 commit 刪除 -->
 
-寫給**全新的第 6 波主 session**：開局只有 repo 和這份檔，沒有對話記憶。本檔只是第 5 波主 session 的交接。
-開局後請擴寫成本波完整的 plan（裁決表、工作分解、名冊、進度表），格式比照 `docs/plans/launch-wave-5/plan.md`。
-三種 session 的分工、凍結規則、雲端執行環境須知在 `docs/README.md`〈慣例〉；派工 prompt 的共用開頭照抄
-`docs/plans/launch-wave-5/dispatch-prompts.md`（把「第 5 波」「主 session id」「分支」換成本波的），再補本檔 §1。
+寫給**本波任何新開的 session**：開局只有 repo 和這份檔，沒有對話記憶。三種 session 的分工與凍結規則見 `docs/README.md`〈慣例〉；
+派工 prompt 在同目錄的 `dispatch-prompts.md`。主 session 是 `session_01MQovbB1d9N9q9cZsGnZ1Wh`，分支 `claude/uknow-wave-6-lead-xb4hqg`。
+行號一律現算。第 5 波主 session 寫的交接原文：`git show 7fc07d0:docs/plans/launch-wave-6/plan.md`。
 
-## 0. 上游與現況
+## 0. 上游與裁決
 
-**要讀的上游檔**
+**上游**
 
-- `docs/plans/launch-wave-5/plan.md`：§0 裁決 W5-1～73（仍有效）、§4 晉升清單（含 W5-62）、§5 第 6 波候選、§8 進度。
-- `docs/plans/launch-wave-5/review.md`：第 5 波審查（R5，P0 0／P1 0／P2 9）。§1.3 P2 表、§5 待辦、§6.3 候選補遺（含第 4 波四份稽核
-  未修 P2 的完整清單；稽核原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`）；§6.1／6.2 升級表是 `launch-wave-5/` 退場依據（由本波 R6 執行）。
-- `docs/plans/friction-log.md` 的 2026-11-07 節（R5 寫）。
+- `docs/plans/launch-wave-5/plan.md`：§0 裁決 W5-1～73（仍有效）、§4 晉升清單（含 W5-62）、§5 候選、§8 進度。
+- `docs/plans/launch-wave-5/review.md`：R5（P0 0／P1 0／P2 9）。§1.3 P2 表、§5 待辦、§6.3 候選補遺；§6.1／6.2 升級表是
+  `launch-wave-5/` 退場依據（由本波 R6 執行）。第 4 波稽核原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`。
+- `docs/plans/friction-log.md` 的 2026-11-07 節。
 
-**現況**（2026-11-07 交接時）
+**開局現況**（11/08 台北）
 
-- main＝`f5a1ed8`（第 5 波晉升 #516，9 支程式 PR：S1～S8＋#515）。正式站部署 run 42365227288 成功（`/health` sha 比對過）、
-  deploy-smoke 42366062154 綠。7 支 migration（`20261111000001～3`、`20261112000001`、`20261113000001～3`）已套。
-- 排程已改 Supabase pg_cron（S1）：正式站 Vault 兩筆已建；`invoke_internal_endpoint('reconcile')` 200；pg_cron 對帳首輪
-  11:07 UTC succeeded；部署後 system_alerts 0 列；配對名單 18／18 差集 0。GitHub 兩支 workflow 改看門狗。
-- RECONCILE_SECRET 已整組換新（W5-67）：GitHub、正式站／develop Edge、develop／正式站 Vault 五處同值。
-- PostHog：只有正式站一個 project（W5-68，免費方案限 1 個），develop／預覽不注入。業主已完成 onboarding（只留 Product analytics＋
-  Session replay），錄影抽查文字與輸入已遮蔽；照片空白屬預期（W5-73）。
-- **交接時未完成的驗證**：照片清理 pg_cron 首輪（每日 19:17 UTC）的 `scheduled_job_runs.summary->>'dryRun'` 應為 `false`，用來佐證
-  正式站 `PHOTO_PURGE_LIVE=true`。第 5 波主 session 排了 11/07 19:25 UTC 檢查並記進 #518；若 #518 已合但 §8 沒有這筆，開局先查。
-- 開著的 PR：#518（第 5 波收尾紀錄）若尚未合併由第 5 波主 session 收。open issue：#467、#395、#384、#383。
+- main＝`f5a1ed8`（第 5 波晉升 #516）；develop＝`7fc07d0`（#518 第 5 波收尾紀錄已合）。
+- **照片清理首輪 dryRun＝true**（主 session 唯讀查正式站 `scheduled_job_runs` id 11，2026-11-07 19:17 UTC，pg_cron，succeeded；
+  `totalObjects 45`、`orphanTotal 0`、`candidateCount 0`、`removed 0`）。代表正式站 Edge 讀到的 `PHOTO_PURGE_LIVE` 不是 `true`
+  （`listing-photos.ts` 的 pg_cron 路徑：`env('PHOTO_PURGE_LIVE') !== 'true'` 就 dry-run）。這輪本來就沒有孤兒照片，影響為零。→ W6-4。
+- 正式站 `listings` 15 筆，`districts` 含「南鄉」0 筆、含「南州鄉」0 筆（S5 預查）。
+- 正式站會員 24、`referral_pair_history` 18 列（S3 規模參考）。
+- open issue：#467、#395、#384、#383。
 
-## 1. 本波工項（交接時的建議，開局後要和業主確認）
+**目標**：S1、S2、S3a、S5 四項全部合進 develop 就晉升。S3b、S4、S6 有完成才上，沒完成順延第 7 波；S7 留候選。
+收件截止 11/22（日）22:00。
 
-| # | 工項 | 來源 | 建議模型／流程 | 備註 |
-|---|---|---|---|---|
-| S1 | **批次自癒與線上付款互鎖**：批次改每筆獨立交易或不再持本人列鎖；`pay_referral_generations` 遇 40P01／40001 改 error 告警 | W5-72（**業主裁定優先**）、R5 P2-5 | Opus，三段式（金流＋推薦） | W5-61 同處。可併 R5 P2-8（heal 摘要進帳本）、P2-7（unknownByReason）、P2-9（`invoke_internal_endpoint` 加 `p_trigger`） |
-| S2 | **結帳頁送單錯誤分支**：自己的碼／碼失效 400、非 JSON／斷網、已有有效訂閱不導走；新約確認框 portal 包 `privateClass` | W5-71、R5 P2-1～4 | Sonnet，`/fix-bug` | 業主已裁定合成一支 |
-| S3 | **後台完整推薦樹＋查帳資訊** | W5-70（業主新增） | Opus，三段式（新功能） | 規劃前先和業主確認：節點欄位、最常查的情境、大樹的瀏覽方式（搜尋展開／匯出）、要不要自動標異常（成環、自領、付款未發獎） |
-| S4 | **換篇過場動畫**，併 S7 P2 五項（reduced-motion 未併 `motionPreference`、抽 hook、手勢 chunk 缺 error boundary、slide-in、手勢起點） | W5-69（業主新增） | Sonnet，三段式（UX） | 業主正式站實測：換篇順，但「突然」 |
-| S5 | **屏東「南鄉」→「南州鄉」**：改 `TAIWAN_REGIONS`＋migration 轉換既有資料；座標表別名一併拿掉 | W5-65 | Sonnet，`/fix-bug` | 動資料，要正式站唯讀預查筆數 |
-| S6 | **新約與部署收尾**：確認框第三態「預設推薦人即現任」（W5-63）；0d 驗單上的碼（R5 P2-6）；drop 三參數版 `prepare_payment_order`；`deploy-supabase.yml` 部署前自動確認 migration 已套（W5-62） | W5-62、W5-63、R5 P2-6 | Opus，三段式 | W5-62 自動化上線後，晉升清單那一步可退場 |
-| S7 | **journey f70 缺章**（新約後三代獎金、任務、自領停發、ch7 credit、ch9 墨黑鈕） | W5-60 | Sonnet | 目前由 Deno 整合測試與 mock e2e 涵蓋 |
-| R6 | 第 6 波審查；兼做 `launch-wave-5/` 退場（依 R5 §6） | — | Opus，審查 session | 晉升後開 |
+**裁決（AskUserQuestion，業主 2026-11-08）**
 
-其他候選以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準，重點：Playwright 升版＋journey-suite 改回 `ubuntu-latest`（**W4-23 退場條件**）、
-vitest／vite 大版本（#467）、稽核其餘 P1（ref P1-3／5／6／7、pay P1-5、auth P1-3／5、ops P1-2）、R4 未收 P2、後台刪帳號工具、unknown 單手動開通入口（W5-44③）。
+| # | 題 | 裁決 |
+|---|---|---|
+| W6-1 | 本波範圍 | **S1、S2、S3、S5 必上**；S4、S6 有完成才上；S7 留候選（被推翻：S1～S6 全必上；只做 S1＋S2＋S3；S1～S7 全必上）。S3 依 W6-6 拆成 S3a（必上）／S3b（看進度） |
+| W6-2 | 派工順序 | **首批四個並行**：S1 規劃（Opus）、S3 規劃（Opus）、S2、S5（Sonnet `/fix-bug`）。S4 等首批有一支合併後開；S6 等 S1 合併後開（同碰批次自癒／0d 換線的 migration 函式）（被推翻：全部同時開；一次一項） |
+| W6-3 | 晉升時點 | **必上全合就晉升，11/22（日）22:00 收件**，沒合的順延第 7 波（被推翻：11/29；不設截止） |
+| W6-4 | 照片清理 dryRun＝true | **業主用手機補設正式站 Edge Secret `PHOTO_PURGE_LIVE=true`**；GitHub repo variable `PHOTO_PURGE_LIVE` 也須為 `true`（不一致會推 LINE P2）。主 session 看下一輪 19:17 UTC 的 `summary.dryRun`（被推翻：已設過請再查；維持 dry-run） |
+| W6-5 | W5-70 推薦樹需求 | **節點欄位**：身分與會籍（姓名、推薦碼、第幾代、會籍狀態、到期日、推薦計畫與否）＋**加入推薦計畫的時間**、獎金與點數（各代獲得、餘額、累計）、任務與提領（進度、審核中／已匯款）、換線紀錄（`referral_pair_history`）——全選。**查帳情境**：某筆付款獎金有沒有發對、某會員的整條線、提領前核對點數來源、會員來問為什麼沒獎金——全選。**大樹瀏覽**：搜尋＋逐層展開（被推翻：加匯出 CSV；一次展開整棵）。**自動標異常**：付款未發獎、成環與自領、點數對不上帳（未選：先不要標） |
+| W6-6 | W5-70 分段 | **切兩段、同一份規劃書、兩支 PR**。S3a（必上）：樹＋搜尋逐層展開＋全部節點欄位＋付款查三代獎金＋換線紀錄＋標「付款未發獎」「成環／自領」。S3b（看進度）：點數對帳（餘額 ≠ 獲得 − 提領）＋點數來源明細（被推翻：一支做完全部必上；S3b 延第 7 波） |
+| W6-7 | W5-70 預設入口 | **搜尋會員看整條線**：預設畫面是搜尋框＋頂層樹，其他情境都從「先找到一個人」進入（被推翻：異常清單；依訂單查獎金） |
+| W6-10 | S1：發獎錯誤升 error 告警的範圍 | **非預期錯誤全部升級**（unique_violation 除外）（被推翻：只升 40P01／40001） |
+| W6-11 | S1：heal 失敗要不要推 LINE | **只寫帳本＋`scheduler_health`，不推 LINE**（維持 W5-18）；amount_mismatch 不計入連續失敗（被推翻：整批失敗＋連 3 輪推；只整批失敗推） |
+| W6-12 | S1：發獎失敗告警文案 | **改「請人工核對並補發」**，前 200 字含結論＋下一步，不承諾自動補發（被推翻：維持「會自動補發」） |
+| W6-13 | S1：per-user 自癒（`/payuni/result`、`/profile`）也改逐筆 | **一起改**，加驗收測試（被推翻：本波不動） |
+| W6-15 | S3：停權／到期／未加入推薦計畫現行照發 | **不改規則，樹上如實寫「照發，但不可提領」**；成環停發如實標示（被推翻：改規則停發） |
+| W6-16 | S3：換線紀錄 | **列可取得的**：曾有過的推薦人（無順序）＋新約付款單事件（有時間）；完整換線事件表列第 7 波候選（被推翻：本波加事件表） |
+| W6-17 | S3：異常清單入口 | **不做**，異常只標在節點與詳情（被推翻：做次要入口） |
+| W6-18 | S3b：點數對帳口徑 | **改跨表核對**：每筆提領在帳本有對應扣款／退款、無孤兒 `withdrawal_id`、`ledger_reset` 金額正確（被推翻：只做點數來源明細） |
+| W6-23 | S1：漏發獎金告警的「下一步」寫找誰 | **開一個 Claude Code session，請它依 supabase/README〈補發漏發獎金〉核對並補發**（被推翻：交指定工程師；維持「請通知工程人員」） |
 
-## 2. 業主待辦（從第 5 波帶過來）
+**主 session 定的**
+
+| # | 題 | 定案 |
+|---|---|---|
+| W6-8 | S1 併入範圍 | R5 P2-7（summary 加 `unknownByReason`）、P2-8（heal 摘要寫進帳本 summary＝pay P2-14）、P2-9（`invoke_internal_endpoint` 加 `p_trigger text default 'pg_cron'`）**全併 S1**：同在 `reconcile-handler.ts`／`scheduled_job_runs` 一區，拆開會三支 PR 互相 rebase。P2-9 上線前，人工乙段驗證照 R5 建議在 §8 註明「此列是人工驗證」 |
+| W6-9 | S5 資料轉換 | 正式站 0 筆含「南鄉」，migration 仍要寫（develop 與日後資料），以 `array_replace` 冪等轉換；不需要停機或業主核准窗口 |
+| W6-14 | S1 舊 wrapper `complete_paid_pending_orders` 何時 drop | **交 S6 drop**；S1 保留並在註解寫明退場由 S6 |
+| W6-19 | S3 Q4～Q7 | 樹顯示「第 N 層」、查帳「第 1／2／3 代」、推薦人鏈「推薦人／往上第 N 位」；樹與搜尋只收曾訂閱過或有推薦對象者；S3a 不動 `pay_referral_generations`，以等價測試釘住；admin-gate 改自動列舉路由（順修 ops P2-4） |
+| W6-20 | S4 Q1～Q5 | WAAPI＋inline transform；手感數值照規劃起步、實測後微調；減少動態不保留淡入；bundle 超標授權 entry raw +2 kB／gzip +0.5 kB（PR 附實測）；手機實測三項列 PR 內文 |
+| W6-21 | S3 v3 的四題 | 推薦人鏈可點＋「在推薦樹中查看」保留；「推薦人資料兩處不一致」資訊提示保留；成環者在頂層樹最後放預設收合群組「無法接上推薦樹的會員（N）」（N=0 不顯示，屬樹的一部分、非異常清單）；§6 自決項同意，MemberDetailSheet 補 SENSITIVE_PORTALS 列第 7 波 |
+| W6-22 | S4 #523 追認 | bundle 總 raw 1950→1951 同意；焦點還原留在元件（不搬進 useBrowseNav）接受為偏離、列第 7 波；業主夾具授權已記 PR 內文 |
+| W6-24 | #524 告警在 LINE 通道被截到 60 字（`reconcile-payments.yml` 每則 `message[:60]`），「下一步」看不到 | 把行動放進前 60 字（「【獎金未發・請開 Claude 依手冊補發】付款單 X 第N代 N點」），測試斷言 `slice(0,60)`；不改 workflow |
+| W6-25 | S3 bundle 總 raw 1950→1975 | 核准：新增全在 lazy 後台 chunk、entry 只 +0.1；與 #523 的 +1 疊加時以 rebase 後實測為準 |
+| W6-26 | S3 實作審查 P2 兩題 | 姓名搜尋做 NFKC；節點列只留到期日（已到期／停權用徽章），「剩 N 天」移到詳情；S3b 做（#521 合併後從 develop 另開分支） |
+| W6-27 | S6：建單後付款前後台換了預設碼，付款時綁誰 | **綁建單時單上記的舊預設**；舊碼失效才維持原推薦人＋告警分「預設碼已更換」「失效」（被推翻：綁付款當下新預設；不換線只修告警）（業主 2026-11-08） |
+| W6-28 | S6：現任推薦人即預設推薦人、新約留空的確認框 | **寫「推薦人維持不變」**；§7.4 寫明「不揭露」只管預設推薦人的姓名與碼（被推翻：改中性句）（業主 2026-11-08） |
+| W6-29 | S6：自己填碼剛好填到預設推薦人者，新約留空付款後標成預設帶入 | **接受**（被推翻：推薦人實際改變才設旗標）（業主 2026-11-08） |
+| W6-30 | S6 Q2／Q3／Q5／Q7 | drop wrapper（W6-14）延第 7 波，等正式站跑過 S1 的 Edge 一輪；#514 P2-3 競態本波不處理、規格書寫明；status 現任推薦人讀取失敗降級成欄位缺；workflow 規則 14＋timeout 都做 |
+| W6-31 | S6 R2-9：自動綁預設者手動填入＝現任的碼，確認框寫「將改為」與留空的「維持不變」不一致 | **接受**，規格書 §6.2 寫一句；改寫成「維持不變」會讓人逐碼試出自己的預設推薦人，與 W6-28 衝突 |
+| W6-32 | S3b bundle 總 raw 1978→1983 | 核准：增量全在後台 lazy chunk、entry 不變 |
+| W6-33 | 晉升時點 | **業主先在 develop 預覽手機實測 S4（#523 三項），回報後才開晉升 PR**（被推翻：現在就開；等 11/22）（業主 2026-11-09） |
+| W6-34 | 照片清理仍 dry-run | **業主尚未設，馬上補設**正式站 Edge Secret `PHOTO_PURGE_LIVE=true`；主 session 11/09 19:25 UTC 複查（業主 2026-11-09） |
+| W6-35 | R6 審查 session 何時開 | **上線滿 48 小時後再開**（正式站部署 11/08 23:19 UTC → 11/10 23:30 UTC 主 session 先跑現場查詢寫 §8，再開 R6）（被推翻：現在就開）（業主 2026-11-09） |
+
+## 1. 時程
+
+| 時點（台北） | 事 |
+|---|---|
+| 11/08 | 本檔落檔；開 S1 規劃、S3 規劃（Opus）、S2、S5（Sonnet） |
+| 業主時間 | 審 S1、S3 規劃與 `/review-plan` 報告 → 在各自 session 親打 `/tdd-implement <slug>` |
+| 首批第一支合併後 | 開 S4（Sonnet，三段式） |
+| S1 合併後 | 開 S6 規劃（Opus） |
+| **11/22（日）22:00** | 收件截止：沒合進 develop 的順延第 7 波 |
+| 必上四項合併後 | 開晉升 PR（develop→main，標題 `chore(release): 晉升 develop → main——第 6 波`）→ journey-full 綠 → merge commit → W5-62 確認 migration 已套 → 業主核准 `production` → `/health` sha 對上 |
+| 晉升後 24～48 小時 | 主 session 跑上線後現場查詢（W4-26） |
+| 晉升後 | 開 R6 第 6 波審查 session（兼做 `launch-wave-5/` 退場，依 R5 §6） |
+
+## 2. 工作分解
+
+在途上限：**程式碼工項同時最多 3 個**；三段式工項在規劃期不佔名額，進實作才佔。
+
+| ID | 工項 | 流程／分支 | 模型 | 主要動到 | 撞檔 |
+|---|---|---|---|---|---|
+| S1 | **批次自癒與線上付款互鎖**（W5-72、R5 P2-5）：批次自癒改每筆獨立交易，或每筆結束後不再持本人列鎖；`pay_referral_generations` 遇 40P01／40001 改寫 error 告警（推得到 LINE）。併 W6-8：P2-7、P2-8、P2-9 | 三段式，`feature/batch-heal-lock-split` | Opus | 新 migration（`complete_paid_pending_orders`、`pay_referral_generations`、`invoke_internal_endpoint`）、`reconcile-handler.ts`、`index.ts` 對帳段、`supabase/README.md` | 與 S6 同碰 `20261113000003` 的函式 → S6 等 S1 合併 |
+| S2 | **結帳頁送單錯誤分支**（W5-71、R5 P2-1～4）：自己的碼／碼失效 400 改欄位 invalid＋聚焦（比照 `CompleteProfile.tsx`）、後端 validate 帶 token 時擋本人；非 JSON／斷網一律友善文案；「已有有效訂閱」重抓會員資料後導 `/dashboard`；新約確認框 `AlertDialogContent` 加 `privateClass()` 並列入 `SENSITIVE_PORTALS` | `/fix-bug`，`fix/checkout-submit-errors` | Sonnet | `PaymentCheckout.tsx`、`index.ts`（`/referrals/validate`）、`analyticsConfig.ts` | `index.ts` 只動 validate 一段 |
+| S3a | **後台推薦樹＋查帳資訊（第一段）**（W5-70、W6-5～7） | 三段式，`feature/admin-referral-tree`（S3a、S3b 共用一份規劃書） | Opus | 新 `/admin/referral-tree*` 端點、新 admin 元件、`AdminConsole.tsx`、規格書後台段 | 與 S2 都動 `index.ts`，不同區 |
+| S3b | **推薦樹第二段**：點數對帳（餘額 ≠ 獲得 − 提領）＋點數來源明細 | 同上規劃書，第二支 PR | Opus | 同上 | S3a 合併後 |
+| S4 | **換篇過場動畫**（W5-69），併 S7（#509）P2 五項：reduced-motion 未併 `motionPreference`、抽 hook、手勢 chunk 缺 error boundary、slide-in、手勢起點 | 三段式，`feature/listing-swipe-transition` | Sonnet | `ServiceProviderDetail.tsx`、`listing/*`、`docs/ui-ux-guidelines.md` | 純前端 |
+| S5 | **屏東「南鄉」→「南州鄉」**（W5-65、W6-9）：`TAIWAN_REGIONS` 改名、migration 冪等轉換 `listings.districts`、`districtCentroids.ts` 別名拿掉 | `/fix-bug`，`fix/nanzhou-township` | Sonnet | `src/utils/constants.ts`、`districtCentroids.ts`（含產生腳本別名表）、新 migration | 無 |
+| S6 | **新約與部署收尾**：確認框第三態「預設推薦人即現任」（W5-63）；0d 驗單上的碼（R5 P2-6）；drop 三參數版 `prepare_payment_order`；drop S1 留下的 wrapper `complete_paid_pending_orders`＋改直接呼叫它的測試（W6-14）；`deploy-supabase.yml` 部署前自動確認 migration 已套（W5-62，上線後 §4 第 4a 步退場） | 三段式，`feature/renewal-deploy-closeout` | Opus | migration（版本號排在 S1 之後、以 S1 的檔為基準）、`PaymentCheckout.tsx`、`deploy-supabase.yml` | S1 合併後才開 |
+| R6 | 第 6 波審查；兼做 `launch-wave-5/` 退場（依 R5 §6） | 審查 session；報告 `docs/plans/launch-wave-6/review.md` | Opus | — | — |
+
+主 session 自己做：本檔 §7、§8；審每支 PR（金流 PR 另派獨立 Opus 審查員）；合併後 dispatch 驗證；代跑唯讀 SQL；上線後現場查詢（W4-26）。
+
+## 3. 執行環境須知（寫進每個派工 prompt）
+
+`docs/README.md`〈慣例〉的「雲端 session 的執行環境須知」全部適用；`launch-wave-5/plan.md` §3 各條仍有效（合併後自動刪 head 分支、
+commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 session 不跑正式站 SQL、晉升 PR 開著時不合任何 PR、worker 常重啟、
+裁決編號只由主 session 發、hash 以 PR 內文為準）。
+
+## 4. 晉升清單（主 session）
+
+沿用 `launch-wave-5/plan.md` §4 的 1、2、4a（W5-62）、6；S6 的 W5-62 自動化若本波上線，4a 改為看 workflow 步驟結果。
+本波新增：S1 的 migration 套用後，正式站 `invoke_internal_endpoint` 有 `p_trigger` 參數；人工乙段帶 `'manual'`。
+S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認 migration 已套用』步驟綠＋正式站 `schema_migrations` 含本次新版本」；production 核准在 job 開始前，新步驟只是核准後的第二道防線，不取代核准前的人工 4a。
+
+## 5. 第 7 波候選
+
+以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；**業主 11/09 新增 2**：電腦版與摺疊機展開態首頁卡片外框不對齊（同一列兩張卡片高度不同，底框參差；業主截圖）。主 session 讀碼初判：桌面網格 `HomePage.tsx` 的 `ServiceProviderCard` 外層 `<Card>` 沒有 `h-full`（手機版 `MobileServiceProviderCard` 有），`ListingLink` 也需撐滿格高；修法方向是卡片撐滿格、描述區固定行數；兩項可合一支 UX 工項；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+
+## 6. 業主待辦
 
 | # | 事 | 狀態 |
 |---|---|---|
-| 1 | 實機確認：H1 曾開邀請連結的瀏覽器新註冊不帶推薦碼、帶 `?ref=` 仍帶入；`uknow.pages.dev` 各種網址導向 `uknow.com.tw`、`develop.uknow.pages.dev` 不導；正式站實際登入一次 | 待回報 |
-| 2 | PayUni 商店後台確認第一筆付款（11/03）發票已開立 | 待回報 |
-| 3 | GitHub 設定（補強，非必須）：Fork PR workflows 設「Require approval for all external contributors」；Environments → develop 加 required reviewer | 待回報 |
+| 1 | **W6-4**：正式站 Edge Secret 補設 `PHOTO_PURGE_LIVE=true`；確認 GitHub repo variable `PHOTO_PURGE_LIVE` 也是 `true` | ✅ 11/09 19:17 UTC 那輪（id 62）dryRun=false，正式站實刪已生效 |
+| 2 | 審 S1、S3 規劃與 `/review-plan` 報告，通過後在各自 session 親打 `/tdd-implement` | 等規劃 |
+| 3 | 實機確認（第 4 波起帶過來）：H1 邀請連結、`uknow.pages.dev` 導向、正式站實際登入一次 | 待回報 |
+| 4 | PayUni 商店後台確認第一筆付款（11/03）發票已開立 | 待回報 |
+| 5 | PostHog 專案端勾選回報、Network 面板抽看、`tel-national` 真機（R5 §2） | 待回報 |
+| 6 | GitHub 設定補強（非必須）：Fork PR approval、develop environment reviewer | 待回報 |
+| 7 | 晉升合進 main 後核准 `production` 部署 | 等晉升 |
 
-## 3. 業主溝通慣例（第 5 波累積）
+## 7. 執行 session 名冊（主 session 維護）
 
-- 每個決策用互動選項（題目、選項、說明、建議），回覆用繁體中文；開工前先推薦模型與分工。
-- 對業主**不用「下線／上線」**（W5-53，`src/terminologyGuard.test.ts` 機械把關使用者可見字串）：一律「推薦人／您推薦的會員／一代二代三代」。
-- 業主常用手機操作：給步驟時以手機瀏覽器可完成為準，不假設有電腦；密鑰原值永遠不貼進對話，用 SHA-256 指紋核對。
-- 雲端主 session 可直接跑 Supabase MCP 唯讀 SQL（執行 session 不行，要交主 session 代跑）；雲端容器連不到 `*.pages.dev`、`uknow.com.tw`。
+| ID | session | 模型 | 分支 | PR | 狀態 |
+|---|---|---|---|---|---|
+| S1 | `session_01MQovbBq9dk32CFiREagU13` | Opus | `feature/batch-heal-lock-split` | #524 ✅ 1bcc377 | 收工 |
+| S2 | `session_01MQovbE65NjXBrCYcNbkpbN` | Sonnet | `fix/checkout-submit-errors` | #522 ✅ e778f75 | 收工 |
+| S3 | `session_01MQovbCWrpnXL42sUb5RfCx` | Opus | `feature/admin-referral-tree` | #521 ✅ 47cf195（S3a）、#525 ✅ 4d16618（S3b） | 收工 |
+| S4 | `session_01MQovbBAiLHite7nmnUpJzz` | Sonnet | `feature/listing-swipe-transition` | #523 ✅ 77a87cb | 收工；等業主手機實測 |
+| S6 | `session_01MQovbCLBt5DBsYkkACv95g` | Opus | `feature/renewal-deploy-closeout` | #526 ✅ c08bf88 | 收工 |
+| S5 | `session_01MQovbEEkWHJXdbQtSQf4iH` | Sonnet | `fix/nanzhou-township` | #520 ✅ ea6ff64 | 收工 |
+
+## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
+
+| 時間（台北） | 事件 | 下一步 |
+|---|---|---|
+| 11/08 | 主 session 開局：讀交接、第 5 波 plan／review、〈慣例〉。正式站照片清理首輪 dryRun＝**true**（id 11，19:17 UTC，0 孤兒）→ W6-4。S5 預查：正式站 listings 含「南鄉」0 筆。業主裁 **W6-1～7**；主 session 定 W6-8、W6-9。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S3、S5；業主補設 PHOTO_PURGE_LIVE |
+| 11/08 09:15 | 開 #519（本檔，draft，已訂閱）。開 S1、S3（Opus，規劃）與 S2、S5（Sonnet，`/fix-bug`），tag `uknow-wave-6`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S1、S3 規劃交業主審；業主補設 PHOTO_PURGE_LIVE（W6-4） |
+| 11/08 09:35 | S5 交 **#520**：常數、座標表、產生腳本別名退場、migration `20261114000001`（array_replace）。主 session 審：無 P0／P1；P2：同列已含「南州鄉」會產生重複 → S5 改成 case＋array_remove。偏離：紅綠同 commit。CI 綠（Supabase Preview migration 成功）→ **#520 合進 develop（ea6ff64）** | — |
+| 11/08 09:35 | S1 交規劃（`feature/batch-heal-lock-split`，/review-plan P0 0、P1 13、P2 15）：Edge 端逐筆呼叫單筆 RPC、舊批次函式留 wrapper；Q1～Q5 待業主。主 session 代跑正式站：pending＋PayUni SUCCESS 0 筆、近 30 天 system_alerts 0 列（不需人工補發） | 收業主裁決 |
+| 11/08 09:35 | S3 交規劃（#521 draft，/review-plan P0 0、P1 16、P2 16）。發現：停權／到期／未加入推薦計畫現行照發獎金（只是不能提領）；「自領停發」在程式裡是成環停發；`referral_pair_history` 不是換線紀錄。Q1～Q5、Q8 待業主；Q6（S3a 不動發獎函式、等價測試）、Q7（admin-gate 自動列舉路由，順修 ops P2-4）主 session 同意 | 收業主裁決 |
+| 11/08 09:50 | S2 交 **#522**：P2-1～4，同類掃描另修 `/auth/reset-registration` 的 `.json()` 容錯。主 session 審：無 P0／P1；P2：自己的碼應回專屬文案「不能使用自己的推薦碼」→ S2 已改。偏離：未走紅綠燈相位（PR 內文寫明）。CI 綠 → **#522 合進 develop（e778f75）**。首批已有合併 → 照 W6-2 開 **S4** | 等 S4 規劃；S1、S3 收業主裁決 |
+| 11/08 10:05 | S4 交規劃（/review-plan P0 0、P1 11 組、P2 9 組；純前端，WAAPI 進場、手勢跟手）。業主裁 **W6-10～13**（S1）、**W6-15～18**（S3）；主 session 定 W6-14、W6-19、W6-20（S4）。已轉達 S1、S3、S4 修訂 plan | S1、S3、S4 修訂 → 主 session 親審 → 業主親打 `/tdd-implement` |
+| 11/08 10:15 | S4 plan 修訂（da31fece）主 session 親審通過 | 業主到 S4 親打 `/tdd-implement listing-swipe-transition` |
+| 11/08 10:20 | S1 plan r3（7fc3a362；四視角重審 P0 0、P1 8 皆處置）主 session 親審通過：鎖序核過（heal 持 profiles 時 advisory 一律 try）；W6-11 解讀確認（單筆開通失敗的既有 error 告警照推）；P2：lock_timeout 還原原值。W6-14 補進 S6 列 | 業主到 S1 親打 `/tdd-implement batch-heal-lock-split` |
+| 11/08 10:25 | S3 plan v3（#521 82a72f98；三輪審查，第 3 輪需求／系統 P0 0、P1 0）主 session 親審通過，定 **W6-21** | 業主到 S3 親打 `/tdd-implement admin-referral-tree` |
+| 11/08 14:00 | S4 交 **#523**（7 階段紅綠＋審查修正，hash 以 PR 內文為準；/review-implementation P0 0、P1 3）。主 session 定 **W6-22**。獨立審查員：P0 0、**P1 1**（手勢 chunk 載入失敗走 `importWithRetry` 會整頁重載、換篇脈絡遺失，違反驗收 #8）；P2：REPLACE 閘無測試（mutation 實證）、touchstart 一律切斷進場、`overflow-clip-margin` Safari 相容性（未證實）、紅燈 commit 含產品修正（審查員已實證測試有效）→ 全數退回 S4 本 PR 修；斜拖手感列手機實測 | S4 修 → CI 綠 → 合 #523 → 業主手機實測 |
+| 11/08 14:15 | S1 交 **#524**（migration `20261115000001`；7 段紅綠，hash 以 PR 內文為準；本機 Deno api 764／0；實作審查 P0 0、P1 已修；偏離 9 項列 PR 內文）。業主裁 **W6-23**。主 session 派獨立 Opus 審查員 | 等審查、CI |
+| 11/08 14:25 | #524 獨立 Opus 審查：**P0 0、P1 1**（LINE 通道每則截 60 字，告警的「下一步」看不到 → 主 session 核實 workflow:202，定 **W6-24**）；P2：deadlock 斷言對發獎路徑空轉、lock_timeout 還原無測試、`claim_referral_king_reward` 仍 warning（W6-10 同類）→ 本 PR 修；單筆開通 sqlerrm 進 message 列第 7 波。鎖序、與基準逐行 diff、部署相容皆核實 | S1 修 → CI 綠 → 合 #524 |
+| 11/08 14:25 | S3a 九階段全綠（#521）。主 session 代跑正式站：曾付款且 `referred_by_changed_at` null 1 人、單人最大完成付款 1 筆、自推 0、成環 0、可判定第 1 代缺漏 0、2026-07-18 前提領單 0。主 session 定 **W6-25** | 等 S3 /review-implementation |
+| 11/08 14:40 | S3a 交 **#521**（ready，CI 綠；8 段紅綠＋階段 9 逃生口 1；實作審查 P0 1 已修、P1 去重 11 條修 6、其餘 5 條列偏離或補 PR 內文）。主 session 定 **W6-26**，派獨立 Opus 審查員 | 等審查 |
+| 11/08 14:40 | S4 修 #523 獨立審查（P1：手勢 chunk 改 `importWithRetry(..., {reload: noop, storage: null})`；P2：REPLACE 閘測試＋突變驗證、lockAxis 後才 cancel 進場、聚焦環改裁切層 `-mx-2／px-2`、overflow 探針加 `data-overflow-intentional`——主 session 核實只跳過該元素自身、子孫照掃）。CI 全綠 → **#523 合進 develop（77a87cb）**，S4 收工 | 業主在 develop 預覽手機實測三項 |
+| 11/08 14:55 | #521 獨立 Opus 審查：**P0 1**（unplaceable 群組 X↔Y 成環，展開狀態用全域 id → 無限遞迴、後台當掉；plan 有寫遇祖先即停但未實作）、**P1 2**（Sheet 關閉後焦點落 body；可判定閘門不看 edge 改線，舊流程棄單＋後來付款修 edge 會誤標「收獎人不符」）。主 session 代查正式站：profiles≠edge 0、有推薦人無 edge 2（未付款）、棄單 fresh 單 0 → 目前不命中。P1-2 處置：列已知殘留＋第 1／2 代那位 profiles≠edge 時改判無法判定。P2 六項本 PR 修；頂層 unplaceable 效能列第 7 波 | S3 修 → CI 綠 → 合 #521 |
+| 11/08 14:55 | S1 修 #524 獨立審查（紅 3d35e5dc／綠 35060de5：W6-24 前 60 字、deadlock 斷言改 sqlstate、lock_timeout 還原護欄、`claim_referral_king_reward` 升 error）；主 session 核 delta 通過。分支落後 develop（#523）→ S1 rebase | S1 rebase → CI 綠 → 合 #524 → 查 develop 函式定義 |
+| 11/08 15:45 | S1 rebase 到 77a87cb（只撞 friction-log），主 session 比對 supabase／src／scripts／.github 的 diff 與審過版本逐位元組相同、CI 全綠 → **#524 合進 develop（1bcc377）**，S1 收工。照 W6-2 開 **S6**（Opus，規劃） | 確認 develop 套用 `20261115000001`、部署後 dispatch reconcile 驗 heal 路徑 |
+| 11/08 18:00 | #524 develop 驗證：`20261114000001`、`20261115000001` 已套；新函式 `complete_paid_pending_order(uuid)`、`list_paid_pending_order_ids`、`invoke_internal_endpoint(p_job, p_trigger)` 在；develop pg_cron 08:07、09:07 UTC 兩輪 reconcile succeeded 且帳本 summary 有 `heal`、`unknownByReason`（07:07 那輪尚無）→ Edge 已是 S1 版本，heal 新路徑實跑無誤（未另 dispatch） | — |
+| 11/08 18:00 | S3 修 #521 獨立審查（P0 renderLayer 帶祖先路徑；P1 焦點回名稱鈕、profiles≠edge 判無法判定；P2 1～6；W6-26），rebase 到 1bcc377、CI 全綠；主 session 核 P0 修法 → **#521 合進 develop（47cf195）**。**本波必上四項（S1、S2、S3a、S5）全數合併**。bundle total 1977.1／1978、entry gzip 316／316 已頂上限 | S3b 施工；S6 規劃 v2；業主手機實測 S4、補設 PHOTO_PURGE_LIVE |
+| 11/08 18:00 | S6 交規劃（P0 0、P1 8、P2 15）。業主裁 **W6-27～29**；主 session 定 **W6-30**。代查：正式站 schema_migrations 91 支（缺的正是本波未晉升 6 支），develop 97 支與 repo 逐支相同 → 無歷史漂移；兩環境 pending fresh 單 0 | S6 修 plan v2 → 主 session 親審 → 業主親打 |
+| 11/08 18:25 | S6 plan v2.1（5726e4eb；第 2 輪四視角 P0 0、P1 2 皆處置）主 session 親審通過，定 **W6-31**；施工提醒：Management API migrations 端點要以 develop 真實回應驗證格式後才合 | 業主到 S6 親打 `/tdd-implement renewal-deploy-closeout` |
+| 11/08 19:00 | S3b 交 **#525**（CI 綠；階段 10 紅燈撞 setup-deno 504 無 CI 證據、已如實記錄；實作審查 P1 2 已修）。主 session 定 **W6-32**，派獨立 Opus 審查：**P0 0、P1 0、P2 8**（四條核對對照現行寫入函式核實、0005 對 0004 唯一差異 ledger_mismatch、突變會紅）。P2-1 批次自癒期間清空可能誤報 → 主 session 代查正式站 `reward_transactions` 無任何 ledger_reset／adjustment／withdrawal 列，只補說明；其餘 P2（孤兒擴到 adjustment、延遲補沖筆數、重複扣款與真寫入函式測試、姓名快照、退款列徽章、刪規劃檔）本 PR 修 | S3 修 → CI 綠 → 合 #525 |
+| 11/09 02:15 | S3 修 #525 獨立審查 P2 1～8（紅 c5e2991e：新增三支行為測試 3 紅／617 綠；綠 1398d7cf；b918751a 刪 `docs/plans/admin-referral-tree/`），主 session 核 delta、CI 全綠 → **#525 合進 develop（4d16618）**，S3 收工 | 剩 S6；業主 S4 手機實測、PHOTO_PURGE_LIVE |
+| 11/09 02:30 | S6 交 **#526**（5 階段紅綠，hash 以 PR 內文為準；Management API 以 develop ref 實測 200、`[{version,name}]` 97 筆，形狀寫進 self-test；實作審查 P0 0、P1 1 記偏離；業主 11/09 01:53 於 S6 session 授權 entry gzip 316→316.5 與改 5 處既有測試）。主 session 派獨立 Opus 審查；晉升清單 4a 依 S6 建議改寫 | 等審查、CI |
+| 11/09 02:45 | #526 獨立 Opus 審查：**P0 0、P1 0、P2 7**（0d 對基準函式本體 diff 只有宣稱差異、三參數無呼叫端、status 降級與三態核實）。P2：規則 14 有四種繞法（`if: always()`、`||true` 變體、`--self-test`、旗標前置）、timeout 算式低估、API 暫時性錯誤不重試、遠端清單是否有上限未證實（主 session 查官方文件：無分頁參數）、workflow／腳本來源耦合、檔頭措辭 → 本 PR 修；讀預設碼失敗分支無測試接受 | S6 修 → CI 綠 → 合 #526 → 看 develop 部署的確認步驟 |
+| 11/09 03:00 | S6 修 #526 獨立審查 P2（紅 7043ebf4／綠 b7d1b1b8：規則 14 四種繞法各一反例、timeout 30、API 暫時性錯誤退避重試兩次、缺版本訊息帶筆數、耦合註解、檔頭措辭；self-test 輪詢改假時鐘）。主 session 以 PR head 本地跑兩支 self-test 與真檔皆 OK、CI 全綠 → **#526 合進 develop（c08bf88）**，S6 收工。**本波 S1～S6 全數合併** | 看 develop 部署的確認 migration 步驟 → 晉升 |
+| 11/09 03:30 | #526 develop 驗證：deploy-supabase run 42513390673 全綠，新步驟「確認 migration 已套用」success（2 秒）、部署＋`/health` sha 比對 success；develop 有 `20261117000001／2`，`prepare_payment_order` 只剩六參數版。補記：#521 合併後的 develop push CI（42469159038）紅於 static-checks、api-tests 的「安裝 Deno」504（外部暫時性，與 S3 同時段），該次 deploy 因此 skipped；後續 #525、#526 的 push CI 含同一份程式皆綠並已部署，不需補跑 | 業主決定晉升時點 |
+| 11/09 03:30 | W6-4 複查：正式站照片清理 11/08 19:17 UTC（id 36）**仍 dryRun=true**（0 孤兒、0 刪除，影響為零）→ 業主尚未補設或未生效 | 業主補設，再看 11/09 19:17 UTC |
+| 11/09 03:35 | 業主裁 **W6-33**（先手機實測 S4 再晉升）、**W6-34**（馬上補設 PHOTO_PURGE_LIVE）。主 session 排 11/09 19:25 UTC 複查 dryRun | 等業主實測回報 → 開晉升 PR |
+| 11/09 06:40 | 業主手機實測 S4 回報「動畫 OK」（W6-33 達成）。開**晉升 PR #527**（develop c08bf88 → main，draft、已訂閱；journey 全套跑中）。晉升前正式站基線：pending 單 0、48 小時 system_alerts 0、最後 migration `20261113000003`。#519 於晉升後合併 | journey 綠 → 合 main → 4a 核對 → 業主核准 production → 乙段 |
+| 11/09 07:13 | #527 journey 全套綠（28 分，22:43–23:11 UTC）、PR run ci-ok 綠 → 轉 ready → **晉升 #527 合進 main（653e31e）**；main push CI 42534061674 綠。**4a 核對通過**：正式站 schema_migrations 已含 `20261114000001`～`20261117000002` 共 9 支；`complete_paid_pending_order(uuid)`、`invoke_internal_endpoint(p_job, p_trigger)`、六參數 `prepare_payment_order` 在，三參數已 drop。deploy-supabase run 42534091645 狀態 waiting（等 production 核准） | 業主核准 production → 確認步驟／health sha → deploy-smoke → 乙段 |
+| 11/09 08:10 | 業主核准 production → deploy-supabase run 42534091645 全綠（23:19 UTC）：「確認 migration 已套用」success（正式站首次實跑）、部署、`/health` sha 比對 success；Deploy Smoke 42534625913 success。**乙段通過**：pg_cron 00:07 UTC（id 41）與人工 `invoke_internal_endpoint('reconcile','manual')`（id 42，帳本 trigger 正確記成 manual，R5 P2-9 解）皆 succeeded，summary 含 `heal`（全 0、error false）與 `unknownByReason`。**第 6 波上線完成** | 24～48 小時現場查詢（W4-26）；W6-34 照片清理；開 R6 |
+| 11/09 08:30 | 業主裁 **W6-35**（48 小時後開 R6）。主 session 排 11/10 23:30 UTC 跑 W4-26 現場查詢並開 R6 | 等 48 小時；W6-34 照片清理 |
+| 11/09 15:10 | 業主轉來兩則 LINE 告警。① [P2] 照片清理開關不一致（purge-listing-photos run 42538019964，00:02 UTC 看門狗）：正式站 pg_cron 仍 dry-run、repo variable 已 true → 即 W6-34，Edge Secret 未生效，待業主核對 Digest。② [P1] PayUni 閘門探測失敗（deploy-smoke 排程 run 42576456933，06:59 UTC）：sandbox `sandbox-api.payuni.com.tw/api/upp` 回 403、正式 `api.payuni.com.tw/api/upp` 200；先前 7 輪排程與 11/08 晉升 journey（sandbox）皆通過。主 session 重跑失敗 job（attempt 2，07:02 UTC）→ **兩端點皆通過**，判 PayUni sandbox 暫時性拒絕，與 Uknow 程式無關、正式付款不受影響；再出現就記 friction-log 並請業主詢問 PayUni | 持續看排程；W6-34 |
+| 11/10 03:30 | **W6-4／W6-34 結案**：正式站照片清理 11/09 19:17 UTC 那輪（id 62，pg_cron）`dryRun=false`、succeeded，孤兒 0、刪除 0；前一輪（id 36）仍 true → 業主於兩輪之間補設的 Edge Secret 已生效 | 11/10 23:30 UTC 現場查詢＋開 R6（W6-35） |
