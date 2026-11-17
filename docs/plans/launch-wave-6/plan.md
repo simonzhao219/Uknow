@@ -10,8 +10,8 @@
 
 **上游**
 
-- `docs/plans/launch-wave-5/plan.md`：§0 裁決 W5-1～73（仍有效）、§4 晉升清單（含 W5-62）、§5 候選、§8 進度。
-- `docs/plans/launch-wave-5/review.md`：R5（P0 0／P1 0／P2 9）。§1.3 P2 表、§5 待辦、§6.3 候選補遺；§6.1／6.2 升級表是
+- `docs/plans/launch-wave-5/plan.md`（R6 已退場，`git show 252ebc6:docs/plans/launch-wave-5/plan.md`）：§0 裁決 W5-1～73（仍有效）、§4 晉升清單（含 W5-62）、§5 候選、§8 進度。
+- `docs/plans/launch-wave-5/review.md`（同上，`git show 252ebc6:…`）：R5（P0 0／P1 0／P2 9）。§1.3 P2 表、§5 待辦、§6.3 候選補遺；§6.1／6.2 升級表是
   `launch-wave-5/` 退場依據（由本波 R6 執行）。第 4 波稽核原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`。
 - `docs/plans/friction-log.md` 的 2026-11-07 節。
 
@@ -105,7 +105,7 @@
 
 ## 3. 執行環境須知（寫進每個派工 prompt）
 
-`docs/README.md`〈慣例〉的「雲端 session 的執行環境須知」全部適用；`launch-wave-5/plan.md` §3 各條仍有效（合併後自動刪 head 分支、
+`docs/README.md`〈慣例〉的「雲端 session 的執行環境須知」全部適用；`launch-wave-5/plan.md` §3 各條仍有效（R6 已搬進〈慣例〉雲端須知；合併後自動刪 head 分支、
 commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 session 不跑正式站 SQL、晉升 PR 開著時不合任何 PR、worker 常重啟、
 裁決編號只由主 session 發、hash 以 PR 內文為準）。
 
