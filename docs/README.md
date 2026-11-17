@@ -126,7 +126,7 @@ high／critical 會晚兩天才被看見（issue #467）。dispatch 也驗不到
 失敗當下的截圖、trace 或 `dump_page`，並對照程式路徑說明與本波改動無關；拿不到現場時在晉升 PR 留言寫明「未看現場」，
 把缺的診斷列成下一波工項。紅在測試開始前（裝環境、裝瀏覽器）的不算偶發，重跑必紅，先修再跑（第 4 波 #491）。
 
-**雲端 session 的執行環境須知**（寫進每個派工 prompt 的共用開頭；第 1–3 波累積）：
+**雲端 session 的執行環境須知**（寫進每個派工 prompt 的共用開頭；第 1–6 波累積）：
 - `create_session` 一律帶 `source_url`（本 repo）與 `source_revision=develop`；沒帶的 session 沒有 repo，只能封存。
 - 容器沒有 deno：`npm install -g deno` 可裝（deno.land 被網路政策擋，npm registry 與 jsr.io 通）。動
   `supabase/functions/` 的 session 開局先裝，否則 pre-commit 會擋；`deno task test` 留給 CI 的 api-tests 軌。
@@ -144,6 +144,14 @@ high／critical 會晚兩天才被看見（issue #467）。dispatch 也驗不到
   不自編 `W<n>-x`——第 4 波有執行 session 自稱的 W4-21 與 plan 的 W4-21 撞號，`grep` 會指到兩件事。
 - **紅綠燈 hash 以 PR 內文為準**（第 4 波審查 P2-17）：rebase 會改寫 hash，執行 session 每次 rebase 後更新 PR 內文的表；
   主 session 的 plan §8 只記 PR 號，不抄 hash。
+- 合併後 GitHub 會自動刪 head 分支：再推前 `git fetch --prune` 並從 develop 重建，否則 `--force-with-lease` 報 stale info。
+  推送守衛在指令執行前就會攔下並要求 rebase：commit 與 push 分兩次 Bash 呼叫。一個分支只能由一方 rebase。
+- 合併一支 PR 讓 base 前進後，其他 PR 的 `ci-ok` 會變 expected、不能合；晉升 PR 開著時不合任何 PR 進 develop（含主 session 的紀錄 PR）。
+- 雲端容器連不到 `*.supabase.co`、`*.pages.dev`、`api.supabase.com`（proxy 403）：正式站 `/health` 看 deploy-supabase 的比對步驟或 dispatch deploy-smoke；
+  只有部署 job 碰得到的外部 API，以 PR 上的暫時探針 workflow 取真實回應（friction-log 2026-11-09）。
+- 雲端 worker 常重啟：重啟後先讀 notifications，再看 `git status` 與該波 plan §8，不憑記憶判斷進度；排定時間的查詢重啟後要自己補跑（第 6 波延了一週）。
+- **核准 `production` 前的人工確認**（W5-62）：develop 最近一次部署的「確認 migration 已套用」步驟為綠，且正式站 `schema_migrations` 已含本次新版本；
+  部署 job 內同名步驟（`scripts/check-remote-migrations.py`）是核准**後**的第二道防線，不取代這一步——新 Edge 配舊 DB 會讓建單全 500。
 
 **凍結期只許 hotfix。**（第 1 波裁決 8）晉升後的凍結窗口內，main 只收「營運中發現、
 定義明確、不動註冊／付款／登入主幹、無 migration」的修正，而且照樣走晉升 PR＋業主核准

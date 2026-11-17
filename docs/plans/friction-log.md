@@ -3467,7 +3467,7 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：第 1 條待下次框架整併；其餘為測試／規劃寫法教訓，不另立規則。
 
-## 2026-11-07｜誤擋／漏網（流程、環境）｜第 5 波審查（`docs/plans/launch-wave-5/review.md`）
+## 2026-11-07｜誤擋／漏網（流程、環境）｜第 5 波審查（`git show 252ebc6:docs/plans/launch-wave-5/review.md`）
 
 - **容器重啟讓背景審查員的結果遺失**（漏網，環境）：#509 的獨立 Opus 審查第一次派出後，主 session 的雲端 worker 重啟，
   背景 agent 的回報沒有送達，只能重派（plan §8 11/07 14:20）。背景 agent 的結論只活在 session 記憶體裡，重啟就沒了；

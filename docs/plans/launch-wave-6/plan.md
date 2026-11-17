@@ -117,7 +117,24 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 
 ## 5. 第 7 波候選
 
-以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；**業主 11/09 新增 2**：電腦版與摺疊機展開態首頁卡片外框不對齊（同一列兩張卡片高度不同，底框參差；業主截圖）。主 session 讀碼初判：桌面網格 `HomePage.tsx` 的 `ServiceProviderCard` 外層 `<Card>` 沒有 `h-full`（手機版 `MobileServiceProviderCard` 有），`ListingLink` 也需撐滿格高；修法方向是卡片撐滿格、描述區固定行數；兩項可合一支 UX 工項；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+`launch-wave-5/` 已由 R6 退場（原文 `git show 252ebc6:docs/plans/launch-wave-5/plan.md` §5、`…/review.md` §6.3）；未收項已搬進本節末段〈承接第 5 波〉（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9、三參數 `prepare_payment_order` drop、S7 #509 P2 五項、ops P2-4）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；**業主 11/09 新增 2**：電腦版與摺疊機展開態首頁卡片外框不對齊（同一列兩張卡片高度不同，底框參差；業主截圖）。主 session 讀碼初判：桌面網格 `HomePage.tsx` 的 `ServiceProviderCard` 外層 `<Card>` 沒有 `h-full`（手機版 `MobileServiceProviderCard` 有），`ListingLink` 也需撐滿格高；修法方向是卡片撐滿格、描述區固定行數；兩項可合一支 UX 工項；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+
+
+**承接第 5 波**（R6 搬入，扣掉第 6 波已收；細節以 `git show 252ebc6:docs/plans/launch-wave-5/plan.md` §5 為準）：
+稽核未收 P1——ref P1-3（推薦網絡超過 1000 列時 PostgREST 靜默截斷）、ref P1-5（`/rewards/history` error 被吞成 200）、ref P1-6（`upload-id-photos` update error 被吞）、
+ref P1-7（`withdrawalBankData` 鍵不綁 uid）、ref P1-8＝pay P1-5（`pendingUser` 付款後不清、不綁 uid）、auth P1-3（後端不驗 18 歲／手機／身分證）、auth P1-5（重設密碼後不登出）、
+ops P1-2（upload-photo 無限流、不要求會籍）。
+R4 未收 P2——P2-2、P2-3、P2-6～11、P2-13～15；T1-B `/auth/register` 讀回擲非 ProfileReadError 仍 500。
+第 4 波帶過來——**Playwright 升到支援 Ubuntu 26.04 的版本、journey-suite 改回 `ubuntu-latest`（W4-23 退場條件，不可遺失；另見 `journey.yml:62-65`）**；
+vitest／vite 大版本（#467）；`otpSession` 存 email；T1-B 401 文案；E 同類掃描；登出清模組快取的機械把關；R3 P2-8／9／11／14／16／17／19／20；#395 方向 3 sandbox 實打；
+#379 launch-readiness ①–④；備份／PITR；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；後台稽核軌跡 A1b-2/3；SEO 進階；
+`lazyWithRetry` 簡化＋表單草稿；#421；#430 輪播 P2；成功頁發卡行；邀請體驗重調；A1a、A2、L1-1、S7b；W2-12；首頁 `searchQuery` 計入 `totalFilters`；`setup-node` 逾時；
+notify／return 的 `payuniConfig()` 擲錯告警；子網域盤點＋CSP；#383、#384。
+第 5 波 PR 留下的——後台刪帳號工具（W5-12）；停權確認期間付款鈕灰掉無說明；`/auth/register` 先驗碼後查已註冊；unknown 單人工確認後的手動開通入口（W5-44③）；
+PostHog develop project（W5-68）；#514 P2-3 讀 status 後才成環的確認框競態（W6-30 本波不處理）；#508 同類掃描兩條（`getAccessToken` 出錯回 null、ResetPassword／AuthPage 的 getSession 直接導走）；
+#513 後端錯誤訊息納入用語掃描；#507 網絡搜尋 429 專屬文案；K2（#485）deploy-smoke fallback 告警待真實觸發。
+第 4 波四份稽核未修 P2（ops P0-1 殘餘、ops P2-2／3／5～14、pay P2-2～7／11～13、ref P2-4～6／8～14、auth P2-3～17／19／20）：清單在 `git show 252ebc6:docs/plans/launch-wave-5/review.md` §6.3，
+原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`。R6 新增的見 `review.md` §5、§6.3。
 
 ## 6. 業主待辦
 
