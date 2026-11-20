@@ -144,7 +144,7 @@ PostHog develop project（W5-68）；#514 P2-3 讀 status 後才成環的確認�
 | # | 事 | 狀態 |
 |---|---|---|
 | 1 | **W6-4**：正式站 Edge Secret 補設 `PHOTO_PURGE_LIVE=true`；確認 GitHub repo variable `PHOTO_PURGE_LIVE` 也是 `true` | ✅ 11/09 19:17 UTC 那輪（id 62）dryRun=false，正式站實刪已生效 |
-| 2 | 審 S1、S3 規劃與 `/review-plan` 報告，通過後在各自 session 親打 `/tdd-implement` | 等規劃 |
+| 2 | 審 S1、S3 規劃與 `/review-plan` 報告，通過後在各自 session 親打 `/tdd-implement` | ✅ 全數完成 |
 | 3 | 實機確認（第 4 波起帶過來）：H1 邀請連結、`uknow.pages.dev` 導向、正式站實際登入一次 | 待回報 |
 | 4 | PayUni 商店後台確認第一筆付款（11/03）發票已開立 | 待回報 |
 | 5 | PostHog 專案端勾選回報、Network 面板抽看、`tel-national` 真機（R5 §2） | 待回報 |
@@ -205,3 +205,4 @@ PostHog develop project（W5-68）；#514 P2-3 讀 status 後才成環的確認�
 | 11/10 03:30 | **W6-4／W6-34 結案**：正式站照片清理 11/09 19:17 UTC 那輪（id 62，pg_cron）`dryRun=false`、succeeded，孤兒 0、刪除 0；前一輪（id 36）仍 true → 業主於兩輪之間補設的 Edge Secret 已生效 | 11/10 23:30 UTC 現場查詢＋開 R6（W6-35） |
 | 11/18 07:40 | **上線後現場（W4-26／W6-35，自部署 11/08 23:19 UTC 起約 9 天；排程 11/10 觸發後主 session 因 worker 重啟延到此時才跑）**：排程 reconcile 217 輪全 succeeded、heal 0 補 0 失敗；purge-photos 9 輪全 succeeded、全 dryRun=false、刪 0（無孤兒）。function_edge_logs（近 24h）200／204／304 為主、404 ×2、無 5xx；postgres_logs 近 24h ERROR 1、FATAL 0。新訂單 13（completed 9、expired 3、pending 1）、新訂閱 9、新會員 14。system_alerts 4 筆 error：① `payuni-query` 11/12 06:07（`QUERY03001`，去重後一筆）② `reconcile-pending-payments` ×3（11/16 05:07、11/16 15:07、11/17 05:07）「查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付」，單號 `202611121258381GSCF7`、`20261112224703BRI1XE`、`20261113121138HSZTIE`。判讀：自 11/12 起每張 pending 單查詢皆回 `QUERY03001`（11/12 前窗內 0 張 pending，非系統故障起點），程式註解寫明棄付單也走此路徑；後兩張單的會員已有另一筆 completed 訂單與有效訂閱（疑為重試付款後的棄單），第一張的會員無任何 completed 訂單、無訂閱。另 `20261114175042776H9S` 仍 pending（會員無 completed），約 11/18 09:50 UTC 達門檻。**需業主到 PayUni 商店後台查這 4 張單是否實付** | 業主查 PayUni；`QUERY03001` 碼義待確認（列第 7 波：查無此單應與查詢層故障分開判讀）；合 #519 → 開 R6 |
 | 11/20 | **R6 交件 #528**（P0 0、P1 1、P2 12；`launch-wave-5/` 退場）。主 session 代跑 Q1～Q5：正控從未發生（Q1＝0）、無已收付款通知卻被標 expired 的單（Q5＝0）；四張單皆已 expired、`payuni_response` 皆 null。業主裁 **W6-36～38** | 合 #528；第 7 波規劃（P1-1 結帳頁、W6-36 正控＋改判） |
+| 11/20 09:40 | R6 #528 合進 develop（f302284）：P0 0、P1 1、P2 12；`launch-wave-5/` 退場；業主裁 W6-36～38。**第 6 波收工**。主 session 落第 7 波交接 `docs/plans/launch-wave-7/plan.md` | 業主開第 7 波新主 session |
