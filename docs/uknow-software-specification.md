@@ -333,6 +333,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 `fresh_rewire_failed`；`fresh_referrer_invalid` 對未填碼的單另分「預設推薦碼已更換」與
 「預設推薦人機制已停用」）。曾訂閱者的付款若沒有續費模式（prepare 以外的路徑漏網），
 照常開通並寫 error 告警 `renewal_without_mode`。
+新約清帳本以**開通當下**的餘額為準：付款通知遺失、由自癒延遲開通的新約單，付款到開通之間因被推薦人付款新得的點數也一併清空（窗口多在一小時內；業主 2026-11-20 接受）。
 〔實作〕`20261113000002_renewal_referrer_intent.sql`、`20261117000001_fresh_rewire_order_code.sql`
 
 **重複付款**：建單只擋「此刻已 active」，舊的待付款單不作廢——PayUni 付款頁在付款期限前

@@ -10,8 +10,8 @@
 
 **上游**
 
-- `docs/plans/launch-wave-5/plan.md`：§0 裁決 W5-1～73（仍有效）、§4 晉升清單（含 W5-62）、§5 候選、§8 進度。
-- `docs/plans/launch-wave-5/review.md`：R5（P0 0／P1 0／P2 9）。§1.3 P2 表、§5 待辦、§6.3 候選補遺；§6.1／6.2 升級表是
+- `docs/plans/launch-wave-5/plan.md`（R6 已退場，`git show 252ebc6:docs/plans/launch-wave-5/plan.md`）：§0 裁決 W5-1～73（仍有效）、§4 晉升清單（含 W5-62）、§5 候選、§8 進度。
+- `docs/plans/launch-wave-5/review.md`（同上，`git show 252ebc6:…`）：R5（P0 0／P1 0／P2 9）。§1.3 P2 表、§5 待辦、§6.3 候選補遺；§6.1／6.2 升級表是
   `launch-wave-5/` 退場依據（由本波 R6 執行）。第 4 波稽核原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`。
 - `docs/plans/friction-log.md` 的 2026-11-07 節。
 
@@ -72,6 +72,9 @@
 | W6-33 | 晉升時點 | **業主先在 develop 預覽手機實測 S4（#523 三項），回報後才開晉升 PR**（被推翻：現在就開；等 11/22）（業主 2026-11-09） |
 | W6-34 | 照片清理仍 dry-run | **業主尚未設，馬上補設**正式站 Edge Secret `PHOTO_PURGE_LIVE=true`；主 session 11/09 19:25 UTC 複查（業主 2026-11-09） |
 | W6-35 | R6 審查 session 何時開 | **上線滿 48 小時後再開**（正式站部署 11/08 23:19 UTC → 11/10 23:30 UTC 主 session 先跑現場查詢寫 §8，再開 R6）（被推翻：現在就開）（業主 2026-11-09） |
+| W6-36 | R6：`QUERY03001`（PayUni 官方「查無符合訂單資料」）怎麼判 | **第 7 波先做每日正控**（查一張正式站 completed 單須 `SUCCESS`＋`TradeStatus=1`），正控通過後 `QUERY03001` 改判「確認查無」、滿 4 天靜默標 expired；已存 `payuni_response` 的單回 03001 仍寫 error（被推翻：降成後台提示不推 LINE；維持現狀）（業主 2026-11-20） |
+| W6-37 | R6 P2-11：新約靠自癒延遲開通時，清帳本用開通當下的餘額 | **接受**，寫進規格書 §6.2（被推翻：第 7 波修）（業主 2026-11-20） |
+| W6-38 | 核准 `production` 前的人工 4a | **保留**（S6 的自動步驟在核准後才跑，是第二道防線）（被推翻：只靠自動檢查）（業主 2026-11-20） |
 
 ## 1. 時程
 
@@ -105,7 +108,7 @@
 
 ## 3. 執行環境須知（寫進每個派工 prompt）
 
-`docs/README.md`〈慣例〉的「雲端 session 的執行環境須知」全部適用；`launch-wave-5/plan.md` §3 各條仍有效（合併後自動刪 head 分支、
+`docs/README.md`〈慣例〉的「雲端 session 的執行環境須知」全部適用；`launch-wave-5/plan.md` §3 各條仍有效（R6 已搬進〈慣例〉雲端須知；合併後自動刪 head 分支、
 commit 與 push 分兩次呼叫、一個分支只能由一方 rebase、子 session 不跑正式站 SQL、晉升 PR 開著時不合任何 PR、worker 常重啟、
 裁決編號只由主 session 發、hash 以 PR 內文為準）。
 
@@ -117,7 +120,24 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 
 ## 5. 第 7 波候選
 
-以 `launch-wave-5/plan.md` §5 與 `review.md` §6.3 為準（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；**業主 11/09 新增 2**：電腦版與摺疊機展開態首頁卡片外框不對齊（同一列兩張卡片高度不同，底框參差；業主截圖）。主 session 讀碼初判：桌面網格 `HomePage.tsx` 的 `ServiceProviderCard` 外層 `<Card>` 沒有 `h-full`（手機版 `MobileServiceProviderCard` 有），`ListingLink` 也需撐滿格高；修法方向是卡片撐滿格、描述區固定行數；兩項可合一支 UX 工項；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+`launch-wave-5/` 已由 R6 退場（原文 `git show 252ebc6:docs/plans/launch-wave-5/plan.md` §5、`…/review.md` §6.3）；未收項已搬進本節末段〈承接第 5 波〉（本波已收的：W5-62／63／65／69／70／71／72、R5 P2-1～9、三參數 `prepare_payment_order` drop、S7 #509 P2 五項、ops P2-4）。另：S7 journey f70 缺章（W5-60）；S1 發現的 `apply_referral_side_effects` 3b（寫推薦連結）／3d 失敗仍只 warning，連結漏寫會讓之後二三代靜默漏發；`repair_orphaned_*` 仍是單交易迴圈；S3 完整換線事件表（W6-16）；S3 MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）；S4 焦點還原搬進 useBrowseNav（W6-22）；**業主 11/09 新增**：摺疊手機展開（Samsung Galaxy Z Fold、Pixel Fold、iPhone 摺疊機）與平板比例的版面優化——實例：正式站刊登詳情頁在展開態近正方形寬螢幕上仍是單欄，封面照片佔滿整個首屏、內容要捲很久才看到（業主截圖，`uknow.com.tw/service-providers/…`，8/15）；需盤點斷點與 `aspect-ratio`／照片高度上限、詳情頁雙欄、首頁卡片欄數；**業主 11/09 新增 2**：電腦版與摺疊機展開態首頁卡片外框不對齊（同一列兩張卡片高度不同，底框參差；業主截圖）。主 session 讀碼初判：桌面網格 `HomePage.tsx` 的 `ServiceProviderCard` 外層 `<Card>` 沒有 `h-full`（手機版 `MobileServiceProviderCard` 有），`ListingLink` 也需撐滿格高；修法方向是卡片撐滿格、描述區固定行數；兩項可合一支 UX 工項；drop `complete_paid_pending_orders` wrapper（W6-14→W6-30）；S3 頂層 unplaceable 逐人 upline 效能；`complete_paid_pending_order` 單筆失敗告警 message 仍含原始 sqlerrm（既有行為）。
+
+
+**承接第 5 波**（R6 搬入，扣掉第 6 波已收；細節以 `git show 252ebc6:docs/plans/launch-wave-5/plan.md` §5 為準）：
+稽核未收 P1——ref P1-3（推薦網絡超過 1000 列時 PostgREST 靜默截斷）、ref P1-5（`/rewards/history` error 被吞成 200）、ref P1-6（`upload-id-photos` update error 被吞）、
+ref P1-7（`withdrawalBankData` 鍵不綁 uid）、ref P1-8＝pay P1-5（`pendingUser` 付款後不清、不綁 uid）、auth P1-3（後端不驗 18 歲／手機／身分證）、auth P1-5（重設密碼後不登出）、
+ops P1-2（upload-photo 無限流、不要求會籍）。
+R4 未收 P2——P2-2、P2-3、P2-6～11、P2-13～15；T1-B `/auth/register` 讀回擲非 ProfileReadError 仍 500。
+第 4 波帶過來——**Playwright 升到支援 Ubuntu 26.04 的版本、journey-suite 改回 `ubuntu-latest`（W4-23 退場條件，不可遺失；另見 `journey.yml:62-65`）**；
+vitest／vite 大版本（#467）；`otpSession` 存 email；T1-B 401 文案；E 同類掃描；登出清模組快取的機械把關；R3 P2-8／9／11／14／16／17／19／20；#395 方向 3 sandbox 實打；
+#379 launch-readiness ①–④；備份／PITR；伺服器端密碼規則；`handle_new_user` 不讀 metadata＋`national_id` 唯一；後台稽核軌跡 A1b-2/3；SEO 進階；
+`lazyWithRetry` 簡化＋表單草稿；#421；#430 輪播 P2；成功頁發卡行；邀請體驗重調；A1a、A2、L1-1、S7b；W2-12；首頁 `searchQuery` 計入 `totalFilters`；`setup-node` 逾時；
+notify／return 的 `payuniConfig()` 擲錯告警；子網域盤點＋CSP；#383、#384。
+第 5 波 PR 留下的——後台刪帳號工具（W5-12）；停權確認期間付款鈕灰掉無說明；`/auth/register` 先驗碼後查已註冊；unknown 單人工確認後的手動開通入口（W5-44③）；
+PostHog develop project（W5-68）；#514 P2-3 讀 status 後才成環的確認框競態（W6-30 本波不處理）；#508 同類掃描兩條（`getAccessToken` 出錯回 null、ResetPassword／AuthPage 的 getSession 直接導走）；
+#513 後端錯誤訊息納入用語掃描；#507 網絡搜尋 429 專屬文案；K2（#485）deploy-smoke fallback 告警待真實觸發。
+第 4 波四份稽核未修 P2（ops P0-1 殘餘、ops P2-2／3／5～14、pay P2-2～7／11～13、ref P2-4～6／8～14、auth P2-3～17／19／20）：清單在 `git show 252ebc6:docs/plans/launch-wave-5/review.md` §6.3，
+原文 `git show 3a7f506:docs/plans/launch-wave-4/audit-*.md`。R6 新增的見 `review.md` §5、§6.3。
 
 ## 6. 業主待辦
 
@@ -184,3 +204,4 @@ S6（#526）若本波上線：4a 改為「develop 最近一次部署的『確認
 | 11/09 15:10 | 業主轉來兩則 LINE 告警。① [P2] 照片清理開關不一致（purge-listing-photos run 42538019964，00:02 UTC 看門狗）：正式站 pg_cron 仍 dry-run、repo variable 已 true → 即 W6-34，Edge Secret 未生效，待業主核對 Digest。② [P1] PayUni 閘門探測失敗（deploy-smoke 排程 run 42576456933，06:59 UTC）：sandbox `sandbox-api.payuni.com.tw/api/upp` 回 403、正式 `api.payuni.com.tw/api/upp` 200；先前 7 輪排程與 11/08 晉升 journey（sandbox）皆通過。主 session 重跑失敗 job（attempt 2，07:02 UTC）→ **兩端點皆通過**，判 PayUni sandbox 暫時性拒絕，與 Uknow 程式無關、正式付款不受影響；再出現就記 friction-log 並請業主詢問 PayUni | 持續看排程；W6-34 |
 | 11/10 03:30 | **W6-4／W6-34 結案**：正式站照片清理 11/09 19:17 UTC 那輪（id 62，pg_cron）`dryRun=false`、succeeded，孤兒 0、刪除 0；前一輪（id 36）仍 true → 業主於兩輪之間補設的 Edge Secret 已生效 | 11/10 23:30 UTC 現場查詢＋開 R6（W6-35） |
 | 11/18 07:40 | **上線後現場（W4-26／W6-35，自部署 11/08 23:19 UTC 起約 9 天；排程 11/10 觸發後主 session 因 worker 重啟延到此時才跑）**：排程 reconcile 217 輪全 succeeded、heal 0 補 0 失敗；purge-photos 9 輪全 succeeded、全 dryRun=false、刪 0（無孤兒）。function_edge_logs（近 24h）200／204／304 為主、404 ×2、無 5xx；postgres_logs 近 24h ERROR 1、FATAL 0。新訂單 13（completed 9、expired 3、pending 1）、新訂閱 9、新會員 14。system_alerts 4 筆 error：① `payuni-query` 11/12 06:07（`QUERY03001`，去重後一筆）② `reconcile-pending-payments` ×3（11/16 05:07、11/16 15:07、11/17 05:07）「查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付」，單號 `202611121258381GSCF7`、`20261112224703BRI1XE`、`20261113121138HSZTIE`。判讀：自 11/12 起每張 pending 單查詢皆回 `QUERY03001`（11/12 前窗內 0 張 pending，非系統故障起點），程式註解寫明棄付單也走此路徑；後兩張單的會員已有另一筆 completed 訂單與有效訂閱（疑為重試付款後的棄單），第一張的會員無任何 completed 訂單、無訂閱。另 `20261114175042776H9S` 仍 pending（會員無 completed），約 11/18 09:50 UTC 達門檻。**需業主到 PayUni 商店後台查這 4 張單是否實付** | 業主查 PayUni；`QUERY03001` 碼義待確認（列第 7 波：查無此單應與查詢層故障分開判讀）；合 #519 → 開 R6 |
+| 11/20 | **R6 交件 #528**（P0 0、P1 1、P2 12；`launch-wave-5/` 退場）。主 session 代跑 Q1～Q5：正控從未發生（Q1＝0）、無已收付款通知卻被標 expired 的單（Q5＝0）；四張單皆已 expired、`payuni_response` 皆 null。業主裁 **W6-36～38** | 合 #528；第 7 波規劃（P1-1 結帳頁、W6-36 正控＋改判） |
