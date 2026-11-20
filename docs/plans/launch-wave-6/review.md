@@ -64,7 +64,7 @@ P0 無。
 | P2-8 | `20261116000005:20-25` | 檔頭說「批次自癒期間的清空同樣會誤報」，S1 後 Edge 已逐筆，只剩舊 wrapper（W6-30 待 drop）會觸發 | 同 P2-7，drop wrapper 時一起改 |
 | P2-9 | `supabase/README.md:109` 起〈補發漏發獎金〉第 2 步 | 「沿 `referral_edges` 往上找」第 2、3 代，沒提醒付款後換過線的情況；照做可能補給換線後的新推薦人 | 改為以 `referral_award_chain` 為準，並先確認後台該筆不是「不可判定」（§6 升級表一起做） |
 | P2-10 | `src/components/admin/MemberDetailSheet.tsx:183`、`MemberManagement.tsx:608`；`src/utils/analytics/sensitiveFields.ts:4` | 兩個後台 portal 沒有 `privateClass`、不在 `SENSITIVE_PORTALS`；同檔註解寫「components/admin 不在此列」，與新增的 ReferralAuditSheet 那筆自相矛盾。主防線 `/admin` 整段不錄（`analyticsGate.ts:8`）仍在，風險低 | 併 plan §5 已列的「MemberDetailSheet 補 SENSITIVE_PORTALS（W6-21）」，加 MemberManagement 的確認框並修註解 |
-| P2-11 | `20261113000003` 3-0 清帳本 × `20261115000001` heal（既有，第 5 波起） | 新約單 T1 付款但 notify 遺失，T3 由自癒開通：清帳本算的是 T3 當下餘額，T1～T3 之間 U 因被推薦人付款新賺的點數也一起清掉；線上即時開通則會保留。窗口是自癒延遲（通常 ≤ 1 小時，`/profile` 載入時更早） | 規格書 §6.2 沒寫這個時點語意。**需業主裁決**（§5-3）：接受並寫進規格，或清帳本改以付款時點的餘額為準 |
+| P2-11 | `20261113000003` 3-0 清帳本 × `20261115000001` heal（既有，第 5 波起） | 新約單 T1 付款但 notify 遺失，T3 由自癒開通：清帳本算的是 T3 當下餘額，T1～T3 之間 U 因被推薦人付款新賺的點數也一起清掉；線上即時開通則會保留。窗口是自癒延遲（通常 ≤ 1 小時，`/profile` 載入時更早） | 規格書 §6.2 沒寫這個時點語意。業主已裁 **W6-37**：接受，規格書 §6.2 已寫 |
 | P2-12 | `.github/workflows/deploy-smoke.yml` PayUni 閘門探測 | sandbox `sandbox-api.payuni.com.tw/api/upp` 偶發 403（11/09、11/11 run 42975735705、11/14 run 43626325532），每次推 LINE [P1]，下一輪自己綠；正式端點每次 200 | sandbox 403 單次不推 P1：連續 2 輪才推，或降為 P2 並註明「sandbox 端」；同時請業主詢問 PayUni（§5-5） |
 
 ### 1.4 被反駁推翻或降級的
@@ -175,12 +175,12 @@ LINE 通道截 60 字（S1 節第 6 條）、Management API 以真實回應驗�
 | # | 事 | 給誰 | 建議 |
 |---|---|---|---|
 | 1 | PayUni 商店後台查 4 張單是否實付：`202611121258381GSCF7`、`20261112224703BRI1XE`、`20261113121138HSZTIE`、`20261114175042776H9S` | 業主 | 必做。PayUni 已回「查無符合訂單資料」，預期都沒實付；查完把 3 筆告警標已處理 |
-| 2 | `QUERY03001` 怎麼處理 | 業主裁決 | **建議：先做正控，通過後改判「確認查無」靜默標 expired**（§3.2）。其他選項：降 warning 留在後台可見；維持現狀（每張棄單一則 LINE） |
-| 3 | P2-11 自癒延遲開通的新約，清帳本是否要扣掉付款到開通之間新賺的點數 | 業主裁決 | **建議：接受並寫進規格書 §6.2**——窗口多在一小時內、目前零樣本，改成以付款時點餘額為準要動清帳本的金流函式，風險高於收益 |
+| 2 | `QUERY03001` 怎麼處理 | 業主裁決 | **已裁 W6-36（照建議）**：第 7 波先做正控，通過後改判「確認查無」靜默標 expired；已存 `payuni_response` 的單仍寫 error |
+| 3 | P2-11 自癒延遲開通的新約，清帳本是否要扣掉付款到開通之間新賺的點數 | 業主裁決 | **已裁 W6-37（照建議）：接受**，本 PR 已寫進規格書 §6.2 |
 | 4 | #521 的 320px 三個分頁並排實看（develop 後台推薦樹） | 業主 | 手機開 develop 後台看一眼即可 |
 | 5 | PayUni sandbox 403 第三次出現 | 業主／主 session | 業主詢問 PayUni sandbox 是否有 WAF 或維護窗；主 session 照 P2-12 調整推播門檻 |
 | 6 | 第 7 波第一批 | 主 session | P1-1＋P2-2＋P2-3（同一結帳頁，Sonnet `/fix-bug`）；`QUERY03001`（Opus `/fix-bug`，依 §5-2 裁決） |
-| 7 | 核准 `production` 前的人工 4a 是否保留 | 主 session | 本 PR 已把 4a 寫進〈慣例〉（保留）。S6 的自動步驟在核准後才跑，核准前的人工確認仍是唯一事前防線，建議保留 |
+| 7 | 核准 `production` 前的人工 4a 是否保留 | 業主裁決 | **已裁 W6-38（照建議）：保留**，本 PR 已寫進〈慣例〉 |
 
 ## 6. 升級進長期文件（launch-wave-6/ 退場依據，由第 7 波 R7 執行）
 
@@ -218,8 +218,8 @@ LINE 通道截 60 字（S1 節第 6 條）、Management API 以真實回應驗�
 | W6-20、W6-22（換篇手勢數值、reduced-motion） | `docs/ui-ux-guidelines.md`（S4 已寫）——R7 核對 | UX 規則 |
 | W6-9（行政區改名以 `array_replace` 冪等轉換） | migration 檔頭即可 | 一次性 |
 | W6-4／34（`PHOTO_PURGE_LIVE` 兩處須一致） | `docs/supabase-setup-checklist.md`——R7 核對 | 營運手冊 |
-| §3.2 `QUERY03001` 新判讀（若第 7 波已修） | `supabase/README.md` 告警 severity 段 | 營運規則 |
-| P2-11 裁決結果 | 規格書 §6.2 | 獎勵規則 |
+| §3.2 `QUERY03001` 新判讀（W6-36；若第 7 波已修） | `supabase/README.md` 告警 severity 段 | 營運規則 |
+| P2-11 裁決結果（W6-37） | 規格書 §6.2（本 PR 已寫）——R7 核對 | 獎勵規則 |
 | 本報告 §4.2 摩擦 | friction-log「2026-11-17」節 | 本 PR 已寫 |
 | plan §5 候選＋6.3 補遺 | 第 7 波 plan | — |
 | 其餘（§1 時程、§2 工作分解、§7 名冊、§8 進度、dispatch-prompts.md） | 隨目錄刪除 | 一次性施工紀錄 |

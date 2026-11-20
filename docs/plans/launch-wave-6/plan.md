@@ -72,6 +72,9 @@
 | W6-33 | 晉升時點 | **業主先在 develop 預覽手機實測 S4（#523 三項），回報後才開晉升 PR**（被推翻：現在就開；等 11/22）（業主 2026-11-09） |
 | W6-34 | 照片清理仍 dry-run | **業主尚未設，馬上補設**正式站 Edge Secret `PHOTO_PURGE_LIVE=true`；主 session 11/09 19:25 UTC 複查（業主 2026-11-09） |
 | W6-35 | R6 審查 session 何時開 | **上線滿 48 小時後再開**（正式站部署 11/08 23:19 UTC → 11/10 23:30 UTC 主 session 先跑現場查詢寫 §8，再開 R6）（被推翻：現在就開）（業主 2026-11-09） |
+| W6-36 | R6：`QUERY03001`（PayUni 官方「查無符合訂單資料」）怎麼判 | **第 7 波先做每日正控**（查一張正式站 completed 單須 `SUCCESS`＋`TradeStatus=1`），正控通過後 `QUERY03001` 改判「確認查無」、滿 4 天靜默標 expired；已存 `payuni_response` 的單回 03001 仍寫 error（被推翻：降成後台提示不推 LINE；維持現狀）（業主 2026-11-20） |
+| W6-37 | R6 P2-11：新約靠自癒延遲開通時，清帳本用開通當下的餘額 | **接受**，寫進規格書 §6.2（被推翻：第 7 波修）（業主 2026-11-20） |
+| W6-38 | 核准 `production` 前的人工 4a | **保留**（S6 的自動步驟在核准後才跑，是第二道防線）（被推翻：只靠自動檢查）（業主 2026-11-20） |
 
 ## 1. 時程
 
@@ -201,3 +204,4 @@ PostHog develop project（W5-68）；#514 P2-3 讀 status 後才成環的確認�
 | 11/09 15:10 | 業主轉來兩則 LINE 告警。① [P2] 照片清理開關不一致（purge-listing-photos run 42538019964，00:02 UTC 看門狗）：正式站 pg_cron 仍 dry-run、repo variable 已 true → 即 W6-34，Edge Secret 未生效，待業主核對 Digest。② [P1] PayUni 閘門探測失敗（deploy-smoke 排程 run 42576456933，06:59 UTC）：sandbox `sandbox-api.payuni.com.tw/api/upp` 回 403、正式 `api.payuni.com.tw/api/upp` 200；先前 7 輪排程與 11/08 晉升 journey（sandbox）皆通過。主 session 重跑失敗 job（attempt 2，07:02 UTC）→ **兩端點皆通過**，判 PayUni sandbox 暫時性拒絕，與 Uknow 程式無關、正式付款不受影響；再出現就記 friction-log 並請業主詢問 PayUni | 持續看排程；W6-34 |
 | 11/10 03:30 | **W6-4／W6-34 結案**：正式站照片清理 11/09 19:17 UTC 那輪（id 62，pg_cron）`dryRun=false`、succeeded，孤兒 0、刪除 0；前一輪（id 36）仍 true → 業主於兩輪之間補設的 Edge Secret 已生效 | 11/10 23:30 UTC 現場查詢＋開 R6（W6-35） |
 | 11/18 07:40 | **上線後現場（W4-26／W6-35，自部署 11/08 23:19 UTC 起約 9 天；排程 11/10 觸發後主 session 因 worker 重啟延到此時才跑）**：排程 reconcile 217 輪全 succeeded、heal 0 補 0 失敗；purge-photos 9 輪全 succeeded、全 dryRun=false、刪 0（無孤兒）。function_edge_logs（近 24h）200／204／304 為主、404 ×2、無 5xx；postgres_logs 近 24h ERROR 1、FATAL 0。新訂單 13（completed 9、expired 3、pending 1）、新訂閱 9、新會員 14。system_alerts 4 筆 error：① `payuni-query` 11/12 06:07（`QUERY03001`，去重後一筆）② `reconcile-pending-payments` ×3（11/16 05:07、11/16 15:07、11/17 05:07）「查詢層失敗下訂單已達天數門檻、將標 expired——請人工向 PayUni 確認是否實付」，單號 `202611121258381GSCF7`、`20261112224703BRI1XE`、`20261113121138HSZTIE`。判讀：自 11/12 起每張 pending 單查詢皆回 `QUERY03001`（11/12 前窗內 0 張 pending，非系統故障起點），程式註解寫明棄付單也走此路徑；後兩張單的會員已有另一筆 completed 訂單與有效訂閱（疑為重試付款後的棄單），第一張的會員無任何 completed 訂單、無訂閱。另 `20261114175042776H9S` 仍 pending（會員無 completed），約 11/18 09:50 UTC 達門檻。**需業主到 PayUni 商店後台查這 4 張單是否實付** | 業主查 PayUni；`QUERY03001` 碼義待確認（列第 7 波：查無此單應與查詢層故障分開判讀）；合 #519 → 開 R6 |
+| 11/20 | **R6 交件 #528**（P0 0、P1 1、P2 12；`launch-wave-5/` 退場）。主 session 代跑 Q1～Q5：正控從未發生（Q1＝0）、無已收付款通知卻被標 expired 的單（Q5＝0）；四張單皆已 expired、`payuni_response` 皆 null。業主裁 **W6-36～38** | 合 #528；第 7 波規劃（P1-1 結帳頁、W6-36 正控＋改判） |
