@@ -140,10 +140,18 @@ function_edge_logs 無 5xx；新訂單 13（completed 9、expired 3、pending 1�
 4. 順手：查詢請求照官方建議加 `User-Agent: payuni`；README 碼表段（本 PR 已補出處）改寫成新行為。
 5. **現有 4 張單**：業主到 PayUni 後台查完（§5-1），沒有實付就把那 3 筆 error 告警標已處理；`20261114175042776H9S` 同樣處理。
 
-### 3.3 待主 session 代查（已 send_message，結果回來後補在本節）
+### 3.3 正式站唯讀查詢（主 session 11/20 代跑）
 
-Q1 對帳是否曾 `resolved > 0`（正控有無歷史樣本）；Q2 四張單的 `payuni_response`、`reconcile_unknown_at`；Q3 同會員其他訂單；
-Q4 部署後全部 `payuni-query`／`reconcile-pending-payments` 告警；Q5 部署後 expired 單有沒有 `payuni_response`（有就代表 webhook 到過卻被標 expired）。
+| # | 查詢 | 結果 | 判讀 |
+|---|---|---|---|
+| Q1 | 對帳帳本曾否有一輪 `checked > queryFailures`（問到過任何一張單） | **0 列**：11/12 前窗內 0 張 pending，之後每次查詢都回非 SUCCESS | 正式站查詢路徑**沒有任何正控樣本**，無法排除「連已付款單也查不到」——§3.2 第 1 步（正控）是第 2 步的前置條件，順序不能倒 |
+| Q2 | 四張單現況 | 四張都已 expired（`20261114175042776H9S` 已過門檻）；`payuni_response` 全 null、`reconcile_unknown_at` 全 null、`renewal_mode` 全 null | 從未收到 notify／return，與「沒在 PayUni 頁送出付款」一致 |
+| Q3 | 同會員其他訂單 | 會員甲：`BRI1XE`（11/12 expired）、`HSZTIE`（11/13 04:11:38 expired）、`HAXG72`（11/13 04:12:22 completed）——44 秒後重試成功，前兩張是棄單。`GSCF7`、`776H9S` 的會員各只有那一張 | 會員甲確定是棄單；另兩位要看業主在 PayUni 後台的結果（§5-1） |
+| Q4 | 部署後告警 | `payuni-query` 1 筆（11/12 06:07，`QUERY03001`、message 空）＋`reconcile-pending-payments` 3 筆（11/16 05:07、15:07、11/17 05:07），皆未 resolved；`776H9S` 那筆預期也已寫入 | 與 §3.1 的去重行為一致（查詢層一組一筆、expired 前每張一筆） |
+| Q5 | 11/01 後 expired 單有沒有 `payuni_response` | 4 張全部 null | **沒有「已收到付款通知卻被標 expired」的單**——目前沒有真實損失 |
+
+結論：沒有錢的損失（Q5＝0），但正控從未發生（Q1＝0）。§3.2 維持「先正控、後改判」。
+業主在 PayUni 後台核對 `GSCF7`、`776H9S` 兩位只有單張訂單的會員最要緊（§5-1）。
 
 ## 4. 流程
 
