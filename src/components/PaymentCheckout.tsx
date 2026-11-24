@@ -70,7 +70,6 @@ export function PaymentCheckout() {
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
-  const [activeOrder, setActiveOrder] = useState<any>(null); // ✅ 新增：活動訂單狀態
   const [isButtonLocked, setIsButtonLocked] = useState(false); // ✅ 新增：按鈕鎖定狀態
   const [lockCountdown, setLockCountdown] = useState(0); // ✅ 新增：倒計時秒數
   // ✅ 過期會員續費雙模式（見 migration 0008）：extend=續約接續原效期；
@@ -107,7 +106,7 @@ export function PaymentCheckout() {
   const { setUser, ingestProfile } = useContext(UserContext);
   const funnelLogout = useFunnelLogout();
   const navigate = useNavigate();
-  const { showToast, showSuccess } = useNotification();
+  const { showToast } = useNotification();
   const supabase = createClient();
   // renewal 契約（AC-2/A14/A16/AC-17）的單一來源。本頁是獨立路由，
   // 不與 MemberDashboard/RewardDashboard 同屏，單例限制不成立。
@@ -121,13 +120,6 @@ export function PaymentCheckout() {
   } = useSubscription();
   const renewal = subscriptionData?.renewal ?? null;
   const hasPendingWithdrawal = subscriptionData?.hasPendingWithdrawal ?? false;
-
-  console.log('PaymentCheckout: Component state -', {
-    isLoading,
-    isCheckingUser,
-    hasPendingUser: !!pendingUser,
-    hasActiveOrder: !!activeOrder, // ✅ 新增
-  });
 
   // ✅ 新增：定期檢查用戶狀態（每 5 秒）
   useEffect(() => {
@@ -526,13 +518,8 @@ export function PaymentCheckout() {
       if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
-        // 後端對自己的碼等回專屬文案（比照 CompleteProfile），其餘維持預設說明（R6 P2-2）。
-        const msg = extractApiErrorMessage(result, '');
-        setNewCodeInvalidMessage(
-          msg === REFERRAL_CODE_SELF_MESSAGE || msg === REFERRAL_CODE_NOT_APPLICABLE_MESSAGE
-            ? msg
-            : null,
-        );
+        // 200 的 valid:false 只有三種文案（空碼、查無、自己的碼），都可直接顯示（R6 P2-2）。
+        setNewCodeInvalidMessage(extractApiErrorMessage(result, '') || null);
         return 'invalid';
       }
       // 429、401、5xx：暫時查不到，不是碼無效。
