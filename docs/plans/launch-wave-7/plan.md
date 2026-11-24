@@ -49,6 +49,8 @@
 | W7-10 | S4 Q3：3a-bis（首購套用預設推薦人）失敗只 warning | **一起升 error**（範圍外追加，PR 內文寫明）（被推翻：列第 8 波）（業主 2026-11-24） |
 | W7-11 | S3 規劃 Q1、Q2 | **詳情頁照片不加高度上限**（以 841×701 探針斷言名稱首屏可見）；**摺疊展開首頁維持 2 欄**；≥768 觸控大螢幕無 BottomNav 接受為既有行為（被推翻：照片加上限；改 3 欄）（業主 2026-11-24） |
 | W7-12 | 前端總 JS raw 只剩約 11 bytes 餘裕（#531 刪死碼後 1983.04／1983 kB） | **撞到時逐支授權**：PR 附實測、增量在 lazy chunk、entry 不變，主 session 審過再請業主核准（比照 W6-25／32）（被推翻：預先放寬 +10 kB）（業主 2026-11-24） |
+| W7-13 | #531 獨立審查（P0 0、P1 1、P2 3） | **本 PR 修**：P1-1′ 掛載的 API 分支（無 localStorage pendingUser）導 `/dashboard` 前也寫 context＋經守衛的紅綠測試，輪詢與 CompleteProfile 分支補測試；P2-a 丟棄過期的 validate 回應；P2-c 規格書 §6.2 措辭；P2-b 紅燈期望值寫錯只在 PR 內文註明 |
+| W7-14 | #532 獨立審查（P0 0、P1 0、P2 3＋nit） | **本 PR 修**：P2-1 正控挑單加「付款完成至少 1 小時」下限；P2-2 記樣本付款時間、超過 14 天寫 warning（不推 LINE、不影響 fresh），直接改未合併的 `20261124000001`；P2-3 deploy-smoke 改成「非 sandbox 一律算正式端點」（防 fail-open）；README 告警字串對齊 |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -111,8 +113,8 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 | 獨立審查中（`session_01MQovbCRRA98cKaKeMZ6AMJ`） |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control` | #532 | 獨立審查中（`session_01MQovbDkHVKo7qK3USRppyt`） |
+| S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 | 審查 P1 1 退回修（W7-13；審查員 `session_01MQovbCRRA98cKaKeMZ6AMJ`） |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control` | #532 | 審查 P2 退回修（W7-14；審查員 `session_01MQovbDkHVKo7qK3USRppyt`） |
 | S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃交件，等業主裁決 |
 | S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃交件，等業主裁決 |
 
@@ -124,3 +126,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/24 22:32 | 開 #530（本檔，draft，已訂閱）。開 S1、S3（Sonnet）與 S2、S4（Opus），tag `uknow-wave-7`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S4、S3 規劃交業主審 |
 | 11/24 23:00 | 回報：S3 規劃交件（P0 0、P1 6；Q1 照片高度上限、Q2 摺疊展開首頁欄數待業主）；S1 交 **#531**（CI 綠、ready；總 JS raw 1983.04／1983 kB 餘裕約 11 bytes，請主 session 定預算）；S4 規劃交件（Q1～Q7 待業主，Q4 唯讀 SQL 待主 session 代跑）；S2 交 **#532**（CI 綠、ready；migration `20261124000001`、新表 `payuni_query_controls`）。業主提報 P0 疑慮（超過 50 人查不到）→ 主 session 排查、業主裁 **W7-8** 結案。正式站：auth.users 47、profiles 47、listings 16、referral_edges 32、單人最多直接推薦 10 | 派 #531、#532 獨立審查；代跑 S4 Q4；S3、S4 裁決交業主 |
 | 11/25 04:45 | 開 #531、#532 獨立 Opus 審查（雲端 session，見 §7）。代跑 S4 Q4（兩環境）：wrapper 無 cron／函式呼叫者、pg_depend 實為 0（正式站 2 列是 OID 撞號的 pg_toast 索引）、side-effect 與開通失敗告警 0 列；正式站 missing_edge 3＝有推薦人但從未付款（edge 首次付款才寫，預期）；gate ① 以部署紀錄核（#527 含 #524）。業主裁 **W7-9～12**，已轉 S4、S3 | 等審查回報；業主到 S4、S3 親打 `/tdd-implement` |
+| 11/25 04:50 | 獨立審查回報。**#532**：P0 0、P1 0——不會假成功（樣本單號＝建單送出的 MerTradeNo、嚴格同號 TradeStatus=1、無樣本不算成功）、正控無效時逐項同現行、migration 權限與新舊組合皆核實；P2 3＋nit → **W7-14**。**#531**：P0 0、**P1 1**（掛載 API 分支沒寫 context，同 R6 P1-1 迴圈；主 session 讀碼核實）、P2 3 → **W7-13**。兩支皆退回本 PR 修 | S1、S2 修 → CI 綠 → 主 session 核 delta → 合併 |
