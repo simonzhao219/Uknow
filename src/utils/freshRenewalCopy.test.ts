@@ -88,7 +88,8 @@ describe('freshCodeHint', () => {
 describe('freshCodePlaceholder', () => {
   it('只有留空會維持原推薦人時才提示目前的碼', () => {
     expect(freshCodePlaceholder('8048901', false, false)).toBe('目前：8048901');
-    expect(freshCodePlaceholder('8048901', false, true)).toBe('輸入推薦碼');
+    // keeps_same 與 keeps 不可區分（R6 P2-3）：兩態都提示目前的碼
+    expect(freshCodePlaceholder('8048901', false, true)).toBe('目前：8048901');
     expect(freshCodePlaceholder('8048901', true, false)).toBe('輸入推薦碼');
     expect(freshCodePlaceholder(null, false, false)).toBe('輸入推薦碼');
   });
@@ -107,7 +108,10 @@ describe('blankFreshOutcome', () => {
 });
 
 describe('新約留空且預設推薦人即現任', () => {
-  it('確認框說推薦人維持不變，不出現姓名或碼', () => {
+  it('確認框說推薦人維持不變，不出現姓名或碼，且與預設不可用時同一句', () => {
+    expect(freshReferrerSentence({ ...base, defaultIsCurrent: true })).toBe(
+      freshReferrerSentence({ ...base, defaultAvailable: false }),
+    );
     expect(freshReferrerSentence({ ...base, defaultIsCurrent: true })).toBe('您的推薦人維持不變。');
   });
 
@@ -115,8 +119,9 @@ describe('新約留空且預設推薦人即現任', () => {
     expect(freshCodeHint(true, true)).toBe(freshCodeHint(false));
   });
 
-  it('placeholder 不提示目前的碼', () => {
-    expect(freshCodePlaceholder('8048901', false, true, true)).toBe('輸入推薦碼');
+  it('placeholder 與預設不可用時相同，自動綁定者仍不提示碼', () => {
+    expect(freshCodePlaceholder('8048901', false, true, true)).toBe('目前：8048901');
+    expect(freshCodePlaceholder('8048901', true, true, true)).toBe('輸入推薦碼');
   });
 
   it('填了碼時照填碼的規則，不受預設即現任影響', () => {
