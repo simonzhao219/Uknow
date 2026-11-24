@@ -39,27 +39,37 @@
   | Pixel Fold 展開 | 841×701 | 同上 |
   | 平板直 | 768×1024／820×1180 | 詳情雙欄、首頁 2 欄 |
   | 平板橫 | 1024×768／1180×820 | 雙欄、首頁 3 欄（不變） |
+  | 邊界 | 767×1024 | 詳情單欄、首頁只顯示手機版（`md:hidden` 那套） |
+  | 邊界 | 768×1024 | 詳情雙欄、首頁只顯示桌面版 2 欄 |
+  | 邊界 | 1023×768 | 詳情雙欄、首頁 2 欄 |
+  | 手機橫放 | 844×390 | 落在 md 以上 → 詳情雙欄、首頁桌面版（預期且接受；探針只驗不橫向溢出） |
 
-- 詳情頁：`lg:grid-cols-2` → `md:grid-cols-2`（內容與骨架同步）。768px 時容器 `max-w-4xl` 扣 padding，每欄約 360px，照片正方形約 360px，可接受。另加照片高度上限防禦（`max-h` 搭配寬度）列為 Q1，預設**不加**。
-- 首頁卡片：`ListingLink` 加 `block h-full`（桌面卡片傳 className）；`<Card>` 加 `h-full`；描述區 `min-h` 固定兩行（`line-clamp-2` ＋ `min-h-[2.5rem]`），讓同列內部也對齊。
-- 空／錯／載入態：骨架與內容同步變更，既有 `test_public_skeleton_layout.py` 守「骨架與載入後同形」。
+- 詳情頁：`lg:grid-cols-2` → `md:grid-cols-2`（內容與骨架同步）。768px 時容器 `max-w-4xl` 扣 padding，每欄約 360px，照片正方形約 360px，可接受。**不加照片高度上限**（業主 W7-11 裁決）；改以 841×701 探針斷言名稱／類別／地區底邊 ≤ viewport 高度。≥768 起 `BottomNav`（`md:hidden`）消失、改桌面導覽，業主接受（W7-11，既有行為）。
+- 首頁卡片（沿用手機版 `MobileServiceProviderCard` 的 `block h-full`＋`Card h-full` 模式）：桌面呼叫處傳 `className="block h-full"`（`ListingLink` 本身不動）；`<Card>` 加 `h-full`；`CardContent` 改 `flex flex-col h-full`、地區列加 `mt-auto`——底部對齊靠結構，不靠行高常數（不用 `min-h-[2.5rem]`）。描述為空時仍成立。
+- **先量測現況**：grid item 預設 stretch，外框現況可能已等高、真正不齊的是內部地區列。階段 1 先用探針量現況（卡片底邊＋地區列 `top`），紅燈以量測到的差異為準；若外框已等高，只修內部對齊並記入 progress.md。
+- 空／錯／載入態：骨架與內容同步變更，既有 `test_public_skeleton_layout.py` 守「骨架與載入後同形」。**該探針現況寫死 `className.includes('lg:grid-cols-2')`（≈43 行；75、172 行訊息亦同）且只參數化 `[375, 1280]`**：階段 2 同 commit 把選擇器改為穩定錨點（`data-browse-content`／`md:grid-cols-2`）、寬度擴為 `[375, 767, 768, 884, 1280]`。
+- `PhotoCarousel` 箭頭為 `lg:flex`（≈99 行）：768–1023 雙欄時只有滑動與圓點，維持 lg 為有意（觸控裝置為主），寫進 §7 新規則；階段 2 先 grep `ServiceProviderDetail` 與子元件的 `lg:` 用法盤點。
 - `docs/ui-ux-guidelines.md` §7 補：「詳情頁與首頁雙欄起點＝md（768）；摺疊展開態與平板直立依此落在雙欄；新增雙欄版面一律以 md 為起點，除非已證明 <1024 放不下」。
 
 ## 5. 階段切分
 
 | # | 階段 | 測試落點 | 驗證標準 |
 |---|---|---|---|
-| 1 | 首頁卡片等高：`ListingLink`／`Card` 撐滿、描述區固定高 | vitest jsdom 斷言 class（`h-full`、`block`）＋ e2e 版面探針：1280×900 與 884×1104 同列兩卡（描述 1 行 vs 2 行）`getBoundingClientRect` 高度與底邊差 ≤2px | 紅：現況高度不同；綠：等高 |
-| 2 | 詳情雙欄起點改 md（內容＋骨架） | e2e 版面探針：768×1024、884×1104 下照片欄與資訊欄 `top` 相同（並排）、首屏可見名稱；390 與 1280 不變；`test_public_skeleton_layout.py` 在 884 寬骨架／內容同形 | 紅：768/884 單欄；綠：雙欄 |
-| 3 | 回歸與文件：換篇手勢／輪播既有測試全綠、bundle 預算比對、`ui-ux-guidelines.md` §7 補斷點規則 | `npm run check`、`check:full`、`check-spec-drift.py` | 全綠；entry gzip 增量 0 |
+| 1 | 首頁卡片等高：桌面呼叫處 `block h-full`、`Card h-full`、`CardContent flex-col`＋地區列 `mt-auto` | e2e 版面探針（紅燈證據只算 e2e；vitest 僅輔助斷言桌面 `<a>`／`Card` 的 class）：1280×900、884×1104 同列兩卡（描述 1 行／2 行／無描述）量卡片底邊與地區列 `top` 差 ≤2px；先確認 `build_public_listing` 支援不同描述長度 | 紅：以現況量測到的差異為準；綠：差 ≤2px |
+| 2 | 詳情雙欄起點改 md（內容＋骨架）＋改寫 `test_public_skeleton_layout.py` 探針（選擇器、寬度矩陣） | e2e 版面探針：768×1024、884×1104、1023×768 照片欄與資訊欄 `top` 相同；841×701、768×1024、884×1104 名稱／類別／地區 `bottom ≤ viewport 高度`；767 單欄、390 與 1280 不變；首頁 767／768 只有一套可見；長名稱（10 全形字）＋長 URL 聯絡夾具於 768、841 量 `scrollWidth`（`overflow_probe`）；骨架與內容同形於 884 | 紅：768/884 單欄；綠：雙欄且首屏可見 |
+| 3 | 回歸與文件：換篇手勢／輪播既有測試全綠、bundle 預算比對、`ui-ux-guidelines.md` §7 補斷點規則（md 起雙欄、導覽仍依 md、箭頭維持 lg、不追溯既有頁面） | `npm run check`、`check:full`、`check-spec-drift.py` | 全綠；**不超預算**（W7-12：總 JS raw 僅剩約 11 B 餘裕、entry gzip 316.2／316.5；撞限時不自行放寬，附實測回報主 session 授權） |
 
 e2e 探針比照 `layout_probe.py`／`test_public_skeleton_layout.py`（全 mock、CI 字型、容差 2px、中文全形文字）；視窗用 Playwright `set_viewport_size`，不依賴真機。
 
-## 6. 開放問題
+## 6. 開放問題（已由業主裁決）
 
-- [ ] Q1 詳情頁照片是否加高度上限（如 `max-h-[70vh]`）？建議**不加**：雙欄後單欄只剩 <768，照片已 ≤768 寬；加上限會讓輪播 `aspect-square` 與圓點列對不齊。
-- [ ] Q2 摺疊展開態（≈840–884）首頁要 3 欄嗎？建議**維持 2 欄**：3 欄時每卡 ≈260px，描述 2 行與徽章會擠；需業主以截圖／實機認可。
-- [ ] Q3 iPhone 摺疊機尚無公開 CSS 寬，是否以 Pixel Fold／Z Fold 為準？建議是。
+- [x] Q1 詳情頁照片不加高度上限（業主 2026-11-24 互動選項，主 session 轉達 W7-11）。
+- [x] Q2 摺疊展開首頁維持 2 欄（W7-11）。依據：884px 時 2 欄每卡約 400px、3 欄約 260px，名稱列同時放性別與類別徽章（`max-w-[45%]`）會擠。
+- [x] Q3 以 Pixel Fold／Z Fold 為準（iPhone 摺疊機尚無公開 CSS 寬）。
+
+## 6b. 範圍補充
+
+- 其他頁面的 `lg:grid-cols-2` 不在本次範圍；§7 新規則是向前規定，不追溯既有頁面。
 
 ## 7. 風險與回滾
 
