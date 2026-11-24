@@ -521,6 +521,45 @@ describe('送出時註冊已完成（403）', () => {
   });
 });
 
+describe('非編輯模式載入時已完成註冊', () => {
+  it('導 /dashboard 前先 refreshUser，回來之前不導頁', async () => {
+    // 守衛讀的是 UserContext，不是剛抓到的 profile（R6 P1-1 同類）。
+    let resolveRefresh: (value: unknown) => void = () => {};
+    refreshUser.mockImplementation(() => new Promise((resolve) => (resolveRefresh = resolve)));
+    getSession.mockResolvedValue({ data: { session: { access_token: 'token' } } });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              registrationStep: 3,
+              name: '王小明',
+              phone: '0933333333',
+              birthDate: '2000-01-01',
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={['/auth/complete-profile']}>
+        <Routes>
+          <Route path="/auth/complete-profile" element={<CompleteProfile />} />
+          <Route path="/dashboard" element={<p>會員中心頁</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(refreshUser).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(screen.queryByText('會員中心頁')).toBeNull();
+
+    resolveRefresh({ registrationStep: 3 });
+    expect(await screen.findByText('會員中心頁', {}, { timeout: 2500 })).toBeTruthy();
+  });
+});
+
 describe('編輯模式載入時已是 step 3', () => {
   it('立即帶回會員中心並顯示同一則資料鎖定說明', async () => {
     // 先 refreshUser 再導頁：會員中心的守衛讀的是 UserContext，拿到舊會籍會

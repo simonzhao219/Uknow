@@ -1474,6 +1474,75 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
     expect(screen.queryByText('推薦碼不存在或已失效')).toBeNull();
   });
 
+  it('沒有本機快照、/profile 回已生效時，導 /dashboard 前先寫進 context，不被守衛彈回', async () => {
+    stubBackend({ profile: { ...RENEWER_PROFILE, accountStatus: 'active' } });
+    renderWithGuard({ ...RENEWER_PROFILE });
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('會員中心頁')).toBeTruthy();
+  });
+
+  it('輪詢發現會籍已生效時，導 /dashboard 前先寫進 context', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // 第一次（掛載確認）仍是過期，第二次（5 秒輪詢）才是已生效。
+      stubBackend({
+        profile: [RENEWER_PROFILE, { ...RENEWER_PROFILE, accountStatus: 'active' }],
+      });
+      seedPendingUser({ ...RENEWER_PROFILE });
+      renderWithGuard({ ...RENEWER_PROFILE });
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(7000);
+      expect(await screen.findByText('會員中心頁')).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(screen.queryByText('會員中心頁')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('驗證在飛時改碼，晚到的舊回應不得蓋掉新碼的狀態，離開欄位仍會重驗', async () => {
+    let releaseFirst: (r: Response) => void = () => {};
+    let validateCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (/\/profile(\?|$)/.test(String(url))) {
+          return new Response(JSON.stringify(RENEWER_PROFILE), { status: 200 });
+        }
+        if (String(url).includes('/referrals/validate/')) {
+          validateCalls += 1;
+          if (validateCalls === 1) return new Promise<Response>((r) => (releaseFirst = r));
+          return new Response(JSON.stringify({ valid: true, referrer: { userName: '新碼會員' } }), {
+            status: 200,
+          });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048901' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(validateCalls).toBe(1));
+    fireEvent.change(input, { target: { value: '8048777' } });
+    releaseFirst(
+      new Response(JSON.stringify({ valid: false, error: { message: '不能使用自己的推薦碼' } }), {
+        status: 200,
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText('不能使用自己的推薦碼')).toBeNull();
+    fireEvent.blur(input);
+    expect(await screen.findByTestId('new-referrer-name')).toBeTruthy();
+    expect(validateCalls).toBe(2);
+    expect(input.getAttribute('aria-invalid')).toBeNull();
+  });
+
   it('REFERRAL_CYCLE 標記後離開碼欄位不重驗，環的原因留在欄位上', async () => {
     stubBackend({
       profile: RENEWER_PROFILE,
