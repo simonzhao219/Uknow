@@ -190,3 +190,40 @@ Deno.test('queryPayUniTradeStatus：單筆缺 MerTradeNo 或數字型 MerTradeNo
   const padded = await query({ MerTradeNo: ' P13-TRADE ', TradeStatus: '1' });
   assertEquals(!padded.stillProcessing && padded.data.Status, 'SUCCESS');
 });
+
+Deno.test('queryPayUniTradeStatus：查詢請求帶 User-Agent: payuni（PayUni 官方建議）', async () => {
+  const original = globalThis.fetch;
+  let ua: string | null = null;
+  globalThis.fetch = (_input: string | URL | Request, init?: RequestInit) => {
+    ua = new Headers(init?.headers).get('User-Agent');
+    return Promise.resolve(
+      new Response(JSON.stringify({ Status: 'QUERY03001', Message: '' }), {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+  };
+  try {
+    await queryPayUniTradeStatus('UA-CHECK');
+  } finally {
+    globalThis.fetch = original;
+  }
+  assertEquals(ua, 'payuni');
+});
+
+Deno.test('payUniQueryRaw：回原始 Status 與解開的 EncryptInfo（正控用，不經對帳分類）', async () => {
+  const encrypted = await encryptPayUni(
+    { MerTradeNo: 'RAW-1', TradeStatus: '1' },
+    KEY,
+    IV,
+  );
+  const { payUniQueryRaw } = await import('./index.ts');
+  const out = await withFetch(
+    { Status: 'SUCCESS', EncryptInfo: encrypted },
+    () => payUniQueryRaw('RAW-1'),
+  );
+  assertEquals(out.raw.Status, 'SUCCESS');
+  assertEquals(out.decrypted?.MerTradeNo, 'RAW-1');
+  assertEquals(out.decrypted?.TradeStatus, '1');
+  const failed = await withFetch({ Status: 'QUERY03001' }, () => payUniQueryRaw('RAW-2'));
+  assertEquals(failed.decrypted, null);
+});

@@ -44,6 +44,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `system_alerts` | 背景失敗告警（error 級推 LINE，見下方〈告警 severity〉） | N |
 | `rate_limits` | 端點限流計數（pg_cron 每小時清掉超過 2 天的列） | N |
 | `scheduled_job_runs` | 排程端點（對帳、刊登照片清理）的執行帳本兼租約；GitHub 看門狗與準時度量測都讀它（見下方〈排程〉） | N |
+| `payuni_query_controls` | PayUni 交易查詢正控紀錄（約每日 1 列）；最近一次 success 且 36 小時內，對帳才把 `QUERY03001` 判棄單（見〈告警 severity〉） | N |
 
 ## 衍生 View / 函數（即時計算）
 
@@ -93,7 +94,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 **告警 severity**：`system_alerts` 分 info／warning／error，**只有 error 會推 LINE**（`reconcile-payments.yml` 的看門狗
 每小時呼叫 `/internal/system-alerts/recent` 撈 error），warning 只在後台「系統告警」頁看得到。
-- **error**：錢或會籍需要人確認的——已付款但收斂失敗、找不到訂單、金額不符、查詢層失敗下將標 expired、notify／return
+- **error**：錢或會籍需要人確認的——已付款但收斂失敗、找不到訂單、金額不符、查詢層失敗下將標 expired、PayUni 查詢正控失敗、notify／return
   驗章失敗、SQL 側 `repair_*` 失敗、Email 邀請寄送失敗，以及 PayUni 拒絕中「每個人都付不了」的兩種：商店級
   （`payuni-merchant`：`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`，碼表在 `payuni-rejection.ts` 檔頭）與
   一小時內 ≥3 位不同使用者連續失敗（`payuni-failure-burst`）。
@@ -103,7 +104,25 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
   碼表出處是 PayUni 官方「API／交易查詢／單筆交易查詢 Ver 2.0」（TradeStatus）與「錯誤代碼／交易查詢」（查詢層 Status），2026-11 查證：
   TradeStatus 0／9／4＝未付款（建單滿 4 天標 expired）、1＝已付款、2／3＝失敗／取消、8 與碼表外＝unknown；`DataSource=B` 一律本輪不下結論，
   持續超過 4 天才轉 unknown。查詢層非 SUCCESS（`QUERY01xxx` 基礎參數、`QUERY02xxx` 解密參數、`QUERY03001`＝查無符合訂單資料、`QUERY04xxx` 異常）
-  現行一律當「查詢層失敗」：`payuni-query` 按 Status＋Message 去重一筆、滿 4 天標 expired 前另寫 `expired_query_failed`（error）。
+  預設當「查詢層失敗」：`payuni-query` 按 Status＋Message 去重一筆、滿 4 天標 expired 前另寫 `expired_query_failed`（error）。
+  **`QUERY03001` 的例外（W6-36、W7-2）**：只有「最近一次正控是 success、且 `checked_at` 在 36 小時內（含）」時，判「確認查無」＝棄單——
+  與 TradeStatus 0／9／4 同路徑：不寫 `payuni-query`、滿 4 天直接 expired、不寫 `expired_query_failed`，帳本 summary 另計 `notFound`（不計 `queryFailures`）。
+  正控最近一次是 failed／no_sample、超過 36 小時、或紀錄讀不到 → 完全照上一句的預設行為。護欄：已存 `payuni_response`（notify／return 到過）的單
+  回 03001 → 不改判、另按單號寫 `not_found_with_response`（error）；標過 `reconcile_unknown_at` 的單回 03001 → 不改判。其他 `QUERY0xxxx` 一律照預設。
+- **PayUni 查詢正控**（`payuni-positive-control.ts`、表 `payuni_query_controls`）：併在每小時的 reconcile 端點，最近一次 success 未滿 23 小時
+  就不跑，否則（無紀錄、失敗、無樣本、已滿 23 小時）本輪跑一次——成功約每天一次，失敗每小時重試。挑本環境最近一張 `completed`、
+  `payuni_response->>Status = 'SUCCESS'`、`completed_at` 早於 1 小時前的單（剛付款的單 PayUni 可能還沒定案；develop 挑的是 sandbox 單；
+  沒有就記 `no_sample`，不算成功），斷言查詢回 `Status=SUCCESS`
+  且**同號**交易 `TradeStatus=1`（比對帳嚴格：不接受單筆缺 MerTradeNo、DataSource=B）。結果每次一列（時間、單號、outcome、reason），帳本
+  summary 帶 `positiveControl`（ran／outcome／fresh／error／sampleCompletedAt）。失敗寫 `payuni-positive-control`／`control_failed`（error，去重到標處理）；
+  讀寫紀錄失敗只寫 warning（`control_read_failed`／`control_record_failed`），本輪一律不改判。樣本的付款完成時間記在
+  `sample_completed_at`（summary 的 `positiveControl.sampleCompletedAt`）；超過 14 天寫 warning `sample_stale`（不影響改判）——
+  一直挑不到新樣本，代表新單可能都卡在 pending（例如送出的 MerTradeNo 與存的 `transaction_id` 不一致）。
+  **收到「【PayUni查詢正控失敗・請開Claude查查詢層】」時**：開 Claude Code session，看告警 context 的 `failReason`——`query_status:QUERY01/02xxx`＝商店代號／金鑰／
+  加解密或單號格式（查 Edge Secrets 的 `PAYUNI_*` 與 `PAYUNI_SANDBOX`、最近改過的建單／查詢程式）；`query_status:QUERY03001`＝已付款的單查不到，
+  正是 03001 改判的前提失效，**先查單號格式**（`payment_orders.transaction_id` 與 PayUni 後台的商店訂單編號是否一致）；`trade_status:*`／
+  `no_matching_trade`＝PayUni 回了別的狀態或別張單；`query_threw`＝HTTP／網路。修好後下一輪自動重試，成功了再把告警標已處理。
+  確認第一個成功樣本：`select checked_at, outcome, trade_no, reason from payuni_query_controls order by checked_at desc limit 5;`
 - **持卡人級拒絕**（帶 `ResCode` 的 `CREDIT*`）單筆不告警：使用者自己看得到、可以重試。
 - **warning**：對帳的單筆例外（標 expired 失敗、單筆查詢例外）——下一輪排程會自行重試，沒有持久後果。
   pg_cron 觸發的照片清理有物件刪不掉（`not_removed`）也是 warning。
@@ -241,6 +260,7 @@ migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
 | `20261017000004_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
 | `20261112000001_scheduled_job_runs` | 對帳與照片清理改由 pg_cron 經 pg_net 觸發；排程帳本兼租約、`scheduler_health`、Vault 憑證（見〈排程〉） |
 | `20261115000001_batch_heal_lock_split` | 自癒改逐筆一個交易（拆掉批次 heal 與線上付款的 profiles 互鎖）；三代獎金失敗改 error 告警；帳本 summary 記 heal 計數與 `unknownByReason`；`invoke_internal_endpoint` 加 `p_trigger` |
+| `20261124000001_payuni_query_controls` | PayUni 查詢正控紀錄表（W6-36、W7-2）；純新增，新舊 Edge／DB 任意組合都不 500 |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。

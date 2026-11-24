@@ -15,6 +15,7 @@ import {
   withScheduledRun,
 } from './scheduled-runs.ts';
 import type { HealResult } from './paid-pending-heal.ts';
+import type { PositiveControlSummary } from './payuni-positive-control.ts';
 
 export type ReconcileSummary = {
   checked: number;
@@ -28,6 +29,13 @@ export type ReconcileSummary = {
   /** R5 P2-7：unknownStatus 依原因分計（四者和＝unknownStatus）。 */
   unknownByReason: Record<UnknownReason, number>;
   incomplete: number;
+  /**
+   * W7-2：本輪判「確認查無」的 QUERY03001 張數（正控有效時才會 >0）。這些單不計
+   * queryFailures，照 TradeStatus 0／9／4 的路徑滿 4 天標 expired、不告警。
+   */
+  notFound: number;
+  /** 本輪正控（payuni-positive-control.ts）；對帳迴圈單獨測試時沒有。 */
+  positiveControl?: PositiveControlSummary;
 };
 
 export const UNKNOWN_REASONS = [
