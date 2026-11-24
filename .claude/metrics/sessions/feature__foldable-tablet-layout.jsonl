@@ -1,1 +1,1 @@
-{"branch": "HEAD", "ended": "2026-11-24T14:33:34+00:00", "fired": {}, "passed": {"bash-guard": 9, "check-output-filter": 9, "model-effort-advisor": 1}, "session": "d7a4154316d3", "started": "2026-11-24T14:32:30+00:00"}
+{"branch": "HEAD", "ended": "2026-11-24T14:36:51+00:00", "fired": {"model-effort-advisor/opus-tier": 2}, "passed": {"bash-guard": 13, "check-output-filter": 13, "deletion-residue-check": 4, "model-effort-advisor": 5}, "session": "d7a4154316d3", "started": "2026-11-24T14:32:30+00:00"}
