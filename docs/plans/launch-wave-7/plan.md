@@ -44,6 +44,7 @@
 |---|---|---|
 | W7-5 | S5 何時開 | **S4 合併後開**：S5 的 P2-4 要動 `process_successful_payment`／0d 寫 `changed_at` 的路徑與推薦樹閘門 migration，S4 也動 `apply_referral_side_effects` 同區函式，並行會互相 rebase migration 基準 |
 | W7-6 | S1 合併前審查 | **派獨立 Opus 審查員**（R6 §4.1：P1-1、P2-2 都落在沒派獨立審查的 #522，金流相鄰的結帳頁前端也要派） |
+| W7-8 | 業主 11/24 提報 P0 疑慮：會員 47 人、試營運時超過 50 人出過「查不到」 | **結案，不加工項**（業主 2026-11-24 互動選項）。主 session 排查：舊事故是 `/auth/check-email` 只看 GoTrue 第一頁 50 位（friction-log 2026-10-25，已由 `find_auth_user_by_email` 修好，正式站函式在、有 50 位壓力測試釘住），後端已無 GoTrue 名單呼叫；後台會員／提領／證件列表皆伺服器端分頁＋搜尋＋全站統計；heal 一輪 50 張是訂單、處理完離開清單；推薦網絡分批 150 位。會到頂的是 PostgREST 1000 列：首頁 `public_listings` 全撈（16/1000）、後台提領姓名搜尋 `profiles ilike` 無上限 → 併 ref P1-3 列第 8 波候選（被推翻：本波加小工項；加 GoTrue 手寫呼叫機械守門） |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -88,6 +89,7 @@ S4 drop wrapper 前提（W6-30）：正式站 Edge 已是 S1 版本並跑過多�
 
 以 `launch-wave-6/plan.md` §5（含〈承接第 5 波〉）與 R6 §5、§6.3 為準，扣掉本波收的（P1-1、P2-1～3、P2-4、P2-7～9、P2-12、W6-14／30、W6-36、3b／3d、`repair_orphaned_*`、單筆 sqlerrm、W4-23）。
 本波 W7-1 留下的：S5 其餘——P2-5（`fresh_events` 未換線標示）、P2-6（規模效能＋頂層 unplaceable）、P2-10＋W6-21（後台 portal 遮罩）、W6-16（完整換線事件表）。
+W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `profiles` 無上限，到 1000 筆會被 PostgREST 靜默截斷（與 ref P1-3 同類，一起做）。
 重點未收：稽核其餘 P1（ref P1-3／5／6／7／8、auth P1-3／5、ops P1-2）、journey f70 缺章（W5-60）、vitest／vite 大版本（#467）、後台刪帳號工具（W5-12）、unknown 單手動開通入口（W5-44③）、S4 焦點還原搬進 useBrowseNav（W6-22）、#525「載入更多」aria-live 與 `LedgerState`／`PagedState` 合併。
 
 ## 6. 業主待辦
@@ -105,10 +107,10 @@ S4 drop wrapper 前提（W6-30）：正式站 Edge 已是 S1 版本並跑過多�
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
-| S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | — | 施工中 |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control` | — | 施工中 |
-| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃中 |
-| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃中 |
+| S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 | 獨立審查中（`session_01MQovbCRRA98cKaKeMZ6AMJ`） |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control` | #532 | 獨立審查中（`session_01MQovbDkHVKo7qK3USRppyt`） |
+| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃交件，等業主裁決 |
+| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃交件，等業主裁決 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
 
@@ -116,3 +118,4 @@ S4 drop wrapper 前提（W6-30）：正式站 Edge 已是 S1 版本並跑過多�
 |---|---|---|
 | 11/24 | 主 session 開局：讀交接、W6 plan／review、〈慣例〉、dispatch-prompts。現況同交接（main 653e31e、develop 3e76edd、無開著的 PR）。業主補 `QUERY03001` 5 張過期單結案事實（§0）。業主裁 **W7-1～4**；主 session 定 W7-5～7。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S4、S3 |
 | 11/24 22:32 | 開 #530（本檔，draft，已訂閱）。開 S1、S3（Sonnet）與 S2、S4（Opus），tag `uknow-wave-7`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S4、S3 規劃交業主審 |
+| 11/24 23:00 | 回報：S3 規劃交件（P0 0、P1 6；Q1 照片高度上限、Q2 摺疊展開首頁欄數待業主）；S1 交 **#531**（CI 綠、ready；總 JS raw 1983.04／1983 kB 餘裕約 11 bytes，請主 session 定預算）；S4 規劃交件（Q1～Q7 待業主，Q4 唯讀 SQL 待主 session 代跑）；S2 交 **#532**（CI 綠、ready；migration `20261124000001`、新表 `payuni_query_controls`）。業主提報 P0 疑慮（超過 50 人查不到）→ 主 session 排查、業主裁 **W7-8** 結案。正式站：auth.users 47、profiles 47、listings 16、referral_edges 32、單人最多直接推薦 10 | 派 #531、#532 獨立審查；代跑 S4 Q4；S3、S4 裁決交業主 |
