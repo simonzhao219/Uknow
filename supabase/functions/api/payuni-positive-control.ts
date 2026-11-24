@@ -197,7 +197,7 @@ export async function runPositiveControl(
   let sample: { tradeNo: string; completedAt: string } | null = null;
   let pickError: unknown = null;
   try {
-    sample = await deps.pickSample(now); // 紅燈 stub：尚無 1 小時下限
+    sample = await deps.pickSample(new Date(now.getTime() - SAMPLE_MIN_AGE_HOURS * HOUR));
   } catch (e) {
     pickError = e;
   }
@@ -224,7 +224,7 @@ export async function runPositiveControl(
     } catch (e) {
       row = { ...base, outcome: 'failed', reason: `query_threw: ${String(e)}` };
     }
-    if (SAMPLE_STALE_DAYS < 0) { // 紅燈 stub：尚無樣本年齡 warning
+    if (!withinHours(completedAt, now, SAMPLE_STALE_DAYS * 24)) {
       await deps.alertOnce(
         CONTROL_ALERT_SOURCE,
         { reason: 'sample_stale' },

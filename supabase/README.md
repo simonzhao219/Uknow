@@ -111,11 +111,14 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
   回 03001 → 不改判、另按單號寫 `not_found_with_response`（error）；標過 `reconcile_unknown_at` 的單回 03001 → 不改判。其他 `QUERY0xxxx` 一律照預設。
 - **PayUni 查詢正控**（`payuni-positive-control.ts`、表 `payuni_query_controls`）：併在每小時的 reconcile 端點，最近一次 success 未滿 23 小時
   就不跑，否則（無紀錄、失敗、無樣本、已滿 23 小時）本輪跑一次——成功約每天一次，失敗每小時重試。挑本環境最近一張 `completed`、
-  `payuni_response->>Status = 'SUCCESS'` 的單（develop 挑的是 sandbox 單；沒有就記 `no_sample`，不算成功），斷言查詢回 `Status=SUCCESS`
+  `payuni_response->>Status = 'SUCCESS'`、`completed_at` 早於 1 小時前的單（剛付款的單 PayUni 可能還沒定案；develop 挑的是 sandbox 單；
+  沒有就記 `no_sample`，不算成功），斷言查詢回 `Status=SUCCESS`
   且**同號**交易 `TradeStatus=1`（比對帳嚴格：不接受單筆缺 MerTradeNo、DataSource=B）。結果每次一列（時間、單號、outcome、reason），帳本
-  summary 帶 `positiveControl`（ran／outcome／fresh／error）。失敗寫 `payuni-positive-control`／`control_failed`（error，去重到標處理）；
-  讀寫紀錄失敗只寫 warning（`control_read_failed`／`control_record_failed`），本輪一律不改判。
-  **收到「【PayUni查詢正控失敗】」時**：開 Claude Code session，看告警 context 的 `failReason`——`query_status:QUERY01/02xxx`＝商店代號／金鑰／
+  summary 帶 `positiveControl`（ran／outcome／fresh／error／sampleCompletedAt）。失敗寫 `payuni-positive-control`／`control_failed`（error，去重到標處理）；
+  讀寫紀錄失敗只寫 warning（`control_read_failed`／`control_record_failed`），本輪一律不改判。樣本的付款完成時間記在
+  `sample_completed_at`（summary 的 `positiveControl.sampleCompletedAt`）；超過 14 天寫 warning `sample_stale`（不影響改判）——
+  一直挑不到新樣本，代表新單可能都卡在 pending（例如送出的 MerTradeNo 與存的 `transaction_id` 不一致）。
+  **收到「【PayUni查詢正控失敗・請開Claude查查詢層】」時**：開 Claude Code session，看告警 context 的 `failReason`——`query_status:QUERY01/02xxx`＝商店代號／金鑰／
   加解密或單號格式（查 Edge Secrets 的 `PAYUNI_*` 與 `PAYUNI_SANDBOX`、最近改過的建單／查詢程式）；`query_status:QUERY03001`＝已付款的單查不到，
   正是 03001 改判的前提失效，**先查單號格式**（`payment_orders.transaction_id` 與 PayUni 後台的商店訂單編號是否一致）；`trade_status:*`／
   `no_matching_trade`＝PayUni 回了別的狀態或別張單；`query_threw`＝HTTP／網路。修好後下一輪自動重試，成功了再把告警標已處理。

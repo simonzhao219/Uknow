@@ -214,8 +214,13 @@ jobs:
               *)
                 verdict="✅ 門是開的" ;;
             esac
-            if [ "$bad" = 1 ] && [ "$endpoint" = "https://api.payuni.com.tw/api/upp" ]; then
-              prod_failed=1
+            # 反向判斷（W7-14 審查 P2-3）：不是 sandbox 的一律算正式端點。只改上面 for 清單
+            # 的網址時，比對寫死的正式網址會讓 prod_failed 永遠 0、正式端點紅被降成 P2。
+            if [ "$bad" = 1 ]; then
+              case "$endpoint" in
+                *sandbox-api*) ;;
+                *) prod_failed=1 ;;
+              esac
             fi
             echo "$endpoint → $code $verdict"
             echo "| \`$endpoint\` | $code | $verdict |" >> "$GITHUB_STEP_SUMMARY"
