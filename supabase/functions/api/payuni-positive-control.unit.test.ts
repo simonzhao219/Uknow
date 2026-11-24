@@ -13,11 +13,15 @@ import {
   isControlFresh,
   type PositiveControlDeps,
   runPositiveControl,
+  SAMPLE_MIN_AGE_HOURS,
+  SAMPLE_STALE_DAYS,
 } from './payuni-positive-control.ts';
 
 const NOW = new Date('2026-11-24T12:00:00.000Z');
 const HOUR = 3_600_000;
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+/** 預設樣本：2 小時前付款完成（過了 1 小時下限、遠未滿 14 天）。 */
+const SAMPLE_AT = new Date(NOW.getTime() - 2 * 3_600_000).toISOString();
 
 type Alert = { source: string; dedupe: Record<string, string>; message: string; severity: string };
 
@@ -34,7 +38,7 @@ function harness(over: Partial<PositiveControlDeps> = {}) {
   const queried: string[] = [];
   const deps: PositiveControlDeps = {
     latest: () => Promise.resolve(null),
-    pickSample: () => Promise.resolve('SAMPLE1'),
+    pickSample: () => Promise.resolve({ tradeNo: 'SAMPLE1', completedAt: SAMPLE_AT }),
     query: (no) => {
       queried.push(no);
       return Promise.resolve(paidResponse(no));
@@ -62,10 +66,22 @@ const errorAlerts = (alerts: Alert[]) => alerts.filter((a) => a.severity === 'er
 Deno.test('正控：查到同號 TradeStatus=1 → 落檔 success、本輪可改判、不告警', async () => {
   const h = harness();
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: true, outcome: 'success', fresh: true, error: false });
+  assertEquals(s, {
+    ran: true,
+    outcome: 'success',
+    fresh: true,
+    error: false,
+    sampleCompletedAt: SAMPLE_AT,
+  });
   assertEquals(h.queried, ['SAMPLE1']);
   assertEquals(h.records, [
-    { checkedAt: NOW.toISOString(), outcome: 'success', tradeNo: 'SAMPLE1', reason: null },
+    {
+      checkedAt: NOW.toISOString(),
+      outcome: 'success',
+      tradeNo: 'SAMPLE1',
+      sampleCompletedAt: SAMPLE_AT,
+      reason: null,
+    },
   ]);
   assertEquals(h.alerts, []);
 });
@@ -75,7 +91,13 @@ Deno.test('正控：已付款的單回 QUERY03001 → 落檔 failed、不可改�
     query: () => Promise.resolve({ raw: { Status: 'QUERY03001', Message: '' }, decrypted: null }),
   });
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: true, outcome: 'failed', fresh: false, error: false });
+  assertEquals(s, {
+    ran: true,
+    outcome: 'failed',
+    fresh: false,
+    error: false,
+    sampleCompletedAt: SAMPLE_AT,
+  });
   assertEquals(h.records[0].outcome, 'failed');
   assertEquals(h.records[0].reason, 'query_status:QUERY03001');
   const errs = errorAlerts(h.alerts);
@@ -123,7 +145,13 @@ Deno.test('正控：平鋪欄位同號 TradeStatus=1 也算成功', () => {
 Deno.test('正控：查詢擲錯（HTTP 403 等）→ failed、不可改判、error 告警', async () => {
   const h = harness({ query: () => Promise.reject(new Error('PayUni 查詢 HTTP 403')) });
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: true, outcome: 'failed', fresh: false, error: false });
+  assertEquals(s, {
+    ran: true,
+    outcome: 'failed',
+    fresh: false,
+    error: false,
+    sampleCompletedAt: SAMPLE_AT,
+  });
   assert(h.records[0].reason!.startsWith('query_threw'));
   assertEquals(errorAlerts(h.alerts).length, 1);
 });
@@ -131,7 +159,13 @@ Deno.test('正控：查詢擲錯（HTTP 403 等）→ failed、不可改判、er
 Deno.test('正控：沒有任何 completed 單可查 → 落檔 no_sample、不算成功、不查 PayUni、不推 error', async () => {
   const h = harness({ pickSample: () => Promise.resolve(null) });
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: true, outcome: 'no_sample', fresh: false, error: false });
+  assertEquals(s, {
+    ran: true,
+    outcome: 'no_sample',
+    fresh: false,
+    error: false,
+    sampleCompletedAt: null,
+  });
   assertEquals(h.queried, []);
   assertEquals(h.records[0].outcome, 'no_sample');
   assertEquals(errorAlerts(h.alerts), []);
@@ -154,7 +188,13 @@ Deno.test('正控：挑單查詢擲錯 → failed、不可改判、error 告警'
 Deno.test('正控：讀不到紀錄 → 不跑正控、不可改判、只寫 warning', async () => {
   const h = harness({ latest: () => Promise.reject(new Error('relation does not exist')) });
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: false, outcome: null, fresh: false, error: true });
+  assertEquals(s, {
+    ran: false,
+    outcome: null,
+    fresh: false,
+    error: true,
+    sampleCompletedAt: null,
+  });
   assertEquals(h.queried, []);
   assertEquals(errorAlerts(h.alerts), []);
   assertEquals(h.alerts.length, 1);
@@ -167,7 +207,13 @@ Deno.test('正控：寫紀錄失敗 → 以本輪結果判讀（失敗就不改�
     record: () => Promise.reject(new Error('insert failed')),
   });
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: true, outcome: 'failed', fresh: false, error: true });
+  assertEquals(s, {
+    ran: true,
+    outcome: 'failed',
+    fresh: false,
+    error: true,
+    sampleCompletedAt: SAMPLE_AT,
+  });
 });
 
 // ------------------------------------------------------------
@@ -179,7 +225,13 @@ Deno.test('正控：最近一次 success 未滿 23 小時 → 本輪不跑、沿
     latest: () => Promise.resolve({ checkedAt: ago(2 * HOUR), outcome: 'success' }),
   });
   const s = await runPositiveControl(h.deps);
-  assertEquals(s, { ran: false, outcome: 'success', fresh: true, error: false });
+  assertEquals(s, {
+    ran: false,
+    outcome: 'success',
+    fresh: true,
+    error: false,
+    sampleCompletedAt: null,
+  });
   assertEquals(h.queried, []);
   assertEquals(h.records, []);
 });
@@ -207,4 +259,45 @@ Deno.test('36 小時窗：最近一次是 failed／no_sample、沒有紀錄、�
   assertEquals(isControlFresh({ checkedAt: ago(HOUR), outcome: 'no_sample' }, NOW), false);
   assertEquals(isControlFresh(null, NOW), false);
   assertEquals(isControlFresh({ checkedAt: 'not-a-date', outcome: 'success' }, NOW), false);
+});
+
+// ------------------------------------------------------------
+// 樣本年齡（獨立審查 P2-1／P2-2，W7-14）
+// ------------------------------------------------------------
+
+Deno.test('正控挑單：只挑付款完成至少 1 小時前的單（剛付款的單 PayUni 可能還沒定案）', async () => {
+  let cutoff: Date | null = null;
+  const h = harness({
+    pickSample: (completedBefore) => {
+      cutoff = completedBefore;
+      return Promise.resolve({ tradeNo: 'SAMPLE1', completedAt: SAMPLE_AT });
+    },
+  });
+  await runPositiveControl(h.deps);
+  assertEquals(
+    cutoff!.toISOString(),
+    new Date(NOW.getTime() - SAMPLE_MIN_AGE_HOURS * HOUR).toISOString(),
+  );
+  assertEquals(SAMPLE_MIN_AGE_HOURS, 1);
+});
+
+Deno.test('正控樣本超過 14 天 → 寫 warning（不推 LINE）、不影響本輪可改判', async () => {
+  const old = ago(SAMPLE_STALE_DAYS * 24 * HOUR + 1);
+  const h = harness({ pickSample: () => Promise.resolve({ tradeNo: 'OLD1', completedAt: old }) });
+  const s = await runPositiveControl(h.deps);
+  assertEquals(s.fresh, true);
+  assertEquals(s.sampleCompletedAt, old);
+  assertEquals(h.records[0].sampleCompletedAt, old);
+  assertEquals(errorAlerts(h.alerts), []);
+  assertEquals(h.alerts.map((a) => [a.source, a.dedupe.reason, a.severity]), [
+    [CONTROL_ALERT_SOURCE, 'sample_stale', 'warning'],
+  ]);
+  assertEquals(SAMPLE_STALE_DAYS, 14);
+});
+
+Deno.test('正控樣本 14 天整（含）以內 → 不寫 warning', async () => {
+  const edge = ago(SAMPLE_STALE_DAYS * 24 * HOUR);
+  const h = harness({ pickSample: () => Promise.resolve({ tradeNo: 'EDGE1', completedAt: edge }) });
+  await runPositiveControl(h.deps);
+  assertEquals(h.alerts, []);
 });

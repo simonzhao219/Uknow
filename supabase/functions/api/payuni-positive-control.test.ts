@@ -37,14 +37,24 @@ Deno.test('payuni_query_controls：寫入後 latest 讀回最近一次的時間�
     checkedAt: '2026-11-20T00:00:00.000Z',
     outcome: 'success',
     tradeNo: 'CTRL-OLD',
+    sampleCompletedAt: '2026-11-19T00:00:00.000Z',
     reason: null,
   });
   await deps.record({
     checkedAt: '2026-11-21T00:00:00.000Z',
     outcome: 'failed',
     tradeNo: 'CTRL-NEW',
+    sampleCompletedAt: null,
     reason: 'query_status:QUERY03001',
   });
+  const { data: rows } = await adminClient().from('payuni_query_controls')
+    .select('trade_no, sample_completed_at').order('checked_at');
+  assertEquals(
+    rows?.map((
+      r,
+    ) => [r.trade_no, r.sample_completed_at && new Date(r.sample_completed_at).toISOString()]),
+    [['CTRL-OLD', '2026-11-19T00:00:00.000Z'], ['CTRL-NEW', null]],
+  );
   const latest = await deps.latest();
   assertEquals(latest?.outcome, 'failed');
   assertEquals(new Date(latest!.checkedAt).toISOString(), '2026-11-21T00:00:00.000Z');
@@ -77,7 +87,7 @@ Deno.test('payuni_query_controls：RLS 開啟、anon／authenticated 無任何�
   }
 });
 
-Deno.test('正控挑單：取最近 completed 且存有 PayUni SUCCESS 的單，略過 pending 與無存檔的單', async () => {
+Deno.test('正控挑單：截止點前最近 completed＋PayUni SUCCESS 的單，略過太新、pending、無存檔', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Control Sample' });
   const stamp = Date.now();
@@ -98,7 +108,15 @@ Deno.test('正控挑單：取最近 completed 且存有 PayUni SUCCESS 的單，
       created_at: iso(10),
       payuni_response: { Status: 'SUCCESS', MerTradeNo: `CTRL-C-${stamp}` },
     });
-    assertEquals(await positiveControlDbDeps(adminClient).pickSample(), `CTRL-A-${stamp}`);
+    await seedOrder(user.id, `CTRL-D-${stamp}`, {
+      status: 'completed',
+      completed_at: iso(60), // 比截止點新（剛付款）→ 不算
+      payuni_response: { Status: 'SUCCESS', MerTradeNo: `CTRL-D-${stamp}` },
+    });
+    assertEquals(await positiveControlDbDeps(adminClient).pickSample(new Date(iso(30))), {
+      tradeNo: `CTRL-A-${stamp}`,
+      completedAt: new Date(iso(0)).toISOString(),
+    });
   } finally {
     await client.from('payment_orders').delete().like('transaction_id', `CTRL-%-${stamp}`);
     await deleteTestUsers(client, [user.id]);

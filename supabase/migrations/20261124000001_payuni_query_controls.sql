@@ -20,6 +20,8 @@ create table if not exists public.payuni_query_controls (
   checked_at timestamptz not null default now(),
   outcome text not null check (outcome in ('success', 'failed', 'no_sample')),
   trade_no text,
+  -- 樣本的付款完成時間（W7-14 審查 P2-2）：樣本一直不變新，代表新單可能都 completed 不了。
+  sample_completed_at timestamptz,
   reason text
 );
 

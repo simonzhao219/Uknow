@@ -3221,7 +3221,13 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
             now: () => new Date(),
           }).catch((e) => {
             console.error('[reconcile-pending-payments] 正控例外，本輪不改判:', e);
-            return { ran: false, outcome: null, fresh: false, error: true } as const;
+            return {
+              ran: false,
+              outcome: null,
+              fresh: false,
+              error: true,
+              sampleCompletedAt: null,
+            } as const;
           });
           const summary = await reconcilePendingOrders(
             sb(),

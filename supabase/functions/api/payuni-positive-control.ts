@@ -25,6 +25,17 @@
 export const CONTROL_FRESH_HOURS = 36;
 /** 最近一次成功未滿這個時數就不重跑：每小時的 reconcile 約每天跑一次。 */
 export const CONTROL_INTERVAL_HOURS = 23;
+/**
+ * 樣本至少付款完成這麼久（W7-14 審查 P2-1）：剛付款幾分鐘的單 PayUni 可能還回
+ * DataSource=B 或狀態未定，會推一則假的「正控失敗」。
+ */
+export const SAMPLE_MIN_AGE_HOURS = 1;
+/**
+ * 樣本付款完成超過這麼久就寫 warning（W7-14 審查 P2-2）：若日後新單的 MerTradeNo
+ * 被改得與存的 transaction_id 不一致，新單永遠 completed 不了，正控會一直挑改壞前的
+ * 舊單照樣成功。warning 不推 LINE、不影響 fresh——只讓後台看得到「樣本在變舊」。
+ */
+export const SAMPLE_STALE_DAYS = 14;
 
 export const CONTROL_ALERT_SOURCE = 'payuni-positive-control';
 
@@ -34,14 +45,19 @@ export type ControlRecord = {
   checkedAt: string;
   outcome: ControlOutcome;
   tradeNo: string | null;
+  /** 樣本的付款完成時間（completed_at）；沒挑到樣本時 null。 */
+  sampleCompletedAt: string | null;
   reason: string | null;
 };
 
 export type PositiveControlDeps = {
   /** 最近一次正控紀錄；沒有紀錄回 null；讀取失敗擲錯。 */
   latest: () => Promise<{ checkedAt: string; outcome: ControlOutcome } | null>;
-  /** 本環境最近一張 completed 且有 PayUni SUCCESS 存檔的單號；沒有回 null；讀取失敗擲錯。 */
-  pickSample: () => Promise<string | null>;
+  /**
+   * 本環境 completed_at ≤ completedBefore 的單中最新一張有 PayUni SUCCESS 存檔的；
+   * 沒有回 null；讀取失敗擲錯。
+   */
+  pickSample: (completedBefore: Date) => Promise<{ tradeNo: string; completedAt: string } | null>;
   /** 打 PayUni 查詢：raw 是最外層 JSON，decrypted 是 EncryptInfo 解開的欄位（沒有時 null）。 */
   query: (
     merTradeNo: string,
@@ -67,6 +83,8 @@ export type PositiveControlSummary = {
   fresh: boolean;
   /** 讀紀錄、挑單或寫紀錄出錯（不含 PayUni 查詢失敗，那是 outcome=failed）。 */
   error: boolean;
+  /** 本輪樣本的付款完成時間（看樣本有沒有在變舊）；本輪沒跑或沒挑到樣本時 null。 */
+  sampleCompletedAt: string | null;
 };
 
 const HOUR = 3_600_000;
@@ -160,7 +178,7 @@ export async function runPositiveControl(
       '讀取 PayUni 查詢正控紀錄失敗，本輪起 QUERY03001 維持現行判讀（告警＋人工核對）',
       'warning',
     );
-    return { ran: false, outcome: null, fresh: false, error: true };
+    return { ran: false, outcome: null, fresh: false, error: true, sampleCompletedAt: null };
   }
 
   if (!isControlDue(latest, now)) {
@@ -169,42 +187,51 @@ export async function runPositiveControl(
       outcome: latest!.outcome,
       fresh: isControlFresh(latest, now),
       error: false,
+      sampleCompletedAt: null,
     };
   }
 
+  const checkedAt = now.toISOString();
   let row: ControlRecord;
   let error = false;
-  let tradeNo: string | null = null;
+  let sample: { tradeNo: string; completedAt: string } | null = null;
+  let pickError: unknown = null;
   try {
-    tradeNo = await deps.pickSample();
+    sample = await deps.pickSample(now); // 紅燈 stub：尚無 1 小時下限
   } catch (e) {
+    pickError = e;
+  }
+  if (pickError !== null) {
     error = true;
-    tradeNo = null;
     row = {
-      checkedAt: now.toISOString(),
+      checkedAt,
       outcome: 'failed',
       tradeNo: null,
-      reason: `pick_failed: ${String(e)}`,
+      sampleCompletedAt: null,
+      reason: `pick_failed: ${String(pickError)}`,
     };
-  }
-  if (!error) {
-    if (tradeNo === null) {
-      row = { checkedAt: now.toISOString(), outcome: 'no_sample', tradeNo: null, reason: null };
-    } else {
-      try {
-        const { raw, decrypted } = await deps.query(tradeNo);
-        const verdict = evaluateControlResponse(tradeNo, raw, decrypted);
-        row = verdict.ok
-          ? { checkedAt: now.toISOString(), outcome: 'success', tradeNo, reason: null }
-          : { checkedAt: now.toISOString(), outcome: 'failed', tradeNo, reason: verdict.reason };
-      } catch (e) {
-        row = {
-          checkedAt: now.toISOString(),
-          outcome: 'failed',
-          tradeNo,
-          reason: `query_threw: ${String(e)}`,
-        };
-      }
+  } else if (sample === null) {
+    row = { checkedAt, outcome: 'no_sample', tradeNo: null, sampleCompletedAt: null, reason: null };
+  } else {
+    const { tradeNo, completedAt } = sample;
+    const base = { checkedAt, tradeNo, sampleCompletedAt: completedAt };
+    try {
+      const { raw, decrypted } = await deps.query(tradeNo);
+      const verdict = evaluateControlResponse(tradeNo, raw, decrypted);
+      row = verdict.ok
+        ? { ...base, outcome: 'success', reason: null }
+        : { ...base, outcome: 'failed', reason: verdict.reason };
+    } catch (e) {
+      row = { ...base, outcome: 'failed', reason: `query_threw: ${String(e)}` };
+    }
+    if (SAMPLE_STALE_DAYS < 0) { // 紅燈 stub：尚無樣本年齡 warning
+      await deps.alertOnce(
+        CONTROL_ALERT_SOURCE,
+        { reason: 'sample_stale' },
+        { tradeNo, sampleCompletedAt: completedAt },
+        `PayUni 查詢正控的樣本單已超過 ${SAMPLE_STALE_DAYS} 天沒有新的已付款單可挑（最新一張 ${tradeNo} 於 ${completedAt} 完成）。若近期確有會員付款，請檢查新單是否卡在 pending（單號格式可能被改壞）`,
+        'warning',
+      );
     }
   }
 
@@ -240,6 +267,7 @@ export async function runPositiveControl(
     // 本輪結果為準：寫入失敗也不回頭讀舊的 success。
     fresh: row!.outcome === 'success',
     error,
+    sampleCompletedAt: row!.sampleCompletedAt,
   };
 }
 
@@ -247,7 +275,8 @@ export async function runPositiveControl(
  * 正式路徑的資料庫 deps（payuni_query_controls、payment_orders）。
  * 挑單口徑：status=completed、transaction_id 非空、payuni_response 存有 SUCCESS
  * （notify／return／對帳收斂過，代表 PayUni 端確實有這筆已付款交易），取
- * completed_at 最新的一張。沒有 PayUni 存檔的 completed 單（人工開通等）不算樣本。
+ * completed_at 最新、且早於 completedBefore（＝現在 − SAMPLE_MIN_AGE_HOURS）的一張。
+ * 沒有 PayUni 存檔的 completed 單（人工開通等）、completed_at 為 null 的單不算樣本。
  * 傳 factory 而非 client：同 scheduledRunDeps 的理由。
  */
 // deno-lint-ignore no-explicit-any
@@ -268,10 +297,11 @@ export function positiveControlDbDeps(getClient: () => any): Pick<
         ? { checkedAt: data.checked_at as string, outcome: data.outcome as ControlOutcome }
         : null;
     },
-    pickSample: async () => {
+    pickSample: async (completedBefore) => {
       const { data, error } = await getClient().from('payment_orders')
-        .select('transaction_id')
+        .select('transaction_id, completed_at')
         .eq('status', 'completed')
+        .lte('completed_at', completedBefore.toISOString())
         .not('transaction_id', 'is', null)
         .eq('payuni_response->>Status', 'SUCCESS')
         .order('completed_at', { ascending: false, nullsFirst: false })
@@ -279,13 +309,18 @@ export function positiveControlDbDeps(getClient: () => any): Pick<
         .limit(1)
         .maybeSingle();
       if (error) throw new Error(`挑正控樣本失敗: ${error.message}`);
-      return (data?.transaction_id as string | undefined) ?? null;
+      if (!data?.transaction_id || !data.completed_at) return null;
+      return {
+        tradeNo: data.transaction_id as string,
+        completedAt: new Date(data.completed_at as string).toISOString(),
+      };
     },
     record: async (row) => {
       const { error } = await getClient().from('payuni_query_controls').insert({
         checked_at: row.checkedAt,
         outcome: row.outcome,
         trade_no: row.tradeNo,
+        sample_completed_at: row.sampleCompletedAt,
         reason: row.reason,
       });
       if (error) throw new Error(`寫入 payuni_query_controls 失敗: ${error.message}`);
