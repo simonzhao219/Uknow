@@ -174,6 +174,7 @@ function fakeHandlerDeps(
           incomplete_too_long: 0,
         },
         incomplete: 0,
+        notFound: 0,
         ...summary,
       };
     },

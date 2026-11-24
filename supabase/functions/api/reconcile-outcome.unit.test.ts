@@ -41,6 +41,7 @@ function summary(over: Partial<ReconcileSummary>): ReconcileSummary {
       incomplete_too_long: 0,
     },
     incomplete: 0,
+    notFound: 0,
     ...over,
   };
 }
