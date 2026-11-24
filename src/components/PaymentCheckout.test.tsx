@@ -1503,7 +1503,7 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
 
   it('驗證在飛時改碼，晚到的舊回應不得蓋掉新碼的狀態，離開欄位仍會重驗', async () => {
     let releaseFirst: (r: Response) => void = () => {};
-    let validateCalls = 0;
+    const newCodeCalls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -1511,8 +1511,12 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
           return new Response(JSON.stringify(RENEWER_PROFILE), { status: 200 });
         }
         if (String(url).includes('/referrals/validate/')) {
-          validateCalls += 1;
-          if (validateCalls === 1) return new Promise<Response>((r) => (releaseFirst = r));
+          // 現任推薦人的碼（掛載時查）不算；只追蹤使用者在新碼欄輸入的兩個碼。
+          if (String(url).endsWith('/8048555')) {
+            newCodeCalls.push('8048555');
+            return new Promise<Response>((r) => (releaseFirst = r));
+          }
+          if (String(url).endsWith('/8048777')) newCodeCalls.push('8048777');
           return new Response(JSON.stringify({ valid: true, referrer: { userName: '新碼會員' } }), {
             status: 200,
           });
@@ -1526,9 +1530,9 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
     await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
     fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
     const input = screen.getByTestId('new-referral-code-input');
-    fireEvent.change(input, { target: { value: '8048901' } });
+    fireEvent.change(input, { target: { value: '8048555' } });
     fireEvent.blur(input);
-    await waitFor(() => expect(validateCalls).toBe(1));
+    await waitFor(() => expect(newCodeCalls).toEqual(['8048555']));
     fireEvent.change(input, { target: { value: '8048777' } });
     releaseFirst(
       new Response(JSON.stringify({ valid: false, error: { message: '不能使用自己的推薦碼' } }), {
@@ -1539,7 +1543,7 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
     expect(screen.queryByText('不能使用自己的推薦碼')).toBeNull();
     fireEvent.blur(input);
     expect(await screen.findByTestId('new-referrer-name')).toBeTruthy();
-    expect(validateCalls).toBe(2);
+    expect(newCodeCalls).toEqual(['8048555', '8048777']);
     expect(input.getAttribute('aria-invalid')).toBeNull();
   });
 
