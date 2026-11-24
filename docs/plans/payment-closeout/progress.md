@@ -17,7 +17,7 @@
 
 ## 目前位置與下一步
 
-規劃完成、/review-plan 中；等業主裁 Q1～Q3、主 session 代跑 Q4，業主親打 `/tdd-implement payment-closeout` 才開工。
+規劃 r3 完成，Q1～Q7 已裁（W7-9、W7-10、W7-12）；等業主親打 `/tdd-implement payment-closeout` 才開工。
 
 ## Blockers（逃生口紀錄）
 
