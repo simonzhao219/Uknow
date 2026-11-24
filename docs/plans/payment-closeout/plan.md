@@ -171,7 +171,7 @@ README 新增〈已付款未開通〉（同 §2.2 手冊格式：第 1 步先確
 - [ ] **Q4（主 session 代跑唯讀 SQL，正式站＋develop）**：
   ```sql
   -- drop gate 補強：誰依賴 wrapper、排程指令有沒有提到
-  select count(*) from pg_depend d join pg_proc p on p.oid = d.refobjid where p.proname = 'complete_paid_pending_orders';
+  select count(*) from pg_depend d join pg_proc p on p.oid = d.refobjid and d.refclassid = 'pg_proc'::regclass where p.proname = 'complete_paid_pending_orders';
   select jobname from cron.job where command ilike '%complete_paid_pending_orders%';
   select proname from pg_proc where prosrc ilike '%complete_paid_pending_orders(%' and proname <> 'complete_paid_pending_orders';
   select funcname, calls from pg_stat_user_functions
@@ -188,7 +188,8 @@ README 新增〈已付款未開通〉（同 §2.2 手冊格式：第 1 步先確
   select created_at, severity, left(message, 80) from public.system_alerts
    where source = 'complete_paid_pending_orders' order by created_at desc limit 5;
   ```
-  另請代查兩環境 `/api/health` 的 sha（drop gate ①）。`missing_edge` > 0 時 PR 內文附補寫建議（不在 migration 自動補資料——動資料要人審）。
+  另請代查兩環境 `/api/health` 的 sha（drop gate ①）。
+  **結果（主 session 11/25 04:40 台北代跑，正式站＋develop）**：cron.job／其他函式本體提到 wrapper 皆 0；pg_depend（補 refclassid 後）0；pg_stat_user_functions 空（track_functions 未開，不算證據）；`apply_referral_side_effects` 告警兩邊 0 列；單筆開通失敗告警兩邊 0 列；develop missing_edge 0、正式站 3（皆有推薦人但從未付款，edge 本就在首次付款 3b 才寫＝預期狀態，不需補寫）、mismatched 皆 0；gate ① 以部署紀錄為準已滿足（正式站 deploy-supabase run 42534091645，main 653e31e 含 #524，sha 比對通過；develop 自 11/08 起皆含 #524）。`missing_edge` > 0 時 PR 內文附補寫建議（不在 migration 自動補資料——動資料要人審）。
 - [ ] **Q5（業主；預設順修）**：後台點數來源段「批次自癒期間的清空同樣可能有差」在 wrapper drop 後失真，本 PR 順修（後台 lazy chunk、一句字＋一條測試），或留第 8 波？
 - [ ] **Q6（業主；預設照規劃）**：三則（Q3 選升則四則）新 LINE 文案的前 60 字措辭，見 §2.2、§2.4。
 - [ ] **Q7（業主；預設自動標處理）**：單筆開通失敗告警在同單之後成功開通時自動標處理（§2.4-4），或每筆都留給人看？建議自動——暫時性失敗下一輪就好，留著會讓業主去查一筆已開通的單。
