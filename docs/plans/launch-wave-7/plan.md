@@ -45,6 +45,10 @@
 | W7-5 | S5 何時開 | **S4 合併後開**：S5 的 P2-4 要動 `process_successful_payment`／0d 寫 `changed_at` 的路徑與推薦樹閘門 migration，S4 也動 `apply_referral_side_effects` 同區函式，並行會互相 rebase migration 基準 |
 | W7-6 | S1 合併前審查 | **派獨立 Opus 審查員**（R6 §4.1：P1-1、P2-2 都落在沒派獨立審查的 #522，金流相鄰的結帳頁前端也要派） |
 | W7-8 | 業主 11/24 提報 P0 疑慮：會員 47 人、試營運時超過 50 人出過「查不到」 | **結案，不加工項**（業主 2026-11-24 互動選項）。主 session 排查：舊事故是 `/auth/check-email` 只看 GoTrue 第一頁 50 位（friction-log 2026-10-25，已由 `find_auth_user_by_email` 修好，正式站函式在、有 50 位壓力測試釘住），後端已無 GoTrue 名單呼叫；後台會員／提領／證件列表皆伺服器端分頁＋搜尋＋全站統計；heal 一輪 50 張是訂單、處理完離開清單；推薦網絡分批 150 位。會到頂的是 PostgREST 1000 列：首頁 `public_listings` 全撈（16/1000）、後台提領姓名搜尋 `profiles ilike` 無上限 → 併 ref P1-3 列第 8 波候選（被推翻：本波加小工項；加 GoTrue 手寫呼叫機械守門） |
+| W7-9 | S4 規劃 Q1、Q2、Q5～Q7 | **全照 S4 預設**：Q1＝A（`repair_orphaned_*` 以 null 呼叫擲 U6R02，單人路徑不動）；Q2＝3d 失敗也推 LINE；Q5＝本 PR 順修後台「批次自癒期間…」半句；Q6＝文案照規劃；Q7＝同單之後成功開通自動標處理（被推翻：Q1 改 B 拆 list＋單筆＋Edge 迴圈；Q2 只推 3b）（業主 2026-11-24） |
+| W7-10 | S4 Q3：3a-bis（首購套用預設推薦人）失敗只 warning | **一起升 error**（範圍外追加，PR 內文寫明）（被推翻：列第 8 波）（業主 2026-11-24） |
+| W7-11 | S3 規劃 Q1、Q2 | **詳情頁照片不加高度上限**（以 841×701 探針斷言名稱首屏可見）；**摺疊展開首頁維持 2 欄**；≥768 觸控大螢幕無 BottomNav 接受為既有行為（被推翻：照片加上限；改 3 欄）（業主 2026-11-24） |
+| W7-12 | 前端總 JS raw 只剩約 11 bytes 餘裕（#531 刪死碼後 1983.04／1983 kB） | **撞到時逐支授權**：PR 附實測、增量在 lazy chunk、entry 不變，主 session 審過再請業主核准（比照 W6-25／32）（被推翻：預先放寬 +10 kB）（業主 2026-11-24） |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -119,3 +123,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/24 | 主 session 開局：讀交接、W6 plan／review、〈慣例〉、dispatch-prompts。現況同交接（main 653e31e、develop 3e76edd、無開著的 PR）。業主補 `QUERY03001` 5 張過期單結案事實（§0）。業主裁 **W7-1～4**；主 session 定 W7-5～7。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S4、S3 |
 | 11/24 22:32 | 開 #530（本檔，draft，已訂閱）。開 S1、S3（Sonnet）與 S2、S4（Opus），tag `uknow-wave-7`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S4、S3 規劃交業主審 |
 | 11/24 23:00 | 回報：S3 規劃交件（P0 0、P1 6；Q1 照片高度上限、Q2 摺疊展開首頁欄數待業主）；S1 交 **#531**（CI 綠、ready；總 JS raw 1983.04／1983 kB 餘裕約 11 bytes，請主 session 定預算）；S4 規劃交件（Q1～Q7 待業主，Q4 唯讀 SQL 待主 session 代跑）；S2 交 **#532**（CI 綠、ready；migration `20261124000001`、新表 `payuni_query_controls`）。業主提報 P0 疑慮（超過 50 人查不到）→ 主 session 排查、業主裁 **W7-8** 結案。正式站：auth.users 47、profiles 47、listings 16、referral_edges 32、單人最多直接推薦 10 | 派 #531、#532 獨立審查；代跑 S4 Q4；S3、S4 裁決交業主 |
+| 11/25 04:45 | 開 #531、#532 獨立 Opus 審查（雲端 session，見 §7）。代跑 S4 Q4（兩環境）：wrapper 無 cron／函式呼叫者、pg_depend 實為 0（正式站 2 列是 OID 撞號的 pg_toast 索引）、side-effect 與開通失敗告警 0 列；正式站 missing_edge 3＝有推薦人但從未付款（edge 首次付款才寫，預期）；gate ① 以部署紀錄核（#527 含 #524）。業主裁 **W7-9～12**，已轉 S4、S3 | 等審查回報；業主到 S4、S3 親打 `/tdd-implement` |
