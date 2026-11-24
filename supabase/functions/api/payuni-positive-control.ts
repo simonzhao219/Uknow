@@ -83,9 +83,8 @@ export function isControlFresh(
   latest: { checkedAt: string; outcome: ControlOutcome } | null,
   now: Date,
 ): boolean {
-  void latest;
-  void now;
-  return false; // 紅燈 stub
+  return latest !== null && latest.outcome === 'success' &&
+    withinHours(latest.checkedAt, now, CONTROL_FRESH_HOURS);
 }
 
 /** 本輪要不要跑正控。 */
@@ -93,9 +92,10 @@ export function isControlDue(
   latest: { checkedAt: string; outcome: ControlOutcome } | null,
   now: Date,
 ): boolean {
-  void latest;
-  void now;
-  return true; // 紅燈 stub
+  if (latest === null || latest.outcome !== 'success') return true;
+  const t = new Date(latest.checkedAt).getTime();
+  // 恰好 23 小時整算到期；解析不了的時間當到期（重跑一次比沿用來路不明的紀錄安全）。
+  return Number.isNaN(t) || now.getTime() - t >= CONTROL_INTERVAL_HOURS * HOUR;
 }
 
 /**
@@ -107,21 +107,140 @@ export function evaluateControlResponse(
   raw: Record<string, unknown>,
   decrypted: Record<string, string> | null,
 ): { ok: true } | { ok: false; reason: string } {
-  void merTradeNo;
-  void raw;
-  void decrypted;
-  return { ok: false, reason: 'not_implemented' }; // 紅燈 stub
+  const status = String(raw.Status ?? '');
+  if (status !== 'SUCCESS') {
+    const message = String(raw.Message ?? '');
+    return {
+      ok: false,
+      reason: `query_status:${status || '(empty)'}${message ? ` ${message}` : ''}`,
+    };
+  }
+  if (!decrypted) return { ok: false, reason: 'missing_encrypt_info' };
+
+  const want = merTradeNo.trim();
+  const same = (t: unknown) =>
+    !!t && typeof t === 'object' &&
+    String((t as Record<string, unknown>).MerTradeNo ?? '').trim() === want;
+
+  let trade: Record<string, unknown> | undefined;
+  if (decrypted.Result) {
+    try {
+      const list = JSON.parse(decrypted.Result);
+      if (Array.isArray(list)) trade = list.find(same);
+    } catch { /* Result 不是 JSON → 看平鋪欄位 */ }
+  }
+  if (!trade && same(decrypted)) trade = decrypted;
+  if (!trade) return { ok: false, reason: 'no_matching_trade' };
+
+  if (String(trade.DataSource ?? '').trim() === 'B') return { ok: false, reason: 'data_source_b' };
+  const tradeStatus = String(trade.TradeStatus ?? '').trim();
+  if (tradeStatus !== '1') {
+    return { ok: false, reason: `trade_status:${tradeStatus || '(empty)'}` };
+  }
+  return { ok: true };
 }
 
 /**
  * 到期就跑一次正控、落檔、失敗告警，回傳本輪 03001 可否改判。
  * 永不擲錯：任何意外都當「不可改判」，不能讓對帳因為正控而停擺。
  */
-export function runPositiveControl(
+export async function runPositiveControl(
   deps: PositiveControlDeps,
 ): Promise<PositiveControlSummary> {
-  void deps;
-  return Promise.resolve({ ran: false, outcome: null, fresh: false, error: false }); // 紅燈 stub
+  const now = deps.now();
+  let latest: { checkedAt: string; outcome: ControlOutcome } | null;
+  try {
+    latest = await deps.latest();
+  } catch (e) {
+    // 讀不到紀錄（例如新 Edge 先於 migration 上線）：不跑正控、不改判。
+    await deps.alertOnce(
+      CONTROL_ALERT_SOURCE,
+      { reason: 'control_read_failed' },
+      { error: String(e) },
+      '讀取 PayUni 查詢正控紀錄失敗，本輪起 QUERY03001 維持現行判讀（告警＋人工核對）',
+      'warning',
+    );
+    return { ran: false, outcome: null, fresh: false, error: true };
+  }
+
+  if (!isControlDue(latest, now)) {
+    return {
+      ran: false,
+      outcome: latest!.outcome,
+      fresh: isControlFresh(latest, now),
+      error: false,
+    };
+  }
+
+  let row: ControlRecord;
+  let error = false;
+  let tradeNo: string | null = null;
+  try {
+    tradeNo = await deps.pickSample();
+  } catch (e) {
+    error = true;
+    tradeNo = null;
+    row = {
+      checkedAt: now.toISOString(),
+      outcome: 'failed',
+      tradeNo: null,
+      reason: `pick_failed: ${String(e)}`,
+    };
+  }
+  if (!error) {
+    if (tradeNo === null) {
+      row = { checkedAt: now.toISOString(), outcome: 'no_sample', tradeNo: null, reason: null };
+    } else {
+      try {
+        const { raw, decrypted } = await deps.query(tradeNo);
+        const verdict = evaluateControlResponse(tradeNo, raw, decrypted);
+        row = verdict.ok
+          ? { checkedAt: now.toISOString(), outcome: 'success', tradeNo, reason: null }
+          : { checkedAt: now.toISOString(), outcome: 'failed', tradeNo, reason: verdict.reason };
+      } catch (e) {
+        row = {
+          checkedAt: now.toISOString(),
+          outcome: 'failed',
+          tradeNo,
+          reason: `query_threw: ${String(e)}`,
+        };
+      }
+    }
+  }
+
+  try {
+    await deps.record(row!);
+  } catch (e) {
+    error = true;
+    await deps.alertOnce(
+      CONTROL_ALERT_SOURCE,
+      { reason: 'control_record_failed' },
+      { error: String(e), outcome: row!.outcome },
+      '寫入 PayUni 查詢正控紀錄失敗（本輪仍以本輪結果判讀，下一輪會再跑）',
+      'warning',
+    );
+  }
+
+  if (row!.outcome === 'failed') {
+    // W6-24：LINE 每則只留前 60 字，行動放最前面。
+    await deps.alertOnce(
+      CONTROL_ALERT_SOURCE,
+      { reason: 'control_failed' },
+      { tradeNo: row!.tradeNo, failReason: row!.reason },
+      `【PayUni查詢正控失敗・請開Claude查查詢層】棄單自動判讀已停用，QUERY03001 回到人工核對。樣本單 ${
+        row!.tradeNo ?? '(挑單失敗)'
+      }：${row!.reason}`,
+      'error',
+    );
+  }
+
+  return {
+    ran: true,
+    outcome: row!.outcome,
+    // 本輪結果為準：寫入失敗也不回頭讀舊的 success。
+    fresh: row!.outcome === 'success',
+    error,
+  };
 }
 
 /**

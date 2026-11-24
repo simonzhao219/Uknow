@@ -172,10 +172,19 @@ jobs:
         # 失敗處理:本 workflow 不開 issue,job 紅燈即訊號;::error:: 標題寫明
         # 「PayUni 閘門」以便與「資產」失敗區分。!cancelled() 讓資產 step 紅時
         # 這個 step 仍會跑,兩種故障各自可見。
+        #
+        # 分級(R6 P2-12,第 7 波 S2):sandbox 端點對 GitHub runner 偶發 403(11/09、11/11、
+        # 11/14 各一次,下一輪自癒),而付款走的是正式端點。所以只有 sandbox 紅時輸出
+        # sandbox_only=true,LINE 降 P2 並在標題註明「sandbox 端」;正式端點紅照舊 P1。
+        # 選降級而不選「連續 2 輪才推」:後者要跨 run 記狀態(查上一輪 run 的結果),
+        # 多一個會壞的元件;job 仍照樣紅,持續失敗每 6 小時照樣提醒。
+        # 輸出寫的是「只有 sandbox」而不是「正式端點有沒有紅」:step 中途壞掉沒寫出
+        # 輸出時,判讀落在 P1(fail-safe)。
         if: ${{ !cancelled() && github.event_name != 'deployment_status' }}
         run: |
           set -uo pipefail
           failed=0
+          prod_failed=0
           {
             echo "### PayUni 閘門探測"
             echo ""
@@ -192,21 +201,28 @@ jobs:
               -H 'Referer: https://uknow.com.tw/' \
               --data 'MerID=PROBE&Version=1.0&EncryptInfo=00&HashInfo=00' \
               "$endpoint") || code="${code:-000}"
+            bad=0
             case "$code" in
               000)
                 verdict="❌ 連線失敗"
                 echo "::error title=PayUni 閘門::$endpoint 連線失敗。這是 PayUni 閘門,不是 Uknow 程式。"
-                failed=1 ;;
+                failed=1; bad=1 ;;
               403|5??)
                 verdict="❌ 被擋或故障"
                 echo "::error title=PayUni 閘門::$endpoint 回 HTTP $code。這是 PayUni 閘門,不是 Uknow 程式。"
-                failed=1 ;;
+                failed=1; bad=1 ;;
               *)
                 verdict="✅ 門是開的" ;;
             esac
+            if [ "$bad" = 1 ] && [ "$endpoint" = "https://api.payuni.com.tw/api/upp" ]; then
+              prod_failed=1
+            fi
             echo "$endpoint → $code $verdict"
             echo "| \`$endpoint\` | $code | $verdict |" >> "$GITHUB_STEP_SUMMARY"
           done
+          if [ "$failed" = 1 ] && [ "$prod_failed" = 0 ]; then
+            echo "sandbox_only=true" >> "$GITHUB_OUTPUT"
+          fi
           exit "$failed"
 
       # 告警送到人:job 紅燈只有「看 GitHub 的人」才會看到,而 2026-10-28 的
@@ -217,13 +233,14 @@ jobs:
       # failure() 也會被 checkout 等其他 step 觸發；此時 smoke 與閘門 outcome 都不是 failure，
       # 標題改「部署驗證 job 失敗，詳見 run」、body 帶 run 連結、level 維持 P1（不確定影響範圍，不降級）。
       # 放在最後一步：涵蓋前端版本比對（smoke）與 PayUni 閘門兩個 step，閘門紅也要推。
+      # PayUni 閘門只有 sandbox 端紅（sandbox_only）→ P2、標題加「（sandbox 端）」；正式端點紅 P1（見上方分級）。
       - name: 失敗時推送 LINE 告警
         if: failure() && github.event_name != 'workflow_dispatch'
         continue-on-error: true
         uses: ./.github/actions/notify
         with:
-          level: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && 'P1' || ((steps.payuni-gate.outcome == 'failure' || contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw')) && 'P1' || 'P2') }}
-          title: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && '部署驗證 job 失敗，詳見 run' || (steps.payuni-gate.outcome == 'failure' && 'PayUni 閘門探測失敗' || (contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw') && '正式站' || 'develop 預覽站')) }}${{ steps.smoke.outcome == 'failure' && ' 前端部署驗證失敗' || '' }}
+          level: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && 'P1' || (((steps.payuni-gate.outcome == 'failure' && steps.payuni-gate.outputs.sandbox_only != 'true') || contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw')) && 'P1' || 'P2') }}
+          title: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && '部署驗證 job 失敗，詳見 run' || (steps.payuni-gate.outcome == 'failure' && (steps.payuni-gate.outputs.sandbox_only == 'true' && 'PayUni 閘門探測失敗（sandbox 端）' || 'PayUni 閘門探測失敗') || (contains(steps.smoke.outputs.failed_targets, 'uknow.com.tw') && '正式站' || 'develop 預覽站')) }}${{ steps.smoke.outcome == 'failure' && ' 前端部署驗證失敗' || '' }}
           body: ${{ (steps.payuni-gate.outcome != 'failure' && steps.smoke.outcome != 'failure') && 'smoke 與 PayUni 閘門都不是失敗來源（可能是 checkout 等其他 step 失敗），run 連結見下行' || '' }}${{ steps.smoke.outputs.failed_targets }}${{ steps.payuni-gate.outcome == 'failure' && ' PayUni 閘門（UPP 端點被擋或故障，詳見 run 摘要）' || '' }}
           run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           line_channel_token: ${{ secrets.LINE_CHANNEL_TOKEN }}

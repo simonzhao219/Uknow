@@ -2905,7 +2905,26 @@ export async function reconcilePendingOrders(
           unknownStatus: { tradeStatus: '', reason: 'incomplete_too_long' },
         };
       }
-      void QUERY_NOT_FOUND_STATUS; // 紅燈 stub：尚未改判
+      if (
+        result.stillProcessing && result.queryFailure?.status === QUERY_NOT_FOUND_STATUS &&
+        opts.notFoundConfirmed === true
+      ) {
+        // W7-2：正控有效時，QUERY03001＝PayUni 端沒有這張單＝棄單（R6 §3.1）。
+        // 護欄：PayUni 曾回過這張單（存過 notify／return 的 payuni_response，或對帳
+        // 標過 reconcile_unknown_at）卻查無 → 不改判，照改判前路徑；前者另按單號寫 error。
+        if (order.payuni_response) {
+          await alertOnce(
+            'reconcile-pending-payments',
+            { reason: 'not_found_with_response', tradeNo: order.transaction_id! },
+            { storedStatus: order.payuni_response?.Status ?? null },
+            `【對帳異常・請到PayUni後台查單】訂單 ${order.transaction_id} 曾收過 PayUni 回應，查詢卻回查無此單（QUERY03001）。不會當棄單處理，請人工確認是否已付款。`,
+            'error',
+          );
+        } else if (!order.reconcile_unknown_at) {
+          summary.notFound++;
+          result = { stillProcessing: true };
+        }
+      }
       if (result.stillProcessing && result.unknownStatus) {
         // pay P1-3：不確定的狀態不論天數都不標 expired，按訂單號告警交人工
         // （去重到 resolve 為止，單子在視窗後段輪流時不會重複告警）。
@@ -3073,7 +3092,7 @@ export async function payUniQueryRaw(
   const res = await fetch(config.queryUrl, {
     method: 'POST',
     // User-Agent: payuni——PayUni 官方 API 文件建議（R6 §3.2-4）。
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'payuni' },
     body: new URLSearchParams({
       MerID: config.merID,
       Version: config.version,
@@ -3193,12 +3212,16 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
       {
         heal: () => healPaidPendingOrders(rpcOf(sb())),
         reconcile: async () => {
-          // 正控先跑（到期才查 PayUni），本輪對帳讀本輪結果（W7-2）。runPositiveControl 不擲錯。
+          // 正控先跑（到期才查 PayUni），本輪對帳讀本輪結果（W7-2）。runPositiveControl 設計上
+          // 不擲錯；萬一擲錯也只當「本輪不改判」，不能讓對帳停擺。
           const positiveControl = await runPositiveControl({
             ...positiveControlDbDeps(sb),
             query: payUniQueryRaw,
             alertOnce: logSystemAlertOnce,
             now: () => new Date(),
+          }).catch((e) => {
+            console.error('[reconcile-pending-payments] 正控例外，本輪不改判:', e);
+            return { ran: false, outcome: null, fresh: false, error: true } as const;
           });
           const summary = await reconcilePendingOrders(
             sb(),
