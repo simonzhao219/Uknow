@@ -105,9 +105,14 @@ S4 drop wrapper 前提（W6-30）：正式站 Edge 已是 S1 版本並跑過多�
 
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
+| S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | — | 施工中 |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control` | — | 施工中 |
+| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃中 |
+| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃中 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
 
 | 時間（台北） | 事件 | 下一步 |
 |---|---|---|
 | 11/24 | 主 session 開局：讀交接、W6 plan／review、〈慣例〉、dispatch-prompts。現況同交接（main 653e31e、develop 3e76edd、無開著的 PR）。業主補 `QUERY03001` 5 張過期單結案事實（§0）。業主裁 **W7-1～4**；主 session 定 W7-5～7。本檔擴寫、落 `dispatch-prompts.md` | 開 S1、S2、S4、S3 |
+| 11/24 22:32 | 開 #530（本檔，draft，已訂閱）。開 S1、S3（Sonnet）與 S2、S4（Opus），tag `uknow-wave-7`；prompt 只放指標，正本是本分支的 `dispatch-prompts.md` | 等各 session 回報；S4、S3 規劃交業主審 |
