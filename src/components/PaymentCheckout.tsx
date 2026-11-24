@@ -104,7 +104,7 @@ export function PaymentCheckout() {
   // 續約者的個資極少變動：預設摺疊成一行摘要，點開才看明細（首購維持全展開）。
   const [profileExpanded, setProfileExpanded] = useState(false);
 
-  const { setUser } = useContext(UserContext);
+  const { setUser, ingestProfile } = useContext(UserContext);
   const funnelLogout = useFunnelLogout();
   const navigate = useNavigate();
   const { showToast, showSuccess } = useNotification();
@@ -153,6 +153,8 @@ export function PaymentCheckout() {
           if (redirect === '/dashboard') {
             console.log('PaymentCheckout: 會籍已生效，跳轉到 dashboard');
             showToast('註冊完成！正在跳轉...', 'success');
+            // 先寫進 context：守衛讀的是 context，不是剛抓到的 profile（R6 P1-1）。
+            ingestProfile?.(profile);
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1500);
@@ -171,7 +173,7 @@ export function PaymentCheckout() {
 
     // 組件卸載時清除
     return () => clearInterval(intervalId);
-  }, [pendingUser, navigate, showToast, supabase]);
+  }, [pendingUser, navigate, showToast, supabase, ingestProfile]);
 
   // localStorage 分支的背景 /profile（W5-5 停權確認；S6 擴大成以伺服器資料重判身分，W5-54）。
   // 讀不到不擋付款（後端 prepare 兜底），但顯示「暫時無法確認會員狀態」＋只重發這支的重試。
@@ -200,7 +202,11 @@ export function PaymentCheckout() {
           (profile.paidAwaitingActivation && profile.lastTradeNo)
         ) {
           const redirect = resolveCheckoutPageRedirect(profile);
-          if (redirect) navigate(redirect, { replace: true });
+          if (redirect) {
+            // 導 /dashboard 前先寫進 context，否則守衛讀到舊的 expired 又導回本頁（R6 P1-1）。
+            if (redirect === '/dashboard') ingestProfile?.(profile);
+            navigate(redirect, { replace: true });
+          }
           return;
         }
         if (profile.subscriptionEndDate && !snapshotHasEndDate) {
@@ -520,6 +526,13 @@ export function PaymentCheckout() {
       if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
+        // 後端對自己的碼等回專屬文案（比照 CompleteProfile），其餘維持預設說明（R6 P2-2）。
+        const msg = extractApiErrorMessage(result, '');
+        setNewCodeInvalidMessage(
+          msg === REFERRAL_CODE_SELF_MESSAGE || msg === REFERRAL_CODE_NOT_APPLICABLE_MESSAGE
+            ? msg
+            : null,
+        );
         return 'invalid';
       }
       // 429、401、5xx：暫時查不到，不是碼無效。
@@ -719,10 +732,12 @@ export function PaymentCheckout() {
         // 強制重抓會員資料後導 /dashboard。
         if (rejected === ALREADY_ACTIVE_MESSAGE) {
           showToast(rejected, 'info');
-          await fetchProfileForSession(session as any, {
+          const fresh = await fetchProfileForSession(session as any, {
             force: true,
             timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
           }).catch(() => null);
+          // fetchProfileForSession 不寫 context：拿到 ok 要自己回灌，守衛才看得到 active（R6 P1-1）。
+          if (fresh?.kind === 'ok') ingestProfile?.(fresh.profile);
           refreshSubscription?.();
           navigate('/dashboard', { replace: true });
           return;

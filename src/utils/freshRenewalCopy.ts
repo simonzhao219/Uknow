@@ -5,7 +5,7 @@
 //   填碼且驗證通過 → 碼＝現任推薦人的碼：「維持」；其他碼：「將改為 {姓名}」
 //   留空 → 預設推薦人可用（default）：「將改變」——不揭露預設推薦人（規格書 §7.4）
 //        → 預設推薦人可用且就是現任推薦人：「維持不變」（第 6 波 S6，W5-63、W6-28）
-//        → 不可用或未知（keep，付款時維持原推薦人）：不寫推薦人句
+//        → 不可用或未知（keep，付款時維持原推薦人）：同樣「維持不變」（與上一條不可區分，R6 P2-3）
 // 使用者看得到的字一律不用「上線／下線」（W5-53）。
 import type { RenewalInfo } from '@contract';
 
@@ -52,11 +52,10 @@ export function freshReferrerSentence(input: FreshReferrerInput): string | null 
   switch (blankFreshOutcome(input.defaultAvailable, input.defaultIsCurrent)) {
     case 'changes':
       return '您的推薦人將改變。';
-    case 'keeps_same':
+    default:
+      // keeps_same 與 keeps 對使用者結果相同、必須不可區分（R6 P2-3）；
       // W6-28：只說不變，不出現預設推薦人的姓名與碼。
       return '您的推薦人維持不變。';
-    default:
-      return null;
   }
 }
 
@@ -76,10 +75,11 @@ export function freshCodePlaceholder(
   defaultAvailable: boolean | undefined,
   defaultIsCurrent?: boolean,
 ): string {
-  // 預設即現任（keeps_same）也不提示：那個碼就是預設推薦碼（W6-28）。
+  // keeps_same 與 keeps 同一句（R6 P2-3）：兩態可區分就等於洩漏「預設推薦人就是我的推薦人」。
+  // 自動綁定者仍不提示（那個碼是預設碼，W6-28）。
   return currentCode &&
     !isAutoReferral &&
-    blankFreshOutcome(defaultAvailable, defaultIsCurrent) === 'keeps'
+    blankFreshOutcome(defaultAvailable, defaultIsCurrent) !== 'changes'
     ? `目前：${currentCode}`
     : '輸入推薦碼';
 }
