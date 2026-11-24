@@ -92,6 +92,8 @@ export function PaymentCheckout() {
     failed: serverProfileUnconfirmed,
   });
   const newCodeInputRef = useRef<HTMLInputElement>(null);
+  // 新碼驗證的序號：改碼或重驗後，舊請求的回應不得寫回狀態（P2-a）。
+  const newCodeSeq = useRef(0);
   const renewalSectionRef = useRef<HTMLDivElement>(null);
   // S6：送單被拒後的內嵌狀態（toast 會消失，這些要留在畫面上）。
   //   modeUpdated：RENEWAL_MODE_REQUIRED 後重抓到續費身分，請使用者選模式
@@ -274,6 +276,7 @@ export function PaymentCheckout() {
               if (redirect === '/auth/complete-profile') {
                 showToast('請先完成個人資料', 'info');
               }
+              if (redirect === '/dashboard') ingestProfile?.(profile);
               navigate(redirect, { replace: true });
               return;
             }
@@ -493,6 +496,8 @@ export function PaymentCheckout() {
       return 'idle';
     }
     setNewCodeStatus('checking');
+    const seq = ++newCodeSeq.current;
+    const stale = () => seq !== newCodeSeq.current;
     // 只有 429（限流）採用後端訊息；5xx、網路錯誤的技術字眼（例「服務暫時無法
     // 使用」）不外露，一律顯示預設的「暫時無法驗證，請稍後再試」。
     const markUnavailable = (message: unknown): NewCodeResult => {
@@ -505,11 +510,13 @@ export function PaymentCheckout() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      if (stale()) return 'idle';
       if (!session) return markUnavailable(null);
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       const result = await response.json().catch(() => null);
+      if (stale()) return 'idle';
       if (response.ok && result?.valid && result.referrer) {
         setNewCodeStatus('valid');
         setNewReferrerName(result.referrer.userName);
@@ -525,7 +532,7 @@ export function PaymentCheckout() {
       // 429、401、5xx：暫時查不到，不是碼無效。
       return markUnavailable(response.status === 429 ? result?.error?.message : null);
     } catch {
-      return markUnavailable(null);
+      return stale() ? 'idle' : markUnavailable(null);
     }
   };
 
@@ -1248,6 +1255,7 @@ export function PaymentCheckout() {
                         onChange={(e) => {
                           // 續約換線的碼與註冊走同一組規則——全形數字一樣要摺。
                           setNewReferralCode(normalizeReferralCode(e.target.value));
+                          newCodeSeq.current++;
                           setNewCodeStatus('idle');
                           setNewReferrerName(null);
                           setNewCodeInvalidMessage(null);
