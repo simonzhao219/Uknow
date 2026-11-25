@@ -407,3 +407,42 @@ Deno.test('complete_paid_pending_order：金額不符去重認得舊格式、不
     await deleteTestUsers(client, ids);
   }
 });
+
+// W7-9 Q1＝A：全量（p_user_id null）路徑一個交易跨多位會員，會與線上付款互鎖；生產只逐人呼叫。
+Deno.test('repair_orphaned_*：p_user_id 為 null → U6R02 擲錯（全量路徑已關）', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    const codes: [string, string | null][] = [];
+    for (const fn of ['payments', 'claim_rewards', 'forfeitures']) {
+      try {
+        await sql.unsafe(`select public.repair_orphaned_${fn}(null)`);
+        codes.push([fn, null]);
+      } catch (e) {
+        codes.push([fn, (e as { code?: string }).code ?? 'unknown']);
+      }
+    }
+    assertEquals(codes, [['payments', 'U6R02'], ['claim_rewards', 'U6R02'], [
+      'forfeitures',
+      'U6R02',
+    ]]);
+  } finally {
+    await sql.end();
+  }
+});
+
+Deno.test('repair_orphaned_*：帶 p_user_id 照常執行（無候選回 0）', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const m = (await createTestUser(client, { name: '收尾 逐人自癒' })).id;
+    ids.push(m);
+    for (const fn of ['payments', 'claim_rewards', 'forfeitures']) {
+      const [r] = await sql.unsafe(`select public.repair_orphaned_${fn}('${m}'::uuid) as r`);
+      assertEquals(r.r.candidates_found, 0, fn);
+    }
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
