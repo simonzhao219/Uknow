@@ -19,8 +19,8 @@ _LONG = "專業剪髮染髮，十年經驗，歡迎預約，週一公休，地�
 
 
 def _home_listings():
-    # 同一列要有「描述 1 行」「描述 2 行以上」「無描述」三種，才量得到內容高度不同時的對齊。
-    descriptions = [_SHORT, _LONG, "", _LONG, _SHORT, ""]
+    # 第一列（2 欄時是前兩張）就要有「描述 1 行」與「無描述」，3 欄時再加「2 行以上」，才量得到內容高度不同時的對齊。
+    descriptions = [_SHORT, "", _LONG, _LONG, _SHORT, ""]
     return [
         build_public_listing(
             listing_id=f"11111111-1111-1111-1111-11111111110{i}",
@@ -178,3 +178,29 @@ def test_detail_stays_two_columns_on_desktop(page, rest_mock, service_provider_d
     m = _open_detail(page, rest_mock, service_provider_detail_page, 1280, 900)
 
     assert abs(m["infoTop"] - m["mediaTop"]) <= TOLERANCE_PX, f"實際 {m}"
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width,height", [(768, 1024), (841, 701)], ids=["768", "841x701"])
+def test_detail_with_long_name_and_long_contacts_does_not_overflow(
+    page, rest_mock, service_provider_detail_page, width, height
+):
+    """詳情頁 md–lg 雙欄（資訊欄約 356px）遇到 10 個全形字名稱與超長聯絡字串時不橫向溢出。"""
+    long_listing = build_public_listing(
+        name="林小美專業髮型設計師",
+        category="美髮",
+        districts=["大安區", "信義區"],
+        photos=["https://example.com/1.jpg"],
+        contacts={
+            "instagram": "a" * 30,
+            "line": "l" * 40,
+            "facebook": "https://www.facebook.com/" + "x" * 80,
+        },
+    )
+    page.set_viewport_size({"width": width, "height": height})
+    rest_mock.set_public_listing(long_listing)
+    page.goto(f"/service-providers/{long_listing['id']}")
+    expect(service_provider_detail_page.name_heading(long_listing["name"])).to_be_visible()
+
+    m = page.evaluate(_DETAIL_COLUMNS_JS)
+    assert m["scrollWidth"] <= m["clientWidth"], f"{width}px 出現橫向溢出：{m}"

@@ -40,7 +40,7 @@ DETAIL_LISTING = build_public_listing(
 _DETAIL_BLOCKS_JS = """
 () => {
   const grid = [...document.querySelectorAll('div.grid')]
-    .find((g) => /(?:md|lg):grid-cols-2/.test(g.className));
+    .find((g) => g.classList.contains('md:grid-cols-2'));
   if (!grid) return null;
   const [media, info] = grid.children;
   const head = info.children[0];
@@ -72,7 +72,7 @@ def test_detail_skeleton_matches_the_loaded_layout(page, rest_mock, service_prov
     expect(service_provider_detail_page.name_heading(DETAIL_LISTING["name"])).to_be_visible()
     loaded = page.evaluate(_DETAIL_BLOCKS_JS)
 
-    assert skeleton and loaded, "找不到雙欄（md／lg:grid-cols-2）的版面格線——結構探針過時了，不是版面問題"
+    assert skeleton and loaded, "找不到雙欄（md:grid-cols-2）的版面格線——結構探針過時了，不是版面問題"
     jumps = {k: loaded[k] - skeleton[k] for k in skeleton if abs(loaded[k] - skeleton[k]) > TOLERANCE_PX}
     assert not jumps, (
         f"{width}px 下資料到位時這些區塊跳了（px，正值＝往下）：{jumps}。"
@@ -169,7 +169,7 @@ def test_browse_controls_do_not_shift_the_detail_layout(page, rest_mock, service
     expect(service_provider_detail_page.name_heading(DETAIL_LISTING["name"])).to_be_visible()
     browsed = page.evaluate(_DETAIL_BLOCKS_JS)
 
-    assert plain and browsed, "找不到雙欄（md／lg:grid-cols-2）的版面格線——結構探針過時了，不是版面問題"
+    assert plain and browsed, "找不到雙欄（md:grid-cols-2）的版面格線——結構探針過時了，不是版面問題"
     shifts = {k: browsed[k] - plain[k] for k in plain if abs(browsed[k] - plain[k]) > TOLERANCE_PX}
     assert not shifts, (
         f"{width}px 下有換篇控制時這些區塊位移了（px，正值＝往下）：{shifts}。"
