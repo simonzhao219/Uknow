@@ -23,6 +23,14 @@
 --    外面再包一層 begin…exception（呼叫端雙保險）。3a（推薦碼，repair_orphaned_payments 會自癒）維持 warning。
 --    付款語意不變：各步驟仍在自己的子交易內被吞，函式照常 return。
 --
+-- 5. complete_paid_pending_order：基準＝20261115000001（之後無重定義）。差異：
+--    1) when others 的 error 告警 message 改固定行動句「【已付款未開通・請開 Claude 處理】單號 …」，
+--       sqlstate／sqlerrm 只進 context（加 kind='open_failed'、trade_no）；單號以 p_order_id 回查；
+--    2) 同單未處理的 open_failed 告警已有就不重寫（heal 每輪重試）；告警段整段包 exception；
+--    3) 金額不符的去重只認金額不符（kind='amount_mismatch' 或舊格式帶 trade_amt），寫入時加 kind；
+--    4) 開通成功時把同單未處理的 open_failed 告警標 resolved_at（W7-9 Q7）。
+--    回給 Edge 的 {'outcome':'failed','error':sqlerrm} 不變。
+--
 -- 歷史檔頭更正（R6 P2-7、P2-8；已套用的 migration 不改，記在這裡）：
 --   * 20261116000001_referral_award_chain 檔頭說對照的發獎函式是 20261113000001；
 --     pay_referral_generations 的最新定義是 20261115000001（語意與 chain 等價，R6 §1.1 已核）。
@@ -323,3 +331,154 @@ $$;
 
 revoke execute on function public.apply_referral_side_effects(uuid, uuid, timestamptz)
   from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 5. complete_paid_pending_order（基準 20261115000001）
+-- ------------------------------------------------------------
+create or replace function public.complete_paid_pending_order(p_order_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_row       record;
+  v_trade_amt numeric;
+  v_prev_lt   text;
+  v_trade_no  text;
+  v_sqlstate  text;
+  v_sqlerrm   text;
+begin
+  -- 本交易內的付款完成改用 try 取換線鎖（見 process_successful_payment 0a′、W5-61）。
+  -- 在任何子交易之外設：子交易回滾會還原 GUC。結尾不清（交易層設定，交易結束自然失效）。
+  perform set_config('uknow.rewire_try_lock', 'on', true);
+
+  begin
+    -- 拿鎖後重讀重驗謂詞（TOCTOU 防禦）：已被 notify／另一次自癒處理完 → 謂詞不成立；
+    -- 對方還握著訂單列 → skip locked 拿不到。兩者分不出來，一律記 skipped（同舊版）。
+    -- 失敗回應（Status != 'SUCCESS'）永遠過不了這個謂詞，不可能被誤補成 completed。
+    select id, user_id, transaction_id, payuni_response
+      into v_row
+    from public.payment_orders
+    where id = p_order_id
+      and status = 'pending'
+      and payuni_response->>'Status' = 'SUCCESS'
+    for update skip locked;
+
+    if v_row.id is null then
+      return jsonb_build_object('outcome', 'skipped');
+    end if;
+
+    -- 金額重驗（鏡射 resolveOrderFromPayUni：TradeAmt 存在且 != 1200 才算不符；缺欄位寬容）。
+    v_trade_amt := null;
+    begin
+      if coalesce(v_row.payuni_response->>'TradeAmt', '') <> '' then
+        v_trade_amt := (v_row.payuni_response->>'TradeAmt')::numeric;
+      end if;
+    exception when others then
+      v_trade_amt := -1;  -- 無法解析一律視同金額不符
+    end;
+
+    if v_trade_amt is not null and v_trade_amt <> 1200 then
+      -- 錢可能已刷：絕不自動補完、也絕不自動標失敗，維持 pending 交人工。
+      -- 告警去重：同一筆訂單已有未解決的告警就不重寫。
+      if not exists (
+        select 1 from public.system_alerts
+        where source = 'complete_paid_pending_orders'
+          and resolved_at is null
+          and context->>'order_id' = v_row.id::text
+          -- 差異 3：只認金額不符（新格式帶 kind；舊格式帶 trade_amt），不被開通失敗告警遮蔽。
+          and (context->>'kind' = 'amount_mismatch' or context ? 'trade_amt')
+      ) then
+        perform public.log_system_alert(
+          'complete_paid_pending_orders', 'error',
+          'PayUni 回應金額與方案價不符，訂單維持 pending 待人工裁決',
+          jsonb_build_object(
+            'kind',      'amount_mismatch',
+            'order_id',  v_row.id,
+            'trade_no',  v_row.transaction_id,
+            'user_id',   v_row.user_id,
+            'trade_amt', v_row.payuni_response->>'TradeAmt'
+          )
+        );
+      end if;
+      return jsonb_build_object('outcome', 'amount_mismatch');
+    end if;
+
+    -- 0b 鎖預取：只有這一步帶 lock_timeout（見檔頭 2b）。
+    v_prev_lt := current_setting('lock_timeout');
+    begin
+      perform set_config('lock_timeout', '3s', true);
+      perform 1 from public.profiles where id = v_row.user_id for update;
+      perform set_config('lock_timeout', v_prev_lt, true);
+    exception when lock_not_available then
+      perform set_config('lock_timeout', v_prev_lt, true);
+      return jsonb_build_object('outcome', 'skipped_locked');
+    end;
+
+    -- 委派既有的付款處理函數（profiles 已在手上，0b 重入不等）。
+    -- TradeNo 空值時退回 MerTradeNo，與 resolveOrderFromPayUni 一致。
+    perform public.process_successful_payment(
+      v_row.user_id,
+      v_row.transaction_id,
+      coalesce(nullif(v_row.payuni_response->>'TradeNo', ''), v_row.transaction_id),
+      v_row.payuni_response
+    );
+    -- 差異 4（W7-9 Q7）：之前的開通失敗是暫時性的（如 40P01），這一輪開通了 → 同單未處理的
+    -- open_failed 告警自動標處理。包子交易：標不掉也不影響已完成的開通。
+    begin
+      update public.system_alerts
+      set resolved_at = now()
+      where source = 'complete_paid_pending_orders'
+        and resolved_at is null
+        and context->>'order_id' = p_order_id::text
+        and context->>'kind' = 'open_failed';
+    exception when others then
+      raise warning 'complete_paid_pending_order：自動標處理失敗（order=%）: %', p_order_id, sqlerrm;
+    end;
+    return jsonb_build_object('outcome', 'completed');
+
+  exception
+    when sqlstate 'U6R01' then
+      -- 換線鎖被線上付款持有 → 跳過，下一輪再補；不是錯誤（W5-61）。
+      return jsonb_build_object('outcome', 'skipped_locked');
+    when others then
+      v_sqlstate := sqlstate;
+      v_sqlerrm  := sqlerrm;
+      -- 差異 1、2：message 是固定行動句（W6-24 前 60 字＝行動＋單號＋後果），sqlerrm 只進 context；
+      -- 同單未處理的 open_failed 已有就不重寫。單號一律以 p_order_id 回查——select 本身擲錯時
+      -- v_row 未指派，參照會擲 55000。整段包 exception：告警壞掉也要照常回 failed。
+      begin
+        if not exists (
+          select 1 from public.system_alerts
+          where source = 'complete_paid_pending_orders'
+            and resolved_at is null
+            and context->>'order_id' = p_order_id::text
+            and context->>'kind' = 'open_failed'
+        ) then
+          begin
+            select transaction_id into v_trade_no from public.payment_orders where id = p_order_id;
+          exception when others then
+            v_trade_no := null;
+          end;
+          perform public.log_system_alert('complete_paid_pending_orders', 'error',
+            '【已付款未開通・請開 Claude 處理】單號 ' || coalesce(v_trade_no, '（查無單號）')
+              || '：會員已付款但自動開通失敗。'
+              || '下一步：開一個 Claude Code session，請它依 supabase/README〈已付款未開通〉處理。'
+              || '原因：' || public.classify_alert_sqlstate(v_sqlstate)
+              || '（' || coalesce(v_sqlstate, '?') || '）',
+            jsonb_build_object(
+              'kind', 'open_failed', 'order_id', p_order_id, 'trade_no', v_trade_no,
+              'sqlstate', v_sqlstate, 'sqlerrm', v_sqlerrm));
+        end if;
+      exception when others then
+        raise warning 'complete_paid_pending_order：告警寫入失敗（order=%）: %', p_order_id, sqlerrm;
+      end;
+      raise warning 'complete_paid_pending_order：補完訂單 % 失敗: %', p_order_id, v_sqlerrm;
+      return jsonb_build_object('outcome', 'failed', 'error', v_sqlerrm);
+  end;
+end;
+$$;
+
+revoke execute on function public.complete_paid_pending_order(uuid) from anon, authenticated, public;
+grant execute on function public.complete_paid_pending_order(uuid) to service_role;

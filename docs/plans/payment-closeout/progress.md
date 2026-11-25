@@ -10,8 +10,8 @@
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
 | 1 | drop wrapper＋改測試 | ✅ 綠 | 4c94b3a0 | 270a7030 |
-| 2 | 3a-bis／3b／3d 升 error | ✅ 綠 | a7fbb4d6 | （本 commit） |
-| 3 | 單筆開通失敗 message | ⬜ 未開始 | | |
+| 2 | 3a-bis／3b／3d 升 error | ✅ 綠 | a7fbb4d6 | ae03a171 |
+| 3 | 單筆開通失敗 message | ✅ 綠 | 10e5ea0e | （本 commit） |
 | 4 | repair 關全量（依 Q1） | ⬜ 未開始 | | |
 | 5 | 文件 | ⬜ 未開始 | | |
 
