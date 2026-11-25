@@ -220,6 +220,8 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
     order by s.created_at, rt.generation;
    ```
 
+   判讀：每組 `(referee, subscription_id)` 應有 generation 1～3；缺的那代再以 `referral_award_chain('<referee>')` 確認該代
+   有收獎人（`stop_reason='none'`）才算漏發——該代本來就沒人（`no_referrer`）或成環停發（`cycle`）不補。
 4. 缺的照〈補發漏發獎金〉第 2、3 步補（收獎人以 `referral_award_chain` 為準）。
 5. **確認**：`select referrer_user_id from public.referral_edges where referee_user_id = '<user_id>';` 等於 `referrer_id`；標告警處理。
 
@@ -237,11 +239,14 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
    ```sql
    select first_month_key from public.referral_pair_history
     where referrer_user_id = '<referrer_id>' and referee_user_id = '<user_id>';
+   select key as month_key from public.task_progress, jsonb_each(monthly_referrals)
+    where user_id = '<referrer_id>' and value ? '<user_id>';
    ```
 
-   有列＝已補計（之後的付款補上了）→ 直接到第 4 步。
-2. 沒有列，且業主要求以原付款月份計：月份＝付款時點的台北月（`to_char(<付款 completed_at> at time zone 'Asia/Taipei', 'YYYY-MM')`）。
-   先回報業主，同意後執行（與 `apply_referral_side_effects` 3d 同一段寫法）：
+   任一有結果＝已補計（之後的付款補上了）→ 直接到第 4 步。
+2. 都沒有：回報業主兩個選項——等這位會員下次付款自動補計（月份記在那次），或現在以原付款月份手動補。業主選等就到第 4 步；
+   選手動補，月份＝月份＝付款時點的台北月（`to_char(<付款 completed_at> at time zone 'Asia/Taipei', 'YYYY-MM')`），
+   執行（與 `apply_referral_side_effects` 3d 同一段寫法）：
 
    ```sql
    insert into public.referral_pair_history (referrer_user_id, referee_user_id, first_month_key)
@@ -255,7 +260,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
      updated_at = now();
    ```
 
-3. 對帳推薦王（門檻讀設定，不寫死）：
+3. 手動補了才做：對帳推薦王（會補發推薦王 credit，與第 2 步一起回報；門檻讀設定，不寫死）：
 
    ```sql
    select public.reconcile_king_credits('<referrer_id>', '<YYYY-MM>',
@@ -273,15 +278,26 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 **context**：`user_id`、`subscription_id`、`trade_no`、`sqlstate`、`sqlerrm`。
 
 1. 確認仍沒有推薦人：`select referred_by_user_id from public.profiles where id = '<user_id>';` 已有值就到第 4 步。
-2. 確認預設推薦碼現況（是付款當下那個碼、推薦人未停權）：`select default_referrer_code from public.reward_config where id = true;`
-3. 回報業主（補綁後該筆付款的三代獎金也要補），同意後：以付款時點補綁（`referred_by_changed_at` 記付款時點，自癒才補得到那筆）——
+2. 確認預設推薦碼現況（是付款當下那個碼、推薦人未停權、不是會員自己）：
 
    ```sql
-   select set_config('uknow.referred_by_changed_at', '<付款 completed_at>', false);
+   select default_referrer_code from public.reward_config where id = true;
+   select * from public.validate_referral_code('<預設碼>');   -- 有效才回推薦人；停權或無此碼回空
+   ```
+
+   推薦人就是 `<user_id>` 本人（自我推薦）就停下回報業主。
+3. 回報業主（補綁後該筆付款的三代獎金也要補），同意後：以付款時點補綁（`referred_by_changed_at` 記付款時點，自癒才補得到那筆）。
+   **`set_config` 與 `update` 必須在同一個交易**（第三參數 `true`＝只在本交易有效；分開執行或用 `false` 會讓時點沒生效、
+   或殘留到同連線之後的推薦人變更）——
+
+   ```sql
+   begin;
+   select set_config('uknow.referred_by_changed_at', '<付款 completed_at>', true);
    update public.profiles
       set referred_by_user_id = (select user_id from public.referral_codes where code = '<預設碼>' and status = 'active'),
           referred_by_code = '<預設碼>', referred_by_is_default = true
     where id = '<user_id>' and referred_by_user_id is null;
+   commit;
    ```
 
    再請會員重新載入個人頁（`repair_orphaned_payments` 會補推薦連結、三代獎金與任務進度），或依〈補發漏發獎金〉手動補。
@@ -298,7 +314,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 1. 查訂單現況：`select status, completed_at from public.payment_orders where id = '<order_id>';` 已 `completed` 就只標處理。
 2. 依 `sqlerrm` 判斷原因（資料錯誤、約束、函式錯誤）；`40P01`／`40001` 是暫時性，等下一輪。連續幾輪失敗看
    `GET /internal/scheduler-health` 的 reconcile `healFailedStreak`。
-3. 修好原因後（動資料或程式都先回報業主）可立即重跑一次：`select public.complete_paid_pending_order('<order_id>');`
+3. 修好原因後（動資料或程式都先回報業主；重跑會開通訂閱並發獎，也要先回報）可立即重跑一次：`select public.complete_paid_pending_order('<order_id>');`
    回 `completed` 即成功；`amount_mismatch` 改走金額不符的人工裁決。
 4. **確認**：訂單 `completed`、`subscriptions` 有一列 `source_payment_order_id = '<order_id>'`；告警已自動標處理（或手動標）。
 

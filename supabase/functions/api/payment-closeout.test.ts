@@ -197,6 +197,32 @@ Deno.test('apply_referral_side_effects：3d 任務進度擲錯 → error 告警�
   }
 });
 
+Deno.test('apply_referral_side_effects：3d 持續失敗重跑 → 只留一筆、無訂閱寫查無單號', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  let teardown = async () => {};
+  try {
+    const { m } = await referrerAndMember(client, ids);
+    teardown = await failWrite(
+      sql,
+      'referral_pair_history',
+      `new.referee_user_id = '${m}'::uuid`,
+      'task2',
+    );
+    for (let i = 0; i < 2; i++) {
+      await sql`select public.apply_referral_side_effects(${m}::uuid, null::uuid, now())`;
+    }
+    const alerts = await sideEffectAlerts(sql, m, 'task_king');
+    assertEquals(alerts.length, 1, '同會員未處理的同類告警不重複推');
+    assertLine(alerts[0], ['（查無單號）', '推薦人任務少計一位']);
+  } finally {
+    await teardown();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
 Deno.test('apply_referral_side_effects：3a-bis 預設推薦人寫入擲錯 → error 告警、付款照常', async () => {
   const client = adminClient();
   const sql = postgres(DB_URL, { max: 1 });
