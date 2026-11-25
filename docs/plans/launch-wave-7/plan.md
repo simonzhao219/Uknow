@@ -121,8 +121,8 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 ✅ d31227a | 收工 |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；#534 ✅ 9de8043 | 收工（待 develop 正控轉 success） |
-| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | #536 | 審查 P2 退回修（W7-19；審查員 `session_01MQovbFAdVe4aJQ7YYwfvrm`） |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；#534 ✅ 9de8043 | 收工（develop 正控 11/25 06:07 UTC success） |
+| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | #536 ✅ bc0f86a | 收工 |
 | S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | #535 | CI 綠；等業主裁標題字級偏離 |
 | S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 ✅ 27db22e | 收工 |
 
@@ -144,3 +144,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 13:58 | S2 修 #534 W7-17（紅 235fffb／綠 7ddf16c：`pickSameTrade` 同號多列任一 TradeStatus=1 才取、衝突回 unknown；查詢路徑缺 TradeAmt 不開通；鍵名白名單；PR 內文逐字引用官方欄位表——有 TradeAmt、PaymentDay、DataSource，**沒有 AuthDay**）；主 session 核 delta、CI 全綠 → **#534 合進 develop（9de8043）**。S6 rebase 兩次後 CI 綠、journey run 45551228386（ubuntu-latest）success → **#533 合進 develop（27db22e）**，W4-23 退場條件達成，S6 收工。S3 交 **#535**（業主 11/25 親打 /tdd-implement；CI 綠；偏離：768–1023px 詳情頁標題 3xl→2xl 待業主裁；bundle +82 B，預算內） | 業主裁 #535 偏離；業主到 S4 親打；排程 06:35 UTC 查 develop 正控 |
 | 11/25 14:02 | S4 交 **#536**（業主 11/25 在 S4 互動選項裁規劃「修訂後通過」並親打 /tdd-implement；六階段紅綠，hash 以 PR 內文為準；實作審查 P0 0、P1 2 已修；bundle 總 raw 1983.1／1984）。主 session 定 **W7-18**，派獨立 Opus 審查 | 審查＋CI → 合 #536 → 必上三項齊 → 晉升 |
 | 11/25 14:06 | #536 獨立 Opus 審查：**P0 0、P1 0**、P2 5——逐函式 diff -w 只含宣稱差異、P0 防線三層齊、3b 失敗 3c 照跑、去重互不遮蔽、wrapper 無殘留、前 60 字實算 55～59。主 session 定 **W7-19**，退回修 README 三處與兩支測試 | S4 修 → CI 綠 → 合 #536 |
+| 11/25 | S4 修 #536 W7-19（c747acc2：README 三節＋分類直呼測試兩支）；主 session 核 delta（另核 `validate_referral_code` 回傳欄位 `referrer_user_id` 存在）、CI 全綠 → **#536 合進 develop（bc0f86a）**，S4 收工。**必上三項（S1、S2、S4）全數合併**。develop 驗證：`payuni_query_controls` 06:07 UTC **success**（同一張 10/28 sandbox 樣本，前一輪 05:07 仍 no_matching_trade）→ W7-16 修正在真 PayUni sandbox 證實；schema_migrations 到 `20261125000001`、wrapper 已 drop、`log_referral_side_effect_failure` 在；reconcile 至 17:07 UTC 皆 succeeded。develop 仍有 2 筆未處理的正控告警（error control_failed、warning sample_stale；sample_stale 因 develop 無 14 天內新付款會持續存在），主 session 未標 | 業主裁 #535 偏離與晉升時點 → 開晉升 PR |
