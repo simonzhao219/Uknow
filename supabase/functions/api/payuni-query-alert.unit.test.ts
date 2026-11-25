@@ -227,3 +227,67 @@ Deno.test('payUniQueryRaw：回原始 Status 與解開的 EncryptInfo（正控�
   const failed = await withFetch({ Status: 'QUERY03001' }, () => payUniQueryRaw('RAW-2'));
   assertEquals(failed.decrypted, null);
 });
+
+// ============================================================
+// W7-16：官方回應形狀是 http_build_query 的 `Result[i][欄位]` 鍵名（不是 JSON 字串的
+// Result，也不是平鋪）。舊解析對這個形狀會落 unknown／missing_field，已付款單收斂不了。
+// 夾具已去識別化。
+// ============================================================
+const officialShape = (rows: Record<string, string>[]) => {
+  const fields: Record<string, string> = { Status: 'SUCCESS', Message: '查詢成功' };
+  rows.forEach((row, i) => {
+    for (const [k, v] of Object.entries(row)) fields[`Result[${i}][${k}]`] = v;
+  });
+  return query(fields);
+};
+
+Deno.test('queryPayUniTradeStatus：官方 Result[i] 形狀已付款 → SUCCESS，PayTime 取 PaymentDay', async () => {
+  const result = await officialShape([{
+    MerTradeNo: 'P13-TRADE',
+    TradeNo: '1700000000000000001',
+    TradeAmt: '1200',
+    TradeStatus: '1',
+    PaymentDay: '2026-10-28 18:55:30',
+    DataSource: 'A',
+  }]);
+  assertEquals(result.stillProcessing, false);
+  if (result.stillProcessing) return;
+  assertEquals(result.data.Status, 'SUCCESS');
+  assertEquals(result.data.MerTradeNo, 'P13-TRADE');
+  assertEquals(result.data.TradeNo, '1700000000000000001');
+  assertEquals(result.data.TradeAmt, '1200');
+  assertEquals(result.data.PayTime, '2026-10-28 18:55:30');
+});
+
+Deno.test('queryPayUniTradeStatus：官方形狀 0／9／4 未付款、8 unknown、DataSource B incomplete', async () => {
+  for (const code of ['0', '4', '9']) {
+    assertEquals<unknown>(
+      await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: code, DataSource: 'A' }]),
+      { stillProcessing: true },
+      code,
+    );
+  }
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: '8' }]),
+    { stillProcessing: true, unknownStatus: { tradeStatus: '8', reason: 'unknown_code' } },
+  );
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: '1', DataSource: 'B' }]),
+    { stillProcessing: true, incomplete: true },
+  );
+});
+
+Deno.test('queryPayUniTradeStatus：官方形狀多筆 → 只取同號；都不同號 → no_matching_trade', async () => {
+  const picked = await officialShape([
+    { MerTradeNo: 'OTHER', TradeStatus: '9' },
+    { MerTradeNo: 'P13-TRADE', TradeStatus: '1' },
+  ]);
+  assertEquals(!picked.stillProcessing && picked.data.Status, 'SUCCESS');
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'OTHER-A', TradeStatus: '1' }, {
+      MerTradeNo: 'OTHER-B',
+      TradeStatus: '1',
+    }]),
+    { stillProcessing: true, unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' } },
+  );
+});

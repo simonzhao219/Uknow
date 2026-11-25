@@ -33,6 +33,7 @@ import {
 import { healPaidPendingOrders, type HealRpc } from './paid-pending-heal.ts';
 import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { positiveControlDbDeps, runPositiveControl } from './payuni-positive-control.ts';
+import { extractPayUniTrades, withQueryPayTime } from './payuni-query-result.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { adminAuthorizer, createAdminReferralTreeHandlers } from './admin-referral-tree.ts';
 import { deriveNodeStatus } from './node-status.ts';
@@ -3128,7 +3129,8 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
     };
   }
 
-  // 結果可能是 Result（JSON 陣列字串）或平鋪欄位——兩種都接。
+  // 結果列由 extractPayUniTrades 解析（W7-16）：官方形狀是 `Result[i][欄位]` 鍵名，
+  // 另接 JSON 字串的 Result 與平鋪欄位（見 payuni-query-result.ts 檔頭）。
   // 同號比對（pay P1-3）：只取 MerTradeNo 相同的那筆；舊行為 `?? list[0]` 會拿到
   // 別張單的狀態。比對一律 String().trim()（數字型也對得上）。只有一筆且沒帶
   // MerTradeNo 時照舊接受，避免已付款單因欄位缺漏永遠收斂不了。
@@ -3139,20 +3141,16 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
     unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' },
   };
   let trade: Record<string, unknown> = decrypted;
-  if (decrypted.Result) {
-    try {
-      const list = JSON.parse(decrypted.Result);
-      if (Array.isArray(list) && list.length) {
-        const match = list.find((t: any) => t && typeof t === 'object' && sameTrade(t));
-        if (match) {
-          trade = match;
-        } else if (list.length === 1 && list[0] && !('MerTradeNo' in list[0])) {
-          trade = list[0];
-        } else {
-          return noMatch;
-        }
-      }
-    } catch { /* Result 不是 JSON → 沿用平鋪欄位 */ }
+  const list = extractPayUniTrades(decrypted);
+  if (list && list.length) {
+    const match = list.find(sameTrade);
+    if (match) {
+      trade = match;
+    } else if (list.length === 1 && !('MerTradeNo' in list[0])) {
+      trade = list[0];
+    } else {
+      return noMatch;
+    }
   }
   if (trade === decrypted && 'MerTradeNo' in trade && !sameTrade(trade)) return noMatch;
 
@@ -3172,7 +3170,8 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   // 付款時間，會籍起算日會錯。
   if ((flat.DataSource ?? '').trim() === 'B') return { stillProcessing: true, incomplete: true };
   if (tradeStatus === '1') {
-    return { stillProcessing: false, data: { ...flat, Status: 'SUCCESS' } };
+    // 查詢回應的付款時間叫 PaymentDay，補成 PayTime 讓 payuni_paid_at 認得（W7-16）。
+    return { stillProcessing: false, data: { ...withQueryPayTime(flat), Status: 'SUCCESS' } };
   }
   if (tradeStatus === '2' || tradeStatus === '3') {
     // 付款失敗 / 付款取消 → 讓 resolveOrderFromPayUni 標 failed
