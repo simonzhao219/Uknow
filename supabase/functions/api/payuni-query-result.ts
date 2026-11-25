@@ -33,7 +33,7 @@ export function extractPayUniTrades(
     row[m[2]] = String(value ?? '');
     byIndex.set(i, row);
   }
-  if (byIndex.size < 0) { // 紅燈 stub：尚不認 Result[i][欄位] 形狀
+  if (byIndex.size > 0) {
     return [...byIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, row]) => row);
   }
 
@@ -62,7 +62,7 @@ export function extractPayUniTrades(
 export function withQueryPayTime(trade: Record<string, string>): Record<string, string> {
   const payTime = (trade.PayTime ?? '').trim();
   const paymentDay = (trade.PaymentDay ?? '').trim();
-  if (payTime || !paymentDay || paymentDay) return trade; // 紅燈 stub
+  if (payTime || !paymentDay) return trade;
   return { ...trade, PayTime: paymentDay };
 }
 
@@ -95,7 +95,5 @@ export function describeDecryptedShape(decrypted: Record<string, string>): strin
       resultPart = 'Result=not-json';
     }
   }
-  void keyPart;
-  void resultPart;
-  return ''; // 紅燈 stub
+  return `${keyPart} ${resultPart}`.slice(0, 560);
 }
