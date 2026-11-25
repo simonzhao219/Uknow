@@ -55,6 +55,7 @@
 | W7-16 | develop 正控每小時 `no_matching_trade`（樣本為真 sandbox 已付款單） | **S2 開後續 `/fix-bug`，晉升前必修**：先取證 PayUni 單筆查詢解密後的真實形狀（疑為 `Result[0][…]` 平鋪鍵，`URLSearchParams` 解析後兩條路都對不到），再修共用解析；既有 `queryPayUniTradeStatus` 同一解析，「已付款但 notify 遺失」的單靠查詢收斂不了（fail-safe 轉 `missing_field` error，非靜默）。正式站目前無 pending 單、晉升前不受影響 |
 | W7-17 | #534 獨立審查（P0 0、P1 1 條件式、P2 4） | **本 PR 修**：P1 同一單號回多列時，有任一列 TradeStatus=1 才取，狀態衝突回 unknown（不下結論；否則已付款單可能被標 failed）；P2-2 查詢路徑缺 TradeAmt 不開通；P2-3 reason 只輸出合格鍵名；P2-4 拒絕前導 0 索引；P2-5 補測試；PR 內文逐字引用官方欄名 |
 | W7-18 | S4：`open_failed` 告警只在 heal 本輪開通成功時自動標處理；改由 notify 完成時會一直掛著 | **接受**，列第 8 波候選（要改 `process_successful_payment`，本波不碰）；README〈已付款未開通〉第 1 步兜底 |
+| W7-19 | #536 獨立審查（P0 0、P1 0、P2 5） | **本 PR 修** P2-1～3（README 補救手冊三處：補計任務綁 `if found` 防重複計數、補綁預設推薦人防查無寫髒列、補寫推薦連結前先查舊邊）＋P2-4 補分類直呼測試；P2-5（去重 exists 掃整個 source）接受、列第 8 波 |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -99,6 +100,7 @@ S4 drop wrapper 前提（W6-30）：正式站 Edge 已是 S1 版本並跑過多�
 
 以 `launch-wave-6/plan.md` §5（含〈承接第 5 波〉）與 R6 §5、§6.3 為準，扣掉本波收的（P1-1、P2-1～3、P2-4、P2-7～9、P2-12、W6-14／30、W6-36、3b／3d、`repair_orphaned_*`、單筆 sqlerrm、W4-23）。
 本波 W7-1 留下的：S5 其餘——P2-5（`fresh_events` 未換線標示）、P2-6（規模效能＋頂層 unplaceable）、P2-10＋W6-21（後台 portal 遮罩）、W6-16（完整換線事件表）。
+W7-19 留下的：`log_referral_side_effect_failure` 去重查詢加部分索引。
 W7-18 留下的：notify 完成開通時自動標掉同單 `open_failed` 告警。
 W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `profiles` 無上限，到 1000 筆會被 PostgREST 靜默截斷（與 ref P1-3 同類，一起做）。
 重點未收：稽核其餘 P1（ref P1-3／5／6／7／8、auth P1-3／5、ops P1-2）、journey f70 缺章（W5-60）、vitest／vite 大版本（#467）、後台刪帳號工具（W5-12）、unknown 單手動開通入口（W5-44③）、S4 焦點還原搬進 useBrowseNav（W6-22）、#525「載入更多」aria-live 與 `LedgerState`／`PagedState` 合併。
@@ -120,7 +122,7 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 ✅ d31227a | 收工 |
 | S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；#534 ✅ 9de8043 | 收工（待 develop 正控轉 success） |
-| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | #536 | 獨立審查中（`session_01MQovbFAdVe4aJQ7YYwfvrm`） |
+| S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | #536 | 審查 P2 退回修（W7-19；審查員 `session_01MQovbFAdVe4aJQ7YYwfvrm`） |
 | S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | #535 | CI 綠；等業主裁標題字級偏離 |
 | S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 ✅ 27db22e | 收工 |
 
@@ -141,3 +143,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 13:30 | #534 獨立 Opus 審查：P0 0、**P1 1**（同號多列取第一筆→可能把已付款單標 failed；舊碼同形但走不到，本 PR 讓它可觸發）、P2 4；已核實：同號比對未放寬、PaymentDay 時區與 notify 一致、金額不符仍走 amount_mismatch、兩個呼叫端都改用共用 parser → 主 session 定 **W7-17**，退回 S2 | S2 修 → CI 綠 → 合 #534 |
 | 11/25 13:58 | S2 修 #534 W7-17（紅 235fffb／綠 7ddf16c：`pickSameTrade` 同號多列任一 TradeStatus=1 才取、衝突回 unknown；查詢路徑缺 TradeAmt 不開通；鍵名白名單；PR 內文逐字引用官方欄位表——有 TradeAmt、PaymentDay、DataSource，**沒有 AuthDay**）；主 session 核 delta、CI 全綠 → **#534 合進 develop（9de8043）**。S6 rebase 兩次後 CI 綠、journey run 45551228386（ubuntu-latest）success → **#533 合進 develop（27db22e）**，W4-23 退場條件達成，S6 收工。S3 交 **#535**（業主 11/25 親打 /tdd-implement；CI 綠；偏離：768–1023px 詳情頁標題 3xl→2xl 待業主裁；bundle +82 B，預算內） | 業主裁 #535 偏離；業主到 S4 親打；排程 06:35 UTC 查 develop 正控 |
 | 11/25 14:02 | S4 交 **#536**（業主 11/25 在 S4 互動選項裁規劃「修訂後通過」並親打 /tdd-implement；六階段紅綠，hash 以 PR 內文為準；實作審查 P0 0、P1 2 已修；bundle 總 raw 1983.1／1984）。主 session 定 **W7-18**，派獨立 Opus 審查 | 審查＋CI → 合 #536 → 必上三項齊 → 晉升 |
+| 11/25 14:06 | #536 獨立 Opus 審查：**P0 0、P1 0**、P2 5——逐函式 diff -w 只含宣稱差異、P0 防線三層齊、3b 失敗 3c 照跑、去重互不遮蔽、wrapper 無殘留、前 60 字實算 55～59。主 session 定 **W7-19**，退回修 README 三處與兩支測試 | S4 修 → CI 綠 → 合 #536 |
