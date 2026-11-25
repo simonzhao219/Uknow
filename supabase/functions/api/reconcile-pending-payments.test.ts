@@ -172,6 +172,7 @@ function fakeHandlerDeps(
           missing_field: 0,
           no_matching_trade: 0,
           incomplete_too_long: 0,
+          multiple_matching_trades: 0,
         },
         incomplete: 0,
         notFound: 0,

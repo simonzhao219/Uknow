@@ -369,3 +369,17 @@ Deno.test('正控取證：鍵名過多時截斷，reason 長度有上限', () =>
   assert(reason.length <= 600, `長度 ${reason.length}`);
   assert(reason.includes('…'), reason);
 });
+
+Deno.test('正控：同號多列 1＋2 → 成功；2＋3 衝突 → failed multiple_matching_trades', () => {
+  const rows = (a: string, b: string) => ({
+    'Result[0][MerTradeNo]': 'S1',
+    'Result[0][TradeStatus]': a,
+    'Result[1][MerTradeNo]': 'S1',
+    'Result[1][TradeStatus]': b,
+  });
+  assertEquals(evaluateControlResponse('S1', { Status: 'SUCCESS' }, rows('2', '1')), { ok: true });
+  assertEquals(
+    evaluateControlResponse('S1', { Status: 'SUCCESS' }, rows('2', '3')),
+    { ok: false, reason: 'multiple_matching_trades' },
+  );
+});

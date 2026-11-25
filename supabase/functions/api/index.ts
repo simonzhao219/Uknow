@@ -33,7 +33,7 @@ import {
 import { healPaidPendingOrders, type HealRpc } from './paid-pending-heal.ts';
 import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
 import { positiveControlDbDeps, runPositiveControl } from './payuni-positive-control.ts';
-import { extractPayUniTrades, withQueryPayTime } from './payuni-query-result.ts';
+import { extractPayUniTrades, pickSameTrade, withQueryPayTime } from './payuni-query-result.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { adminAuthorizer, createAdminReferralTreeHandlers } from './admin-referral-tree.ts';
 import { deriveNodeStatus } from './node-status.ts';
@@ -2821,6 +2821,7 @@ const UNKNOWN_STATUS_LABEL: Record<UnknownReason, string> = {
   missing_field: 'PayUni 回應缺少交易狀態',
   no_matching_trade: 'PayUni 回應裡找不到這張單',
   incomplete_too_long: 'PayUni 超過 4 天仍回「處理中未完整」',
+  multiple_matching_trades: 'PayUni 回了多筆同號交易且狀態互相衝突',
 } as const;
 
 /** PayUni 查詢層「查無符合訂單資料」（官方錯誤代碼／交易查詢；R6 §3.1）。 */
@@ -2885,6 +2886,7 @@ export async function reconcilePendingOrders(
       missing_field: 0,
       no_matching_trade: 0,
       incomplete_too_long: 0,
+      multiple_matching_trades: 0,
     },
     incomplete: 0,
     notFound: 0,
@@ -3143,9 +3145,15 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   let trade: Record<string, unknown> = decrypted;
   const list = extractPayUniTrades(decrypted);
   if (list && list.length) {
-    const match = list.find(sameTrade);
-    if (match) {
-      trade = match;
+    // 同號多列：有已付款取已付款、狀態衝突不下結論（pickSameTrade，W7-17 審查 P1）。
+    const picked = pickSameTrade(list, merTradeNo);
+    if (picked.kind === 'one') {
+      trade = picked.trade;
+    } else if (picked.kind === 'conflict') {
+      return {
+        stillProcessing: true,
+        unknownStatus: { tradeStatus: '', reason: 'multiple_matching_trades' },
+      };
     } else if (list.length === 1 && !('MerTradeNo' in list[0])) {
       trade = list[0];
     } else {
@@ -3170,6 +3178,11 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   // 付款時間，會籍起算日會錯。
   if ((flat.DataSource ?? '').trim() === 'B') return { stillProcessing: true, incomplete: true };
   if (tradeStatus === '1') {
+    // 查詢路徑缺 TradeAmt 不開通（W7-17 審查 P2-2）：resolveOrderFromPayUni 的金額比對
+    // 在缺 TradeAmt 時放行，查詢路徑現在真的會開通，所以在這裡擋，交人工。notify 路徑不動。
+    if (!(flat.TradeAmt ?? '').trim() && flat.Stub === 'stub') { // 紅燈 stub
+      return { stillProcessing: true, unknownStatus: { tradeStatus, reason: 'missing_field' } };
+    }
     // 查詢回應的付款時間叫 PaymentDay，補成 PayTime 讓 payuni_paid_at 認得（W7-16）。
     return { stillProcessing: false, data: { ...withQueryPayTime(flat), Status: 'SUCCESS' } };
   }

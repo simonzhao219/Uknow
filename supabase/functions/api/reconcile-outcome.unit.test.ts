@@ -39,6 +39,7 @@ function summary(over: Partial<ReconcileSummary>): ReconcileSummary {
       missing_field: 0,
       no_matching_trade: 0,
       incomplete_too_long: 0,
+      multiple_matching_trades: 0,
     },
     incomplete: 0,
     notFound: 0,
@@ -273,6 +274,7 @@ Deno.test('reconcilePendingOrders：無法判讀的狀態依原因分計 unknown
     missing_field: 1,
     no_matching_trade: 1,
     incomplete_too_long: 1,
+    multiple_matching_trades: 0,
   });
 });
 
