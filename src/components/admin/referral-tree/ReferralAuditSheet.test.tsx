@@ -672,7 +672,7 @@ describe('ReferralAuditSheet 點數來源實作審查補強', () => {
 });
 
 describe('ReferralAuditSheet 點數來源獨立審查補強', () => {
-  it('清空金額不符時說明也涵蓋批次自癒期間的清空', async () => {
+  it('清空金額不符時說明同時寫入的競態，不再提已移除的批次自癒', async () => {
     renderSheet(
       loaders({
         loadLedger: vi.fn(async () => ({
@@ -685,7 +685,10 @@ describe('ReferralAuditSheet 點數來源獨立審查補強', () => {
       }),
     );
     const sec = within(await screen.findByRole('region', { name: '點數來源' }));
-    expect(await sec.findByText(/批次自癒期間的清空同樣可能有差/)).toBeTruthy();
+    const note = await sec.findByText(/清空當下若有別筆交易同時寫入/);
+    expect(note.textContent).toBe(
+      '清空當下若有別筆交易同時寫入，金額可能差一筆（多算或少算都有可能）；請先對照該時段的帳本再判斷。',
+    );
   });
 
   it('延遲補沖有多筆時寫出實際筆數', async () => {

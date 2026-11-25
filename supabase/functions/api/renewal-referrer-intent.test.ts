@@ -661,7 +661,7 @@ Deno.test('prepare_payment_order：被選推薦人的付款正在等換線鎖 �
   }
 });
 
-Deno.test('complete_paid_pending_orders：換線鎖被占用 → 該筆跳過不報錯、鎖釋放後下一輪補完（W5-61）', async () => {
+Deno.test('complete_paid_pending_order：換線鎖被占用 → 該筆跳過不報錯、鎖釋放後下一輪補完（W5-61）', async () => {
   const client = adminClient();
   const holder = postgres(DB_URL, { max: 1 });
   // statement_timeout：修正前批次會在這裡等鎖，讓紅燈以逾時呈現而不是卡住整套測試。
@@ -677,15 +677,15 @@ Deno.test('complete_paid_pending_orders：換線鎖被占用 → 該筆跳過不
       set payuni_response = ${sql.json({ Status: 'SUCCESS', TradeAmt: '1200' })}
       where transaction_id = ${t}`;
 
-    let first: { skipped_locked: number; completed_count: number; failed: unknown[] } | null = null;
+    const [{ id: orderId }] =
+      await sql`select id from public.payment_orders where transaction_id = ${t}`;
+    let first: { outcome: string } | null = null;
     await holder.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext('referral_rewire'))`;
-      const [r] = await sql`select public.complete_paid_pending_orders(${m}::uuid) as r`;
+      const [r] = await sql`select public.complete_paid_pending_order(${orderId}::uuid) as r`;
       first = r.r;
     });
-    assertEquals(first!.skipped_locked, 1, '拿不到換線鎖 → 跳過');
-    assertEquals(first!.completed_count, 0);
-    assertEquals(first!.failed, [], '跳過不是失敗');
+    assertEquals(first!.outcome, 'skipped_locked', '拿不到換線鎖 → 跳過（不是 failed）');
     const [o] = await sql`select status from public.payment_orders where transaction_id = ${t}`;
     assertEquals(o.status, 'pending');
     const [al] = await sql`
@@ -694,8 +694,8 @@ Deno.test('complete_paid_pending_orders：換線鎖被占用 → 該筆跳過不
         (select id::text from public.payment_orders where transaction_id = ${t})`;
     assertEquals(al.n, 0, '不寫錯誤告警');
 
-    const [again] = await sql`select public.complete_paid_pending_orders(${m}::uuid) as r`;
-    assertEquals(again.r.completed_count, 1, '下一輪補完');
+    const [again] = await sql`select public.complete_paid_pending_order(${orderId}::uuid) as r`;
+    assertEquals(again.r.outcome, 'completed', '下一輪補完');
   } finally {
     await holder.end();
     await sql.end();
@@ -703,9 +703,9 @@ Deno.test('complete_paid_pending_orders：換線鎖被占用 → 該筆跳過不
   }
 });
 
-// 第 6 波 S1：單筆函式自己設 try 旗標、wrapper 不再清旗標於迴圈中——兩位會員各一張換線單、
-// 換線鎖被占用時，wrapper 的第 2 筆也必須走 try（不能阻塞等鎖）。
-Deno.test('complete_paid_pending_orders：多筆時第 2 筆仍走 try → 兩筆都跳過不阻塞', async () => {
+// 第 6 波 S1：單筆函式自己設 try 旗標——兩位會員各一張換線單、換線鎖被占用時，同一連線
+// 逐筆呼叫的第 2 筆也必須走 try（不能阻塞等鎖）。第 7 波 S4 drop wrapper 後改逐筆呼叫。
+Deno.test('complete_paid_pending_order：同連線逐筆呼叫兩筆 → 第 2 筆仍走 try、兩筆都跳過', async () => {
   const client = adminClient();
   const holder = postgres(DB_URL, { max: 1 });
   const sql = postgres(DB_URL, { max: 1, connection: { statement_timeout: 10_000 } });
@@ -723,16 +723,17 @@ Deno.test('complete_paid_pending_orders：多筆時第 2 筆仍走 try → 兩�
         where transaction_id = ${t}`;
       trades.push(t);
     }
-    let r: { skipped_locked: number; completed_count: number } | null = null;
+    const outcomes: string[] = [];
     await holder.begin(async (tx) => {
       await tx`select pg_advisory_xact_lock(hashtext('referral_rewire'))`;
-      const [row] = await sql`select public.complete_paid_pending_orders(null, 50) as r`;
-      r = row.r;
+      for (const t of trades) {
+        const [row] = await sql`
+          select public.complete_paid_pending_order(
+            (select id from public.payment_orders where transaction_id = ${t})) as r`;
+        outcomes.push(row.r.outcome);
+      }
     });
-    assertEquals({ skipped: r!.skipped_locked >= 2, completed: r!.completed_count }, {
-      skipped: true,
-      completed: 0,
-    });
+    assertEquals(outcomes, ['skipped_locked', 'skipped_locked']);
     const orders = await sql`
       select status from public.payment_orders where transaction_id in ${sql(trades)}`;
     assertEquals(orders.map((o) => o.status), ['pending', 'pending']);
