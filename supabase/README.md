@@ -197,6 +197,9 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 **context**：`user_id`（會員）、`referrer_id`（付款當下的推薦人）、`subscription_id`、`trade_no`、`sqlstate`、`sqlerrm`。
 
 1. 確認推薦人沒再變：`select referred_by_user_id from public.profiles where id = '<user_id>';` 不等於 `referrer_id` 就停下回報業主。
+   再查連結現值：`select referrer_user_id from public.referral_edges where referee_user_id = '<user_id>';`——**已有一列且指向別人**
+   （舊推薦人，換線沒寫成）就停下回報業主：這時之後的二代三代不是「沒發」而是**發錯人**，第 3 步的「缺幾代」查詢抓不到，要改逐筆比
+   `reward_transactions` 的收獎人與 `referral_award_chain`。查無列才往下。
 2. 補寫連結（與 `apply_referral_side_effects` 3b 同一句；先回報業主）：
 
    ```sql
@@ -245,19 +248,25 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
    任一有結果＝已補計（之後的付款補上了）→ 直接到第 4 步。
 2. 都沒有：回報業主兩個選項——等這位會員下次付款自動補計（月份記在那次），或現在以原付款月份手動補。業主選等就到第 4 步；
-   選手動補，月份＝月份＝付款時點的台北月（`to_char(<付款 completed_at> at time zone 'Asia/Taipei', 'YYYY-MM')`），
-   執行（與 `apply_referral_side_effects` 3d 同一段寫法）：
+   選手動補，月份＝付款時點的台北月（`to_char(<付款 completed_at> at time zone 'Asia/Taipei', 'YYYY-MM')`），
+   執行（與 `apply_referral_side_effects` 3d 同一段寫法：**只有 pair-history 插得進去才 +1**——第 1 步查完到執行前若已被
+   下次付款補計，`on conflict do nothing` 後不會再 +1）：
 
    ```sql
-   insert into public.referral_pair_history (referrer_user_id, referee_user_id, first_month_key)
-   values ('<referrer_id>', '<user_id>', '<YYYY-MM>') on conflict do nothing;
-   insert into public.task_progress (user_id, total_referrals, monthly_referrals)
-   values ('<referrer_id>', 1, jsonb_build_object('<YYYY-MM>', jsonb_build_array('<user_id>')))
-   on conflict (user_id) do update set
-     total_referrals   = task_progress.total_referrals + 1,
-     monthly_referrals = jsonb_set(task_progress.monthly_referrals, array['<YYYY-MM>'],
-       coalesce(task_progress.monthly_referrals -> '<YYYY-MM>', '[]'::jsonb) || to_jsonb('<user_id>'::text)),
-     updated_at = now();
+   do $$
+   begin
+     insert into public.referral_pair_history (referrer_user_id, referee_user_id, first_month_key)
+     values ('<referrer_id>', '<user_id>', '<YYYY-MM>') on conflict do nothing;
+     if found then
+       insert into public.task_progress (user_id, total_referrals, monthly_referrals)
+       values ('<referrer_id>', 1, jsonb_build_object('<YYYY-MM>', jsonb_build_array('<user_id>')))
+       on conflict (user_id) do update set
+         total_referrals   = task_progress.total_referrals + 1,
+         monthly_referrals = jsonb_set(task_progress.monthly_referrals, array['<YYYY-MM>'],
+           coalesce(task_progress.monthly_referrals -> '<YYYY-MM>', '[]'::jsonb) || to_jsonb('<user_id>'::text)),
+         updated_at = now();
+     end if;
+   end $$;
    ```
 
 3. 手動補了才做：對帳推薦王（會補發推薦王 credit，與第 2 步一起回報；門檻讀設定，不寫死）：
@@ -294,9 +303,11 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
    begin;
    select set_config('uknow.referred_by_changed_at', '<付款 completed_at>', true);
    update public.profiles
-      set referred_by_user_id = (select user_id from public.referral_codes where code = '<預設碼>' and status = 'active'),
+      set referred_by_user_id = (select referrer_user_id from public.validate_referral_code('<預設碼>')),
           referred_by_code = '<預設碼>', referred_by_is_default = true
-    where id = '<user_id>' and referred_by_user_id is null;
+    where id = '<user_id>' and referred_by_user_id is null
+      and exists (select 1 from public.validate_referral_code('<預設碼>'))   -- 碼在第 2 步後被停用就不寫出空推薦人
+      and (select referrer_user_id from public.validate_referral_code('<預設碼>')) <> '<user_id>';
    commit;
    ```
 

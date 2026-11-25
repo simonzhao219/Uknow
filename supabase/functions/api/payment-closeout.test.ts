@@ -472,3 +472,40 @@ Deno.test('repair_orphaned_*：帶 p_user_id 照常執行（無候選回 0）', 
     await deleteTestUsers(client, ids);
   }
 });
+
+Deno.test('classify_alert_sqlstate：40P01／40001／其他 → 互鎖／序列化衝突／系統錯誤', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  try {
+    const rows = await sql`
+      select s, public.classify_alert_sqlstate(s) as label
+      from unnest(array['40P01', '40001', 'P0001']::text[]) as s`;
+    assertEquals(rows.map((r) => [r.s, r.label]), [
+      ['40P01', '資料庫互鎖'],
+      ['40001', '序列化衝突'],
+      ['P0001', '系統錯誤'],
+    ]);
+  } finally {
+    await sql.end();
+  }
+});
+
+// 被刪的「舊 wrapper 互鎖」測試原本順帶釘住 40P01 的文案；log_referral_reward_failure 內聯的分類表
+// 與 classify_alert_sqlstate 並存，這條防兩張表漂移。
+Deno.test('log_referral_reward_failure：sqlstate 40P01 → message 寫「資料庫互鎖」、與共用分類一致', async () => {
+  const sql = postgres(DB_URL, { max: 1 });
+  const referee = crypto.randomUUID();
+  try {
+    await sql`
+      select public.log_referral_reward_failure('pay_referral_generations', ${referee}::uuid, 2,
+        null::uuid, 100, null::uuid, null::uuid, '40P01', 'deadlock detected')`;
+    const [a] = await sql`
+      select message from public.system_alerts
+      where source = 'pay_referral_generations' and context->>'referee' = ${referee}`;
+    const [c] = await sql`select public.classify_alert_sqlstate('40P01') as label`;
+    assert(a.message.includes(`原因：${c.label}（40P01）`), a.message);
+    assert(!a.message.includes('deadlock detected'), 'sqlerrm 只進 context');
+  } finally {
+    await sql`delete from public.system_alerts where context->>'referee' = ${referee}`;
+    await sql.end();
+  }
+});
