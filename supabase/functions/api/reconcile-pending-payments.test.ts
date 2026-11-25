@@ -95,7 +95,7 @@ Deno.test('reconcilePendingOrders：透過注入的查詢／解析函式收斂�
 });
 
 // ============================================================
-// 掃描過濾：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
+// 掃描過濾：已存有 SUCCESS 回應的卡單走逐筆自癒 complete_paid_pending_order
 // 自癒，不該進 queryPayUniTradeStatus 的查詢迴圈（金額不符的卡單已有
 // 自己的去重告警，不能每輪對帳都再被佔位錯誤重複告警一次）。
 // ============================================================
