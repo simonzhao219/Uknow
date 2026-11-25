@@ -21,6 +21,12 @@
 // 本輪有跑正控時以本輪結果為準（寫入失敗也一樣），不回頭讀舊紀錄。
 // ============================================================
 
+import {
+  describeDecryptedShape,
+  extractPayUniTrades,
+  pickSameTrade,
+} from './payuni-query-result.ts';
+
 /** 最近一次正控成功在這個時數內，03001 才判「確認查無」（W7-2）。邊界含 36 小時整。 */
 export const CONTROL_FRESH_HOURS = 36;
 /** 最近一次成功未滿這個時數就不重跑：每小時的 reconcile 約每天跑一次。 */
@@ -140,15 +146,21 @@ export function evaluateControlResponse(
     !!t && typeof t === 'object' &&
     String((t as Record<string, unknown>).MerTradeNo ?? '').trim() === want;
 
+  // 結果列解析與對帳共用（W7-16，官方形狀是 `Result[i][欄位]`）；正控只接受同號。
+  const list = extractPayUniTrades(decrypted);
   let trade: Record<string, unknown> | undefined;
-  if (decrypted.Result) {
-    try {
-      const list = JSON.parse(decrypted.Result);
-      if (Array.isArray(list)) trade = list.find(same);
-    } catch { /* Result 不是 JSON → 看平鋪欄位 */ }
+  if (list) {
+    // 同號多列規則與對帳相同（pickSameTrade，W7-17 審查 P1）。
+    const picked = pickSameTrade(list, merTradeNo);
+    if (picked.kind === 'conflict') return { ok: false, reason: 'multiple_matching_trades' };
+    if (picked.kind === 'one') trade = picked.trade;
+  } else if (same(decrypted)) {
+    trade = decrypted;
   }
-  if (!trade && same(decrypted)) trade = decrypted;
-  if (!trade) return { ok: false, reason: 'no_matching_trade' };
+  // 取證：只記鍵名與結構，不記值（describeDecryptedShape）。
+  if (!trade) {
+    return { ok: false, reason: `no_matching_trade ${describeDecryptedShape(decrypted)}` };
+  }
 
   if (String(trade.DataSource ?? '').trim() === 'B') return { ok: false, reason: 'data_source_b' };
   const tradeStatus = String(trade.TradeStatus ?? '').trim();

@@ -145,7 +145,12 @@ Deno.test('queryPayUniTradeStatus：DataSource＝B → 不論狀態本輪不下�
 
 Deno.test('queryPayUniTradeStatus：1＋DataSource A 或缺漏 → SUCCESS；2／3 → FAILED', async () => {
   for (const extra of [{ DataSource: 'A' }, {}] as Array<Record<string, string>>) {
-    const r = await query({ MerTradeNo: 'P13-TRADE', TradeStatus: '1', ...extra });
+    const r = await query({
+      MerTradeNo: 'P13-TRADE',
+      TradeStatus: '1',
+      TradeAmt: '1200',
+      ...extra,
+    });
     assertEquals(r.stillProcessing, false);
     assertEquals(!r.stillProcessing && r.data.Status, 'SUCCESS');
   }
@@ -183,11 +188,14 @@ Deno.test('queryPayUniTradeStatus：Result 沒有同號（或平鋪 MerTradeNo �
 });
 
 Deno.test('queryPayUniTradeStatus：單筆缺 MerTradeNo 或數字型 MerTradeNo → 照舊收斂已付款', async () => {
-  const noKey = await queryResult([{ TradeStatus: '1' }]);
+  const noKey = await queryResult([{ TradeStatus: '1', TradeAmt: '1200' }]);
   assertEquals(!noKey.stillProcessing && noKey.data.Status, 'SUCCESS');
-  const numeric = await queryResult([{ MerTradeNo: 20261105, TradeStatus: '1' }], '20261105');
+  const numeric = await queryResult(
+    [{ MerTradeNo: 20261105, TradeStatus: '1', TradeAmt: 1200 }],
+    '20261105',
+  );
   assertEquals(!numeric.stillProcessing && numeric.data.Status, 'SUCCESS');
-  const padded = await query({ MerTradeNo: ' P13-TRADE ', TradeStatus: '1' });
+  const padded = await query({ MerTradeNo: ' P13-TRADE ', TradeStatus: '1', TradeAmt: '1200' });
   assertEquals(!padded.stillProcessing && padded.data.Status, 'SUCCESS');
 });
 
@@ -226,4 +234,134 @@ Deno.test('payUniQueryRaw：回原始 Status 與解開的 EncryptInfo（正控�
   assertEquals(out.decrypted?.TradeStatus, '1');
   const failed = await withFetch({ Status: 'QUERY03001' }, () => payUniQueryRaw('RAW-2'));
   assertEquals(failed.decrypted, null);
+});
+
+// ============================================================
+// W7-16：官方回應形狀是 http_build_query 的 `Result[i][欄位]` 鍵名（不是 JSON 字串的
+// Result，也不是平鋪）。舊解析對這個形狀會落 unknown／missing_field，已付款單收斂不了。
+// 夾具已去識別化。
+// ============================================================
+const officialShape = (rows: Record<string, string>[]) => {
+  const fields: Record<string, string> = { Status: 'SUCCESS', Message: '查詢成功' };
+  rows.forEach((row, i) => {
+    for (const [k, v] of Object.entries(row)) fields[`Result[${i}][${k}]`] = v;
+  });
+  return query(fields);
+};
+
+Deno.test('queryPayUniTradeStatus：官方 Result[i] 形狀已付款 → SUCCESS，PayTime 取 PaymentDay', async () => {
+  const result = await officialShape([{
+    MerTradeNo: 'P13-TRADE',
+    TradeNo: '1700000000000000001',
+    TradeAmt: '1200',
+    TradeStatus: '1',
+    PaymentDay: '2026-10-28 18:55:30',
+    DataSource: 'A',
+  }]);
+  assertEquals(result.stillProcessing, false);
+  if (result.stillProcessing) return;
+  assertEquals(result.data.Status, 'SUCCESS');
+  assertEquals(result.data.MerTradeNo, 'P13-TRADE');
+  assertEquals(result.data.TradeNo, '1700000000000000001');
+  assertEquals(result.data.TradeAmt, '1200');
+  assertEquals(result.data.PayTime, '2026-10-28 18:55:30');
+});
+
+Deno.test('queryPayUniTradeStatus：官方形狀 0／9／4 未付款、8 unknown、DataSource B incomplete', async () => {
+  for (const code of ['0', '4', '9']) {
+    assertEquals<unknown>(
+      await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: code, DataSource: 'A' }]),
+      { stillProcessing: true },
+      code,
+    );
+  }
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: '8' }]),
+    { stillProcessing: true, unknownStatus: { tradeStatus: '8', reason: 'unknown_code' } },
+  );
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: '1', DataSource: 'B' }]),
+    { stillProcessing: true, incomplete: true },
+  );
+});
+
+Deno.test('queryPayUniTradeStatus：官方形狀多筆 → 只取同號；都不同號 → no_matching_trade', async () => {
+  const picked = await officialShape([
+    { MerTradeNo: 'OTHER', TradeStatus: '9' },
+    { MerTradeNo: 'P13-TRADE', TradeStatus: '1', TradeAmt: '1200' },
+  ]);
+  assertEquals(!picked.stillProcessing && picked.data.Status, 'SUCCESS');
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'OTHER-A', TradeStatus: '1' }, {
+      MerTradeNo: 'OTHER-B',
+      TradeStatus: '1',
+    }]),
+    { stillProcessing: true, unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' } },
+  );
+});
+
+// ------------------------------------------------------------
+// W7-17 審查：同號多列、缺 TradeAmt、官方形狀的寬容規則
+// ------------------------------------------------------------
+
+const unknownOf = (reason: string, tradeStatus = '') => ({
+  stillProcessing: true,
+  unknownStatus: { tradeStatus, reason },
+});
+
+Deno.test('queryPayUniTradeStatus：同號多列有一列已付款（1＋2、1＋1）→ 取已付款那列收斂', async () => {
+  for (
+    const rows of [
+      [{ TradeStatus: '2' }, { TradeStatus: '1' }],
+      [{ TradeStatus: '1' }, { TradeStatus: '1' }],
+    ]
+  ) {
+    const r = await officialShape(
+      rows.map((x) => ({ MerTradeNo: 'P13-TRADE', TradeAmt: '1200', ...x })),
+    );
+    assertEquals(!r.stillProcessing && r.data.Status, 'SUCCESS', JSON.stringify(rows));
+  }
+});
+
+Deno.test('queryPayUniTradeStatus：同號多列狀態衝突且無已付款（2＋3）→ unknown 不下結論', async () => {
+  assertEquals<unknown>(
+    await officialShape([
+      { MerTradeNo: 'P13-TRADE', TradeStatus: '2' },
+      { MerTradeNo: 'P13-TRADE', TradeStatus: '3' },
+    ]),
+    unknownOf('multiple_matching_trades'),
+  );
+});
+
+Deno.test('queryPayUniTradeStatus：同號多列狀態一致（9＋9）→ 照單筆判讀', async () => {
+  assertEquals<unknown>(
+    await officialShape([
+      { MerTradeNo: 'P13-TRADE', TradeStatus: '9' },
+      { MerTradeNo: 'P13-TRADE', TradeStatus: '9' },
+    ]),
+    { stillProcessing: true },
+  );
+});
+
+Deno.test('queryPayUniTradeStatus：已付款但缺 TradeAmt → unknown missing_field，不開通', async () => {
+  assertEquals<unknown>(
+    await officialShape([{ MerTradeNo: 'P13-TRADE', TradeStatus: '1' }]),
+    unknownOf('missing_field', '1'),
+  );
+  assertEquals<unknown>(
+    await query({ MerTradeNo: 'P13-TRADE', TradeStatus: '1', TradeAmt: ' ' }),
+    unknownOf('missing_field', '1'),
+  );
+});
+
+Deno.test('queryPayUniTradeStatus：官方形狀單筆缺 MerTradeNo → 照舊接受；兩筆其一缺 → 不接受', async () => {
+  const single = await officialShape([{ TradeStatus: '1', TradeAmt: '1200' }]);
+  assertEquals(!single.stillProcessing && single.data.Status, 'SUCCESS');
+  assertEquals<unknown>(
+    await officialShape([{ TradeStatus: '1', TradeAmt: '1200' }, {
+      MerTradeNo: 'OTHER',
+      TradeStatus: '1',
+    }]),
+    unknownOf('no_matching_trade'),
+  );
 });

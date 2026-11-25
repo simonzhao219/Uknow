@@ -112,10 +112,13 @@ Deno.test('正控：TradeStatus 不是 1、或只有一筆不帶單號 → faile
   for (
     const [decrypted, reason] of [
       [{ Result: JSON.stringify([{ MerTradeNo: 'SAMPLE1', TradeStatus: '9' }]) }, 'trade_status:9'],
-      [{ Result: JSON.stringify([{ TradeStatus: '1' }]) }, 'no_matching_trade'],
+      [
+        { Result: JSON.stringify([{ TradeStatus: '1' }]) },
+        'no_matching_trade keys=Result Result=array(1):TradeStatus',
+      ],
       [
         { Result: JSON.stringify([{ MerTradeNo: 'OTHER', TradeStatus: '1' }]) },
-        'no_matching_trade',
+        'no_matching_trade keys=Result Result=array(1):MerTradeNo,TradeStatus',
       ],
       [{ MerTradeNo: 'SAMPLE1', TradeStatus: '1', DataSource: 'B' }, 'data_source_b'],
     ] as [Record<string, string>, string][]
@@ -300,4 +303,83 @@ Deno.test('正控樣本 14 天整（含）以內 → 不寫 warning', async () =
   const h = harness({ pickSample: () => Promise.resolve({ tradeNo: 'EDGE1', completedAt: edge }) });
   await runPositiveControl(h.deps);
   assertEquals(h.alerts, []);
+});
+
+// ------------------------------------------------------------
+// 取證（W7-16）：對不到同號交易時，reason 帶解密後的鍵名與 Result 結構——只有鍵名，
+// 不含任何值（單號、交易序號、卡號末碼、授權碼都不得出現）
+// ------------------------------------------------------------
+
+/** 官方形狀（W7-16）：解密後的 http_build_query 鍵名是 `Result[i][欄位]`。值已去識別化。 */
+function realShape(tradeNo: string, tradeStatus = '1'): Record<string, string> {
+  return {
+    Status: 'SUCCESS',
+    Message: '查詢成功',
+    'Result[0][MerTradeNo]': tradeNo,
+    'Result[0][TradeNo]': '1700000000000000001',
+    'Result[0][TradeAmt]': '1200',
+    'Result[0][TradeStatus]': tradeStatus,
+    'Result[0][PaymentType]': '1',
+    'Result[0][PaymentDay]': '2026-10-28 18:55:30',
+    'Result[0][DataSource]': 'A',
+    'Result[0][Card4No]': '0001',
+    'Result[0][AuthCode]': '000000',
+  };
+}
+
+Deno.test('正控：官方 Result[0][...] 形狀、同號 TradeStatus=1 → 成功', () => {
+  assertEquals(
+    evaluateControlResponse('SAMPLE1', { Status: 'SUCCESS' }, realShape('SAMPLE1')),
+    { ok: true },
+  );
+  assertEquals(
+    evaluateControlResponse('SAMPLE1', { Status: 'SUCCESS' }, realShape('SAMPLE1', '9')),
+    { ok: false, reason: 'trade_status:9' },
+  );
+});
+
+Deno.test('正控取證：Result[0][...] 對不到同號 → reason 只列鍵名、不含任何值', () => {
+  const decrypted = realShape('OTHER');
+  const v = evaluateControlResponse('SAMPLE1', { Status: 'SUCCESS' }, decrypted);
+  assertEquals(v.ok, false);
+  const reason = (v as { reason: string }).reason;
+  assertEquals(
+    reason,
+    'no_matching_trade keys=Message,Result[0][AuthCode],Result[0][Card4No],' +
+      'Result[0][DataSource],Result[0][MerTradeNo],Result[0][PaymentDay],Result[0][PaymentType],' +
+      'Result[0][TradeAmt],Result[0][TradeNo],Result[0][TradeStatus],Status Result=absent',
+  );
+  for (
+    const value of ['OTHER', '1700000000000000001', '0001', '000000', '2026-10-28', '查詢成功']
+  ) {
+    assert(!reason.includes(value), `洩漏值 ${value}`);
+  }
+});
+
+Deno.test('正控取證：Result 不是 JSON → 只記 not-json，不記內容', () => {
+  const v = evaluateControlResponse('S1', { Status: 'SUCCESS' }, { Result: 'S1|1|secret' });
+  assertEquals(v, { ok: false, reason: 'no_matching_trade keys=Result Result=not-json' });
+});
+
+Deno.test('正控取證：鍵名過多時截斷，reason 長度有上限', () => {
+  const decrypted: Record<string, string> = {};
+  for (let i = 0; i < 200; i++) decrypted[`K${String(i).padStart(3, '0')}`] = 'v';
+  const v = evaluateControlResponse('S1', { Status: 'SUCCESS' }, decrypted);
+  const reason = (v as { reason: string }).reason;
+  assert(reason.length <= 600, `長度 ${reason.length}`);
+  assert(reason.includes('…'), reason);
+});
+
+Deno.test('正控：同號多列 1＋2 → 成功；2＋3 衝突 → failed multiple_matching_trades', () => {
+  const rows = (a: string, b: string) => ({
+    'Result[0][MerTradeNo]': 'S1',
+    'Result[0][TradeStatus]': a,
+    'Result[1][MerTradeNo]': 'S1',
+    'Result[1][TradeStatus]': b,
+  });
+  assertEquals(evaluateControlResponse('S1', { Status: 'SUCCESS' }, rows('2', '1')), { ok: true });
+  assertEquals(
+    evaluateControlResponse('S1', { Status: 'SUCCESS' }, rows('2', '3')),
+    { ok: false, reason: 'multiple_matching_trades' },
+  );
 });

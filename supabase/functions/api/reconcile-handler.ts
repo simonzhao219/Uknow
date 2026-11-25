@@ -26,7 +26,7 @@ export type ReconcileSummary = {
   queryFailures: number;
   expireErrors: number;
   unknownStatus: number;
-  /** R5 P2-7：unknownStatus 依原因分計（四者和＝unknownStatus）。 */
+  /** R5 P2-7：unknownStatus 依原因分計（各原因和＝unknownStatus）。 */
   unknownByReason: Record<UnknownReason, number>;
   incomplete: number;
   /**
@@ -43,6 +43,7 @@ export const UNKNOWN_REASONS = [
   'missing_field',
   'no_matching_trade',
   'incomplete_too_long',
+  'multiple_matching_trades',
 ] as const;
 export type UnknownReason = typeof UNKNOWN_REASONS[number];
 
