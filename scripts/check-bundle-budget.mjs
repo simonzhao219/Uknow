@@ -42,7 +42,10 @@ const BUDGET = {
   // 1947.3→1971.0（+23.7 kB，推薦樹、詳情 Sheet、付款查帳卡片與純函式）。額度 +25。
   // 獨立審查修正（成環停止、去重、世代編號、提示分流）再 +1.1 kB，同在後台 lazy chunk。
   // S3b（點數來源區塊、帳本查帳 loader）再 +4.1 kB，同在後台 lazy chunk；entry 不變。
-  totalRawKB: 1983, // 原 1600；S4 +350；第 6 波 S4 +1；W6 S3a +27；S3b +5
+  // 第 7 波 S1（結帳頁導頁迴圈＋新碼驗證序號，R6 P1-1／P2-2／P2-3 與獨立審查修正）：
+  // 增量全在 PaymentCheckout 的 lazy chunk，entry 不動（gzip 316.3／316.5）；總 JS raw
+  // 1983.0→1983.17 kB。業主 W7-15（2026-11-25 互動選項）授權總 raw +1。
+  totalRawKB: 1984, // 原 1600；S4 +350；第 6 波 S4 +1；W6 S3a +27；S3b +5；W7 S1 +1
 };
 
 const kb = (bytes) => Math.round((bytes / 1024) * 10) / 10;
