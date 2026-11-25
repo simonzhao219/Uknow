@@ -11,8 +11,8 @@
 |---|---|---|---|---|
 | 1 | drop wrapper＋改測試 | ✅ 綠 | 4c94b3a0 | 270a7030 |
 | 2 | 3a-bis／3b／3d 升 error | ✅ 綠 | a7fbb4d6 | ae03a171 |
-| 3 | 單筆開通失敗 message | ✅ 綠 | 10e5ea0e | （本 commit） |
-| 4 | repair 關全量（依 Q1） | ⬜ 未開始 | | |
+| 3 | 單筆開通失敗 message | ✅ 綠 | 10e5ea0e | 62362ac4 |
+| 4 | repair 關全量（W7-9 Q1＝A） | ✅ 綠 | f1c2dfb7 | （本 commit） |
 | 5 | 文件 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
@@ -27,3 +27,8 @@
 - 階段 2 突變驗證：拿掉 3b 呼叫端的雙保險 → 「告警函式本身擲錯」測試轉紅。
 
 ## 框架摩擦
+
+## 偏離規劃（PR 內文要寫）
+
+- 階段 3：plan 列的「重讀訂單 select 就擲錯」注入測試沒寫——security definer 擁有者讀表無法以觸發器／RLS 讓 select 擲錯。改以程式結構保證：handler 不參照 v_row、一律以 p_order_id 回查（審查時逐行核）。
+- 階段 4：plan 列的「Edge guard 單元測試」沒寫——`repairOrphanedPaymentsBestEffort` 是 index.ts 內部函式（不 export）；guard 只有一行 `if (!userId) return;`，DB 端 U6R02 已由測試釘住。

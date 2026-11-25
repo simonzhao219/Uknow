@@ -2592,6 +2592,8 @@ async function timingSafeEqual(a: string, b: string): Promise<boolean> {
 // 請求剛好經過某個時機點」，排程覆蓋「完全沒人再碰這筆資料」的情況。
 // ============================================================
 async function repairOrphanedPaymentsBestEffort(userId: string) {
+  // supabase-js 會省略 undefined 參數＝p_user_id null，DB 端已關閉全量路徑（U6R02，第 7 波 S4）。
+  if (!userId) return;
   try {
     await sb().rpc('repair_orphaned_payments', { p_user_id: userId });
     // 任務續約（claim）發獎的自癒：與付款路徑對稱，補回 cascade 當下失敗、

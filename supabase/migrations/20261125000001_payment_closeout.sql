@@ -31,6 +31,13 @@
 --    4) 開通成功時把同單未處理的 open_failed 告警標 resolved_at（W7-9 Q7）。
 --    回給 Edge 的 {'outcome':'failed','error':sqlerrm} 不變。
 --
+-- 6. repair_orphaned_payments（基準＝20260807000001）／repair_orphaned_claim_rewards（基準＝20261111000001）／
+--    repair_orphaned_forfeitures（基準＝20260802000002），之後皆無重定義。唯一差異＝迴圈前
+--    p_user_id is null 擲 U6R02（W7-9 Q1＝A）：全量路徑一個交易跨多位會員、子交易列鎖留到整批結束，
+--    與線上付款互鎖；生產只由 Edge repairOrphanedPaymentsBestEffort 逐人呼叫。單人路徑不成環
+--    （前提：推薦資料本身無環），迴圈體不動。claim_rewards 的「多人時排序防互鎖」註解改寫（全量已關）。
+--    create or replace 保留既有 ACL；revoke 照抄基準。
+--
 -- 歷史檔頭更正（R6 P2-7、P2-8；已套用的 migration 不改，記在這裡）：
 --   * 20261116000001_referral_award_chain 檔頭說對照的發獎函式是 20261113000001；
 --     pay_referral_generations 的最新定義是 20261115000001（語意與 chain 等價，R6 §1.1 已核）。
@@ -482,3 +489,276 @@ $$;
 
 revoke execute on function public.complete_paid_pending_order(uuid) from anon, authenticated, public;
 grant execute on function public.complete_paid_pending_order(uuid) to service_role;
+
+-- ------------------------------------------------------------
+-- 6. repair_orphaned_payments（基準 20260807000001）
+-- ------------------------------------------------------------
+create or replace function public.repair_orphaned_payments(p_user_id uuid default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_candidate       record;
+  v_repaired_ids    uuid[] := '{}';
+  v_failed          jsonb  := '[]'::jsonb;
+  v_candidate_count int    := 0;
+begin
+  -- 第 7 波 S4（W7-9 Q1＝A）：全量路徑（null）一個交易跨多位會員，子交易列鎖留到整批結束，
+  -- 與線上付款互鎖（同 20261115000001 檔頭的環）。生產只由 Edge 逐人呼叫，關掉全量。
+  if p_user_id is null then
+    raise exception using errcode = 'U6R02',
+      message = 'repair_orphaned_payments：必須逐人呼叫（帶 p_user_id），全量路徑已關閉';
+  end if;
+  for v_candidate in
+    select distinct po.user_id, s.id as subscription_id, po.completed_at as paid_at
+    from public.payment_orders po
+    join public.subscriptions s on s.source_payment_order_id = po.id
+    join public.profiles pr on pr.id = po.user_id
+    where po.status = 'completed'
+      and (p_user_id is null or po.user_id = p_user_id)
+      -- #167 閘門：現任推薦關係若晚於這筆付款才建立，這筆事件不歸它。
+      -- legacy（null）沿用舊行為；同交易寫入（換線那筆付款本身）now()
+      -- 相等，照常放行。
+      and (pr.referred_by_changed_at is null
+           or pr.referred_by_changed_at <= po.completed_at)
+      and (
+        -- (a) 已付款完成卻沒有 active 推薦碼——每個付款成功的人都該有一個
+        not exists (
+          select 1 from public.referral_codes rc
+          where rc.user_id = po.user_id and rc.status = 'active'
+        )
+        or (
+          -- 有記錄推薦來源，但推薦鏈上該領獎勵的某一代還沒領到
+          -- （用這一次付款事件的 subscription_id 當冪等鍵，跟
+          -- apply_referral_side_effects 的判斷條件一致）
+          pr.referred_by_user_id is not null
+          and (
+            not exists (
+              select 1 from public.reward_transactions rt
+              where rt.referee_user_id = po.user_id and rt.generation = 1 and rt.subscription_id = s.id
+            )
+            or exists (
+              select 1
+              from public.referral_edges e1
+              join public.referral_edges e2 on e2.referee_user_id = e1.referrer_user_id
+              where e1.referee_user_id = po.user_id
+                and not exists (
+                  select 1 from public.reward_transactions rt
+                  where rt.referee_user_id = po.user_id and rt.generation = 2 and rt.subscription_id = s.id
+                )
+            )
+            or exists (
+              select 1
+              from public.referral_edges e1
+              join public.referral_edges e2 on e2.referee_user_id = e1.referrer_user_id
+              join public.referral_edges e3 on e3.referee_user_id = e2.referrer_user_id
+              where e1.referee_user_id = po.user_id
+                and not exists (
+                  select 1 from public.reward_transactions rt
+                  where rt.referee_user_id = po.user_id and rt.generation = 3 and rt.subscription_id = s.id
+                )
+            )
+          )
+        )
+      )
+  loop
+    v_candidate_count := v_candidate_count + 1;
+    begin
+      perform public.apply_referral_side_effects(
+        v_candidate.user_id, v_candidate.subscription_id, v_candidate.paid_at);
+      v_repaired_ids := array_append(v_repaired_ids, v_candidate.user_id);
+    exception when others then
+      v_failed := v_failed || jsonb_build_object('user_id', v_candidate.user_id, 'error', sqlerrm);
+      perform public.log_system_alert('repair_orphaned_payments', 'error', sqlerrm,
+        jsonb_build_object('user_id', v_candidate.user_id, 'subscription_id', v_candidate.subscription_id));
+      raise warning 'repair_orphaned_payments：修復 user_id=% 失敗: %', v_candidate.user_id, sqlerrm;
+    end;
+  end loop;
+
+  return jsonb_build_object(
+    'candidates_found',  v_candidate_count,
+    'repaired_count',    coalesce(array_length(v_repaired_ids, 1), 0),
+    'repaired_user_ids', to_jsonb(v_repaired_ids),
+    'failed',            v_failed
+  );
+end;
+$$;
+
+revoke execute on function public.repair_orphaned_payments(uuid) from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 6. repair_orphaned_claim_rewards（基準 20261111000001）
+-- ------------------------------------------------------------
+create or replace function public.repair_orphaned_claim_rewards(p_user_id uuid default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_reward_amount   int;
+  v_candidate       record;
+  v_candidate_count int := 0;
+  v_repaired_count  int := 0;
+begin
+  -- 第 7 波 S4（W7-9 Q1＝A）：全量路徑（null）一個交易跨多位會員，子交易列鎖留到整批結束，
+  -- 與線上付款互鎖（同 20261115000001 檔頭的環）。生產只由 Edge 逐人呼叫，關掉全量。
+  if p_user_id is null then
+    raise exception using errcode = 'U6R02',
+      message = 'repair_orphaned_claim_rewards：必須逐人呼叫（帶 p_user_id），全量路徑已關閉';
+  end if;
+  select referral_reward_amount into v_reward_amount from public.reward_config where id = true;
+  v_reward_amount := coalesce(v_reward_amount, 100);
+
+  for v_candidate in
+    select rkr.id as claim_id, rkr.user_id as claimer_id
+    from public.referral_king_rewards rkr
+    join public.profiles pr on pr.id = rkr.user_id
+    where rkr.status = 'claimed'
+      and (p_user_id is null or rkr.user_id = p_user_id)
+      and pr.referred_by_user_id is not null
+      -- #167 閘門：同 repair_orphaned_payments，事件時間 = claimed_at。
+      and (pr.referred_by_changed_at is null
+           or pr.referred_by_changed_at <= rkr.claimed_at)
+      and not exists (
+        select 1 from public.reward_transactions rt
+        where rt.referee_user_id = rkr.user_id
+          and rt.generation = 1
+          and rt.source_claim_id = rkr.id
+      )
+    -- 排序：全量路徑已關（第 7 波 S4），只剩逐人呼叫；排序僅保留處理順序穩定。
+    order by rkr.user_id, rkr.id
+  loop
+    -- 並行防線（ref P1-2）：與同一人另一個 repair 序列化——先鎖 claimer 的
+    -- profiles 列，拿到鎖後重查；對方已補完（commit 後新 snapshot 看得到）就跳過。
+    perform 1 from public.profiles where id = v_candidate.claimer_id for update;
+    if exists (
+      select 1 from public.reward_transactions rt
+      where rt.referee_user_id = v_candidate.claimer_id
+        and rt.generation = 1
+        and rt.source_claim_id = v_candidate.claim_id
+    ) then
+      continue;
+    end if;
+    v_candidate_count := v_candidate_count + 1;
+    begin
+      perform public.pay_referral_generations(
+        v_candidate.claimer_id, v_reward_amount, null, v_candidate.claim_id, '・任務續約');
+      v_repaired_count := v_repaired_count + 1;
+    exception when others then
+      perform public.log_system_alert('repair_orphaned_claim_rewards', 'error', sqlerrm,
+        jsonb_build_object('claim_id', v_candidate.claim_id, 'claimer_id', v_candidate.claimer_id));
+      raise warning 'repair_orphaned_claim_rewards：補發失敗（claim_id=%）: %', v_candidate.claim_id, sqlerrm;
+    end;
+  end loop;
+
+  return jsonb_build_object(
+    'candidates_found', v_candidate_count,
+    'repaired_count',   v_repaired_count
+  );
+end;
+$$;
+
+revoke execute on function public.repair_orphaned_claim_rewards(uuid) from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 6. repair_orphaned_forfeitures（基準 20260802000002）
+-- ------------------------------------------------------------
+create or replace function public.repair_orphaned_forfeitures(p_user_id uuid default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_candidate       record;
+  v_snapshot        integer;
+  v_repaired_ids    uuid[] := '{}';
+  v_failed          jsonb  := '[]'::jsonb;
+  v_candidate_count int    := 0;
+begin
+  -- 第 7 波 S4（W7-9 Q1＝A）：全量路徑（null）一個交易跨多位會員，子交易列鎖留到整批結束，
+  -- 與線上付款互鎖（同 20261115000001 檔頭的環）。生產只由 Edge 逐人呼叫，關掉全量。
+  if p_user_id is null then
+    raise exception using errcode = 'U6R02',
+      message = 'repair_orphaned_forfeitures：必須逐人呼叫（帶 p_user_id），全量路徑已關閉';
+  end if;
+  for v_candidate in
+    select s.id as subscription_id, s.user_id, po.transaction_id as trade_no
+    from public.subscriptions s
+    join public.payment_orders po on po.id = s.source_payment_order_id
+    where po.renewal_mode = 'fresh'
+      and (p_user_id is null or s.user_id = p_user_id)
+      -- 非首購：同一人有更早建立的訂閱（首購 fresh 本來就無沖銷列）
+      and exists (
+        select 1 from public.subscriptions s2
+        where s2.user_id = s.user_id and s2.id <> s.id and s2.created_at < s.created_at
+      )
+      and not exists (
+        select 1 from public.reward_transactions rt
+        where rt.user_id = s.user_id and rt.type = 'ledger_reset'
+          and rt.subscription_id = s.id
+      )
+  loop
+    v_candidate_count := v_candidate_count + 1;
+    begin
+      -- 與付款完成流程同一把 user 鎖，鎖內重查冪等條件——兩個並行的
+      -- repair（或 repair 撞上付款）不會對同一筆訂閱各插一列。
+      perform 1 from public.profiles where id = v_candidate.user_id for update;
+      if exists (
+        select 1 from public.reward_transactions rt
+        where rt.user_id = v_candidate.user_id and rt.type = 'ledger_reset'
+          and rt.subscription_id = v_candidate.subscription_id
+      ) then
+        continue;
+      end if;
+
+      -- 補沖依據 = 失敗當下的金額快照（fresh_ledger_forfeit 告警 payload）。
+      -- 絕不用補沖當下的餘額——失敗後下線新繳的合法點數不能被追溯沒收。
+      select (sa.context ->> 'forfeit_amount')::integer into v_snapshot
+      from public.system_alerts sa
+      where sa.source = 'fresh_ledger_forfeit'
+        and sa.context ->> 'subscription_id' = v_candidate.subscription_id::text
+        and sa.context ? 'forfeit_amount'
+        and (sa.context ->> 'forfeit_amount') is not null
+      order by sa.created_at desc
+      limit 1;
+
+      if v_snapshot is null then
+        -- 快照遺失：寧可少沖交人工——沖 0（留冪等標記列）+ 升級 error 告警。
+        perform public.log_system_alert('repair_orphaned_forfeitures', 'error',
+          '找不到 fresh_ledger_forfeit 金額快照，補沖 0，需人工核對',
+          jsonb_build_object('user_id', v_candidate.user_id,
+                             'subscription_id', v_candidate.subscription_id,
+                             'trade_no', v_candidate.trade_no));
+        v_snapshot := 0;
+      end if;
+
+      insert into public.reward_transactions
+        (user_id, type, amount, subscription_id, description)
+      values
+        (v_candidate.user_id, 'ledger_reset', -greatest(v_snapshot, 0),
+         v_candidate.subscription_id, '新約重置：帳本清空（延遲補沖）');
+
+      v_repaired_ids := array_append(v_repaired_ids, v_candidate.user_id);
+    exception when others then
+      v_failed := v_failed || jsonb_build_object('user_id', v_candidate.user_id, 'error', sqlerrm);
+      perform public.log_system_alert('repair_orphaned_forfeitures', 'error', sqlerrm,
+        jsonb_build_object('user_id', v_candidate.user_id,
+                           'subscription_id', v_candidate.subscription_id));
+      raise warning 'repair_orphaned_forfeitures：補沖 user_id=% 失敗: %', v_candidate.user_id, sqlerrm;
+    end;
+  end loop;
+
+  return jsonb_build_object(
+    'candidates_found',  v_candidate_count,
+    'repaired_count',    coalesce(array_length(v_repaired_ids, 1), 0),
+    'repaired_user_ids', to_jsonb(v_repaired_ids),
+    'failed',            v_failed
+  );
+end;
+$$;
+
+revoke execute on function public.repair_orphaned_forfeitures(uuid) from anon, authenticated, public;
