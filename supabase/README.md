@@ -99,11 +99,12 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
   （`payuni-merchant`：`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`，碼表在 `payuni-rejection.ts` 檔頭）與
   一小時內 ≥3 位不同使用者連續失敗（`payuni-failure-burst`）。
   排程類：對帳查詢**擲錯**全滅（`checked ≥ 2`，502）或過半（`checked ≥ 3`）——`query_all_failed`／`query_majority_failed`，
-  加 UTC 小時桶；PayUni 回了判讀不了的 TradeStatus（`unknown_trade_status`：8＝訂單待確認、碼表外、缺欄位、查不到同號交易、`DataSource=B` 持續超過 4 天；
+  加 UTC 小時桶；PayUni 回了判讀不了的 TradeStatus（`unknown_trade_status`：8＝訂單待確認、碼表外、缺欄位、查不到同號交易、同號多列狀態衝突、`DataSource=B` 持續超過 4 天；
   按訂單號去重，該單永不自動標 expired，`payment_orders.reconcile_unknown_at` 記時間、掃描排到後段）；pg_cron 觸發的照片清理失敗（斷路器、`sweep_failed`，加 UTC 日期桶）。
   碼表出處是 PayUni 官方「API／交易查詢／單筆交易查詢 Ver 2.0」（TradeStatus）與「錯誤代碼／交易查詢」（查詢層 Status），2026-11 查證：
   查詢回應解密後是 http_build_query 的 query string，結果列是 `Result[i][欄位]` 鍵名（官方「回傳資料統一為 Result 陣列（由 0 開始）」；
   解析在 `payuni-query-result.ts`，另接 JSON 字串 `Result` 與平鋪欄位；付款時間欄位叫 `PaymentDay`，交給收斂前補成 `PayTime`）。
+  同號多列：任一列已付款就取那列，狀態互相衝突且無已付款 → unknown `multiple_matching_trades`；查詢回已付款但缺 `TradeAmt` → unknown `missing_field`（不開通）。
   TradeStatus 0／9／4＝未付款（建單滿 4 天標 expired）、1＝已付款、2／3＝失敗／取消、8 與碼表外＝unknown；`DataSource=B` 一律本輪不下結論，
   持續超過 4 天才轉 unknown。查詢層非 SUCCESS（`QUERY01xxx` 基礎參數、`QUERY02xxx` 解密參數、`QUERY03001`＝查無符合訂單資料、`QUERY04xxx` 異常）
   預設當「查詢層失敗」：`payuni-query` 按 Status＋Message 去重一筆、滿 4 天標 expired 前另寫 `expired_query_failed`（error）。

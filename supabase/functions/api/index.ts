@@ -3180,7 +3180,7 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   if (tradeStatus === '1') {
     // 查詢路徑缺 TradeAmt 不開通（W7-17 審查 P2-2）：resolveOrderFromPayUni 的金額比對
     // 在缺 TradeAmt 時放行，查詢路徑現在真的會開通，所以在這裡擋，交人工。notify 路徑不動。
-    if (!(flat.TradeAmt ?? '').trim() && flat.Stub === 'stub') { // 紅燈 stub
+    if (!(flat.TradeAmt ?? '').trim()) {
       return { stillProcessing: true, unknownStatus: { tradeStatus, reason: 'missing_field' } };
     }
     // 查詢回應的付款時間叫 PaymentDay，補成 PayTime 讓 payuni_paid_at 認得（W7-16）。

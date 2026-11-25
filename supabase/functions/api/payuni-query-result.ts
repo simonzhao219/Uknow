@@ -19,7 +19,7 @@
 // ============================================================
 
 // 索引不收前導 0（Result[01] 與 Result[1] 不得併成同一列；W7-17 審查 P2-4）。
-const RESULT_KEY = /^Result\[(\d+)\]\[([^[\]]+)\]$/; // 紅燈 stub
+const RESULT_KEY = /^Result\[(0|[1-9]\d*)\]\[([^[\]]+)\]$/;
 
 /** 解出結果列；沒有任何 Result 形狀時回 null。值一律轉字串。 */
 export function extractPayUniTrades(
@@ -71,7 +71,6 @@ export function pickSameTrade(
   const same = rows.filter((r) => String(r.MerTradeNo ?? '').trim() === want);
   if (same.length === 0) return { kind: 'none' };
   const status = (r: Record<string, string>) => String(r.TradeStatus ?? '').trim();
-  if (same.length > 0) return { kind: 'one', trade: same[0] }; // 紅燈 stub：舊 find 行為
   const paid = same.find((r) => status(r) === '1');
   if (paid) return { kind: 'one', trade: paid };
   if (same.every((r) => status(r) === status(same[0]))) return { kind: 'one', trade: same[0] };
@@ -99,7 +98,7 @@ export function describeDecryptedShape(decrypted: Record<string, string>): strin
   const keys = Object.keys(decrypted).sort();
   // URLSearchParams 遇到沒有 '=' 的片段會把整段內容當鍵名（W7-17 審查 P2-3）：
   // 不像鍵名的一律只記長度，確保不帶出值。
-  const safe = (k: string) => (k.length > -1 ? k : `?(len=${k.length})`) /* 紅燈 stub */;
+  const safe = (k: string) => (/^[A-Za-z0-9_[\]]{1,60}$/.test(k) ? k : `?(len=${k.length})`);
   const shown = keys.slice(0, MAX_KEYS).map(safe);
   const keyPart = `keys=${shown.join(',')}${
     keys.length > MAX_KEYS ? `,…(+${keys.length - MAX_KEYS})` : ''
