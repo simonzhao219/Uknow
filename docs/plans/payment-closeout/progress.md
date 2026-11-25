@@ -12,8 +12,9 @@
 | 1 | drop wrapper＋改測試 | ✅ 綠 | 4c94b3a0 | 270a7030 |
 | 2 | 3a-bis／3b／3d 升 error | ✅ 綠 | a7fbb4d6 | ae03a171 |
 | 3 | 單筆開通失敗 message | ✅ 綠 | 10e5ea0e | 62362ac4 |
-| 4 | repair 關全量（W7-9 Q1＝A） | ✅ 綠 | f1c2dfb7 | （本 commit） |
-| 5 | 文件 | ⬜ 未開始 | | |
+| 4 | repair 關全量（W7-9 Q1＝A） | ✅ 綠 | f1c2dfb7 | bd27c817 |
+| 5 | 後台文案（W7-9 Q5） | ✅ 綠 | 5ec077fd | （本 commit） |
+| 6 | 文件 | ⬜ 未開始 | | |
 
 ## 目前位置與下一步
 

@@ -991,7 +991,7 @@ email。
 不符」：(1) 每張提領單（含退件）恰有一筆金額 −(金額＋手續費) 的扣款；(2) 退件的提領恰有一筆
 +(金額＋手續費) 的退款，未退件的不得有退款；(3) 沒有對不上本人提領單的扣款，也沒有指向別人提領單的退款；(4) 新約清空的金額＝
 −max(清空前的餘額, 0)，「清空前」只算時間早於清空那一筆的帳。延遲補沖的清空（§8.4 新約重置）以告警
-快照為準，只寫資訊。清空當下若有別筆交易同時寫入（含批次自癒期間），(4) 可能差一筆，畫面會寫出這點。
+快照為準，只寫資訊。清空當下若有別筆交易同時寫入，(4) 可能差一筆，畫面會寫出這點。
 
 〔實作〕`supabase/migrations/20261116000001_referral_award_chain.sql`～`20261116000005_admin_referral_ledger_audit.sql`、
 `supabase/functions/api/admin-referral-tree.ts`、`supabase/functions/_shared/admin-referral-contract.ts`、
