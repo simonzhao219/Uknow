@@ -52,6 +52,7 @@
 | W7-13 | #531 獨立審查（P0 0、P1 1、P2 3） | **本 PR 修**：P1-1′ 掛載的 API 分支（無 localStorage pendingUser）導 `/dashboard` 前也寫 context＋經守衛的紅綠測試，輪詢與 CompleteProfile 分支補測試；P2-a 丟棄過期的 validate 回應；P2-c 規格書 §6.2 措辭；P2-b 紅燈期望值寫錯只在 PR 內文註明 |
 | W7-14 | #532 獨立審查（P0 0、P1 0、P2 3＋nit） | **本 PR 修**：P2-1 正控挑單加「付款完成至少 1 小時」下限；P2-2 記樣本付款時間、超過 14 天寫 warning（不推 LINE、不影響 fresh），直接改未合併的 `20261124000001`；P2-3 deploy-smoke 改成「非 sandbox 一律算正式端點」（防 fail-open）；README 告警字串對齊 |
 | W7-15 | #531 修 P1 後總 JS raw 1983.17／1983 kB（entry gzip 316.3／316.5，增量在 PaymentCheckout lazy chunk） | **追認總量上限 +1 kB（1983→1984）**，PR 附實測（被推翻：再找死碼瘦身）（業主 2026-11-25） |
+| W7-16 | develop 正控每小時 `no_matching_trade`（樣本為真 sandbox 已付款單） | **S2 開後續 `/fix-bug`，晉升前必修**：先取證 PayUni 單筆查詢解密後的真實形狀（疑為 `Result[0][…]` 平鋪鍵，`URLSearchParams` 解析後兩條路都對不到），再修共用解析；既有 `queryPayUniTradeStatus` 同一解析，「已付款但 notify 遺失」的單靠查詢收斂不了（fail-safe 轉 `missing_field` error，非靜默）。正式站目前無 pending 單、晉升前不受影響 |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -115,7 +116,7 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 | 修正已推，待 rebase＋W7-15 預算（審查員 `session_01MQovbCRRA98cKaKeMZ6AMJ`） |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control` | #532 ✅ 214fc97 | 收工 |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；後續待開 | W7-16 取證＋修解析 |
 | S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃親審通過，等業主親打 |
 | S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃親審通過，等業主親打 |
 | S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | — | 施工中 |
@@ -131,3 +132,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 04:50 | 獨立審查回報。**#532**：P0 0、P1 0——不會假成功（樣本單號＝建單送出的 MerTradeNo、嚴格同號 TradeStatus=1、無樣本不算成功）、正控無效時逐項同現行、migration 權限與新舊組合皆核實；P2 3＋nit → **W7-14**。**#531**：P0 0、**P1 1**（掛載 API 分支沒寫 context，同 R6 P1-1 迴圈；主 session 讀碼核實）、P2 3 → **W7-13**。兩支皆退回本 PR 修 | S1、S2 修 → CI 綠 → 主 session 核 delta → 合併 |
 | 11/25 04:55 | S4 plan 修訂（8c94616a；W7-9／10／12 記進 §6、3a-bis 進驗收第 8 列、Q4 結果）、S3 plan 修訂（cd8fb470；審查 P1 1～3、W7-11、W7-12）主 session 親審通過 | 業主到 S4 親打 `/tdd-implement payment-closeout`、到 S3 親打 `/tdd-implement foldable-tablet-layout` |
 | 11/25 13:00 | S2 修 #532 W7-14（紅 155dad8／綠 b04c283：挑單付款滿 1 小時、樣本 >14 天 warning、deploy-smoke 反向判斷、README 字串）；主 session 核 delta、CI 全綠 → **#532 合進 develop（214fc97）**，S2 收工。首批已有合併 → 照 W7-3 開 **S6**。S1 修 #531 W7-13（綠 904891cf）但總 JS raw 超 120 bytes → 業主裁 **W7-15** | S1 調預算＋rebase → 合 #531；develop 驗證 `20261124000001` 已套、正控首輪紀錄 |
+| 11/25 13:15 | #532 develop 驗證：`20261124000001` 已套、表在；正控自 11/24 21:07 UTC 起每小時 **failed／no_matching_trade**，樣本 `20261028185459GUBRXE` 是真 sandbox 已付款單（payuni_response 有 MerID、TradeNo、TradeStatus=1）→ 查詢 SUCCESS 且可解密，但解析找不到同號交易。develop 有 error＋sample_stale warning 各一筆未處理（不標，留作修好後的對照）。主 session 讀碼：既有對帳查單同一解析 → 定 **W7-16**，交 S2 後續 | S2 取證＋修；修好前不晉升 |
