@@ -3,6 +3,7 @@
 // 與測試使用者建立/清除工具。只給 *.test.ts 使用，不會被 index.ts import。
 // ============================================================
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { healPaidPendingOrders } from './paid-pending-heal.ts';
 
 // `supabase start` 固定用 CLI 內建的 demo JWT secret（這個 repo 的
 // supabase/config.toml 沒有覆寫），所以本地端的 service-role key 是
@@ -79,7 +80,7 @@ export async function deleteTestUsers(client: SupabaseClient, userIds: string[])
 
 // 「已付款待開通」：pending 訂單上已存 PayUni 的 SUCCESS 回應。TradeAmt 刻意
 // 不是 1200——金額相符的話，任何走到 buildProfileResponse 的請求都會把它自癒成
-// completed（complete_paid_pending_orders），測試就會因錯的理由通過；金額不符
+// completed（單筆 complete_paid_pending_order 逐筆自癒），測試就會因錯的理由通過；金額不符
 // 時自癒維持 pending 交人工裁決，這個狀態才穩定得住。
 export async function seedPaidAwaitingActivation(
   client: SupabaseClient,
@@ -243,4 +244,10 @@ export async function requestWithdrawal(
     p_bank_code: '812',
     p_bank_account: '1234567890123',
   });
+}
+
+// 「已付款待開通」單的自癒，走正式路徑：Edge 的 healPaidPendingOrders 逐筆呼叫單筆 RPC
+// （第 7 波 S4 drop 了單交易 wrapper complete_paid_pending_orders）。回傳形狀同舊 wrapper。
+export function healPaidPendingForUser(client: SupabaseClient, userId?: string) {
+  return healPaidPendingOrders(async (fn, args) => await client.rpc(fn, args), { userId });
 }

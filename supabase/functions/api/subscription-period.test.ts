@@ -7,7 +7,12 @@
 //   * backfill_time_domain()：既有資料嚴格重算、可重跑冪等
 // ============================================================
 import { assertEquals, assertNotEquals } from 'jsr:@std/assert@1';
-import { adminClient, createTestUser, deleteTestUsers } from './test-helpers.ts';
+import {
+  adminClient,
+  createTestUser,
+  deleteTestUsers,
+  healPaidPendingForUser,
+} from './test-helpers.ts';
 import {
   subscriptionLastDay,
   twDayOf,
@@ -175,7 +180,7 @@ Deno.test('台灣午夜邊界：AuthTime 23:59:59 仍算當天', async () => {
   }
 });
 
-Deno.test('延遲自癒：complete_paid_pending_orders 開通的效期也錨定付款日', async () => {
+Deno.test('延遲自癒：逐筆自癒開通的效期也錨定付款日', async () => {
   const client = adminClient();
   const user = await createTestUser(client, { name: 'Self Heal User' });
 
@@ -189,7 +194,7 @@ Deno.test('延遲自癒：complete_paid_pending_orders 開通的效期也錨定�
       payuniResponse: { Status: 'SUCCESS', AuthDay: authDay, AuthTime: '120000', TradeAmt: '1200' },
     });
 
-    const { error } = await client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
+    const { error } = await healPaidPendingForUser(client, user.id);
     assertEquals(error, null);
 
     const sub = await latestSubscription(client, user.id);

@@ -1,5 +1,6 @@
 // ============================================================
-// complete_paid_pending_orders（migration 0007）：自癒卡單訂單。
+// 自癒卡單訂單（migration 0007 起；第 6 波 S1 拆成 list_paid_pending_order_ids＋單筆
+// complete_paid_pending_order，第 7 波 S4 drop 單交易 wrapper 後經 healPaidPendingOrders 逐筆呼叫）。
 //
 // 生產事故背景：process_successful_payment 拋例外 → 回滾（訂單留
 // pending），edge function 再用 persistRawResponseBestEffort 把 PayUni
@@ -17,6 +18,7 @@ import {
   createTestUser,
   deleteTestUsers,
   getActiveReferralCode,
+  healPaidPendingForUser,
   payForUser,
 } from './test-helpers.ts';
 
@@ -59,11 +61,9 @@ Deno.test('卡單訂單（pending + SUCCESS 存檔）被補完成訂閱，step �
   try {
     const tradeNo = await seedStuckOrder(client, user.id, successResponse);
 
-    const { data, error } = await client.rpc('complete_paid_pending_orders', {
-      p_user_id: user.id,
-    });
+    const { data, error } = await healPaidPendingForUser(client, user.id);
     assertEquals(error, null);
-    assertEquals(data.completed_count, 1, `expected 1 completed, got ${JSON.stringify(data)}`);
+    assertEquals(data!.completed_count, 1, `expected 1 completed, got ${JSON.stringify(data)}`);
 
     const { data: order } = await client
       .from('payment_orders')
@@ -102,11 +102,9 @@ Deno.test('自癒也會補上推薦鏈（推薦邊 + gen1 獎勵 + 任務進度�
   try {
     await seedStuckOrder(client, payer.id, successResponse);
 
-    const { data, error } = await client.rpc('complete_paid_pending_orders', {
-      p_user_id: payer.id,
-    });
+    const { data, error } = await healPaidPendingForUser(client, payer.id);
     assertEquals(error, null);
-    assertEquals(data.completed_count, 1);
+    assertEquals(data!.completed_count, 1);
 
     const { data: edge } = await client
       .from('referral_edges')
@@ -147,11 +145,9 @@ Deno.test('FAILED 回應與無回應的 pending 訂單不是候選，不會被�
     }));
     const emptyTradeNo = await seedStuckOrder(client, user.id, null);
 
-    const { data, error } = await client.rpc('complete_paid_pending_orders', {
-      p_user_id: user.id,
-    });
+    const { data, error } = await healPaidPendingForUser(client, user.id);
     assertEquals(error, null);
-    assertEquals(data.candidates_found, 0);
+    assertEquals(data!.candidates_found, 0);
 
     for (const tn of [failedTradeNo, emptyTradeNo]) {
       const { data: order } = await client
@@ -176,16 +172,16 @@ Deno.test('金額不符：維持 pending、不建訂閱、告警去重（重跑�
       (tn) => successResponse(tn, { TradeAmt: '9999' }),
     );
 
-    const run = () => client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
+    const run = () => healPaidPendingForUser(client, user.id);
     const first = await run();
     assertEquals(first.error, null);
-    assertEquals(first.data.amount_mismatch, 1);
-    assertEquals(first.data.completed_count, 0);
+    assertEquals(first.data!.amount_mismatch, 1);
+    assertEquals(first.data!.completed_count, 0);
 
     // 重跑一次：仍是 mismatch，但不該多寫一筆告警。
     const second = await run();
     assertEquals(second.error, null);
-    assertEquals(second.data.amount_mismatch, 1);
+    assertEquals(second.data!.amount_mismatch, 1);
 
     const { data: order } = await client
       .from('payment_orders').select('id, status').eq('transaction_id', tradeNo).single();
@@ -213,11 +209,11 @@ Deno.test('冪等：已補完後重跑，candidates_found 為 0、訂閱不重�
   try {
     await seedStuckOrder(client, user.id, successResponse);
 
-    const first = await client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
-    assertEquals(first.data.completed_count, 1);
+    const first = await healPaidPendingForUser(client, user.id);
+    assertEquals(first.data!.completed_count, 1);
 
-    const second = await client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
-    assertEquals(second.data.candidates_found, 0);
+    const second = await healPaidPendingForUser(client, user.id);
+    assertEquals(second.data!.candidates_found, 0);
 
     const { data: subs } = await client.from('subscriptions').select('id').eq('user_id', user.id);
     assertEquals(subs?.length, 1);
@@ -236,8 +232,8 @@ Deno.test('續約卡單：自癒後第二筆訂閱 is_renewal = true', async () 
 
     await seedStuckOrder(client, user.id, successResponse);
 
-    const { data } = await client.rpc('complete_paid_pending_orders', { p_user_id: user.id });
-    assertEquals(data.completed_count, 1);
+    const { data } = await healPaidPendingForUser(client, user.id);
+    assertEquals(data!.completed_count, 1);
 
     const { data: subs } = await client
       .from('subscriptions')
@@ -270,8 +266,10 @@ Deno.test('並發自癒同一使用者：仍然只有 1 筆訂閱、1 筆 gen1 �
   try {
     const tradeNo = await seedStuckOrder(client, payer.id, successResponse);
 
+    const [{ id: orderId }] = await sql1`
+      select id from public.payment_orders where transaction_id = ${tradeNo}`;
     const call = (sql: ReturnType<typeof postgres>) =>
-      sql`select complete_paid_pending_orders(${payer.id}::uuid) as result`;
+      sql`select complete_paid_pending_order(${orderId}::uuid) as result`;
     const [r1, r2] = await Promise.allSettled([call(sql1), call(sql2)]);
     assertEquals(r1.status === 'fulfilled' || r2.status === 'fulfilled', true);
 
