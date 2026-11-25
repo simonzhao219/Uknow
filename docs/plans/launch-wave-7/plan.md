@@ -53,6 +53,7 @@
 | W7-14 | #532 獨立審查（P0 0、P1 0、P2 3＋nit） | **本 PR 修**：P2-1 正控挑單加「付款完成至少 1 小時」下限；P2-2 記樣本付款時間、超過 14 天寫 warning（不推 LINE、不影響 fresh），直接改未合併的 `20261124000001`；P2-3 deploy-smoke 改成「非 sandbox 一律算正式端點」（防 fail-open）；README 告警字串對齊 |
 | W7-15 | #531 修 P1 後總 JS raw 1983.17／1983 kB（entry gzip 316.3／316.5，增量在 PaymentCheckout lazy chunk） | **追認總量上限 +1 kB（1983→1984）**，PR 附實測（被推翻：再找死碼瘦身）（業主 2026-11-25） |
 | W7-16 | develop 正控每小時 `no_matching_trade`（樣本為真 sandbox 已付款單） | **S2 開後續 `/fix-bug`，晉升前必修**：先取證 PayUni 單筆查詢解密後的真實形狀（疑為 `Result[0][…]` 平鋪鍵，`URLSearchParams` 解析後兩條路都對不到），再修共用解析；既有 `queryPayUniTradeStatus` 同一解析，「已付款但 notify 遺失」的單靠查詢收斂不了（fail-safe 轉 `missing_field` error，非靜默）。正式站目前無 pending 單、晉升前不受影響 |
+| W7-17 | #534 獨立審查（P0 0、P1 1 條件式、P2 4） | **本 PR 修**：P1 同一單號回多列時，有任一列 TradeStatus=1 才取，狀態衝突回 unknown（不下結論；否則已付款單可能被標 failed）；P2-2 查詢路徑缺 TradeAmt 不開通；P2-3 reason 只輸出合格鍵名；P2-4 拒絕前導 0 索引；P2-5 補測試；PR 內文逐字引用官方欄名 |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -116,7 +117,7 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 ✅ d31227a | 收工 |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；後續 #534 | #534 獨立審查中（`session_01MQovbCdiL1T8xdpuM8Tjy7`） |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；後續 #534 | #534 審查 P1 退回修（W7-17；審查員 `session_01MQovbCdiL1T8xdpuM8Tjy7`） |
 | S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃親審通過，等業主親打 |
 | S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃親審通過，等業主親打 |
 | S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 | CI／journey 驗證中 |
@@ -135,3 +136,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 13:15 | #532 develop 驗證：`20261124000001` 已套、表在；正控自 11/24 21:07 UTC 起每小時 **failed／no_matching_trade**，樣本 `20261028185459GUBRXE` 是真 sandbox 已付款單（payuni_response 有 MerID、TradeNo、TradeStatus=1）→ 查詢 SUCCESS 且可解密，但解析找不到同號交易。develop 有 error＋sample_stale warning 各一筆未處理（不標，留作修好後的對照）。主 session 讀碼：既有對帳查單同一解析 → 定 **W7-16**，交 S2 後續 | S2 取證＋修；修好前不晉升 |
 | 11/25 13:20 | S1 修 #531 W7-13／W7-15（審查紅 98ec5ef6、e6a1e600／綠 0fc546f6；預算 3d5191e3：API 分支導頁前寫 context、新碼驗證序號丟棄過期回應、規格書 §6.2 措辭、總 raw 上限 1984）；rebase 到 214fc97、主 session 核 delta、CI 全綠 → **#531 合進 develop（d31227a）**，S1 收工。S6 開 **#533**（Playwright 1.56→1.65.2、image v1.65.2-noble、journey-suite 回 ubuntu-latest；journey dispatch 驗證中） | 必上剩 S4（等業主親打）；W7-16 S2 後續；#533 |
 | 11/25 13:25 | S2 交 **#534**（W7-16；紅 300cd3c／綠 da60442，無 migration）。根因取證：官方「交易查詢 Ver 2.0」回傳統一為 Result 陣列、官方 SDK 以 http_build_query／parse_str 編解碼 → 解密後鍵名 `Result[0][MerTradeNo]`，舊解析只認 JSON／平鋪。新共用 `extractPayUniTrades`；同類：查詢回應付款時間是 `PaymentDay`，舊碼只認 PayTime／AuthDay → 經查詢收斂會用建單時間，一併補；正控對不到時 reason 帶鍵名（不含值）。e2e／journey 從未打真查詢端點（注入 queryFn、自寫夾具），所以沒抓到。主 session 派獨立 Opus 審查 | 審查＋CI → 合併 → 看 develop 下一輪正控轉 success |
+| 11/25 13:30 | #534 獨立 Opus 審查：P0 0、**P1 1**（同號多列取第一筆→可能把已付款單標 failed；舊碼同形但走不到，本 PR 讓它可觸發）、P2 4；已核實：同號比對未放寬、PaymentDay 時區與 notify 一致、金額不符仍走 amount_mismatch、兩個呼叫端都改用共用 parser → 主 session 定 **W7-17**，退回 S2 | S2 修 → CI 綠 → 合 #534 |
