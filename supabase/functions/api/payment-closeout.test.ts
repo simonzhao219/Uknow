@@ -293,3 +293,117 @@ Deno.test('log_referral_side_effect_failure：anon／authenticated 不可執行'
     await sql.end();
   }
 });
+
+// 「已付款待開通」單：pending＋已存 SUCCESS 回應（金額相符）。回傳 order id。
+async function seedPaidPending(sql: Sql, userId: string, t: string, tradeAmt = '1200') {
+  const [o] = await sql`
+    insert into public.payment_orders
+      (user_id, amount, status, payment_method, transaction_id, payuni_response)
+    values (${userId}, 1200, 'pending', 'payuni', ${t},
+      ${sql.json({ Status: 'SUCCESS', MerTradeNo: t, TradeNo: `PU-${t}`, TradeAmt: tradeAmt })})
+    returning id`;
+  return o.id as string;
+}
+
+async function openAlerts(sql: Sql, orderId: string) {
+  return (await sql`
+    select severity, message, context, resolved_at from public.system_alerts
+    where source = 'complete_paid_pending_orders' and context->>'order_id' = ${orderId}
+    order by created_at`) as unknown as (Alert & { resolved_at: string | null })[];
+}
+
+Deno.test('complete_paid_pending_order：開通失敗 → 行動句告警、sqlerrm 只進 context、重跑不重複', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  let teardown = async () => {};
+  try {
+    const m = (await createTestUser(client, { name: '收尾 開通失敗' })).id;
+    ids.push(m);
+    teardown = await failWrite(sql, 'subscriptions', `new.user_id = '${m}'::uuid`, 'open');
+    const t = tradeNo20();
+    const id = await seedPaidPending(sql, m, t);
+
+    const [r1] = await sql`select public.complete_paid_pending_order(${id}::uuid) as r`;
+    assertEquals(
+      r1.r,
+      {
+        outcome: 'failed',
+        error: 'process_successful_payment 失敗: injected open failure',
+      },
+      'Edge 拿到的 error 不變',
+    );
+    await sql`select public.complete_paid_pending_order(${id}::uuid)`;
+
+    const alerts = await openAlerts(sql, id);
+    assertEquals(alerts.length, 1, '同單未處理的開通失敗告警不重複推');
+    const [a] = alerts;
+    assertEquals(a.severity, 'error');
+    assert(a.message.startsWith('【已付款未開通・請開 Claude 處理】'), a.message);
+    assertLine(a, [t, '自動開通失敗']);
+    assert(a.message.includes('〈已付款未開通〉'), a.message);
+    assertClean(a, ['injected', m]);
+    assertEquals(
+      [a.context.kind, a.context.trade_no, a.context.sqlerrm, a.context.sqlstate],
+      ['open_failed', t, 'process_successful_payment 失敗: injected open failure', 'P0001'],
+    );
+  } finally {
+    await teardown();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('complete_paid_pending_order：開通失敗後下一輪開通 → 該告警自動標處理（W7-9 Q7）', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  let teardown = async () => {};
+  try {
+    const m = (await createTestUser(client, { name: '收尾 暫時失敗' })).id;
+    ids.push(m);
+    teardown = await failWrite(sql, 'subscriptions', `new.user_id = '${m}'::uuid`, 'open2');
+    const id = await seedPaidPending(sql, m, tradeNo20());
+    await sql`select public.complete_paid_pending_order(${id}::uuid)`;
+    await teardown();
+    teardown = async () => {};
+
+    const [r] = await sql`select public.complete_paid_pending_order(${id}::uuid) as r`;
+    assertEquals(r.r.outcome, 'completed');
+    const alerts = await openAlerts(sql, id);
+    assertEquals(alerts.length, 1);
+    assert(alerts[0].resolved_at !== null, '暫時性失敗已自癒，不該留著叫人處理');
+  } finally {
+    await teardown();
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
+
+Deno.test('complete_paid_pending_order：金額不符去重認得舊格式、不被開通失敗告警遮蔽', async () => {
+  const client = adminClient();
+  const sql = postgres(DB_URL, { max: 1 });
+  const ids: string[] = [];
+  try {
+    const m = (await createTestUser(client, { name: '收尾 金額不符' })).id;
+    ids.push(m);
+    // 舊格式金額不符告警（無 kind、有 trade_amt）→ 新版去重仍認得、不再寫。
+    const oldId = await seedPaidPending(sql, m, tradeNo20(), '9999');
+    await sql`select public.log_system_alert('complete_paid_pending_orders', 'error', '舊格式',
+      ${sql.json({ order_id: oldId, trade_amt: '9999' })})`;
+    const [r1] = await sql`select public.complete_paid_pending_order(${oldId}::uuid) as r`;
+    assertEquals(r1.r.outcome, 'amount_mismatch');
+    assertEquals((await openAlerts(sql, oldId)).length, 1, '舊格式金額不符告警仍去重');
+
+    // 同單有未處理的開通失敗告警，不得擋住金額不符告警。
+    const id = await seedPaidPending(sql, m, tradeNo20(), '9999');
+    await sql`select public.log_system_alert('complete_paid_pending_orders', 'error', '開通失敗',
+      ${sql.json({ order_id: id, kind: 'open_failed' })})`;
+    await sql`select public.complete_paid_pending_order(${id}::uuid)`;
+    const kinds = (await openAlerts(sql, id)).map((a) => a.context.kind);
+    assertEquals(kinds, ['open_failed', 'amount_mismatch']);
+  } finally {
+    await sql.end();
+    await deleteTestUsers(client, ids);
+  }
+});
