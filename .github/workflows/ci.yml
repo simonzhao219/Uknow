@@ -379,7 +379,7 @@ jobs:
     # setup-python；Node 由 setup-node 照常裝進 container。--ipc=host 是
     # Playwright 對 Docker 內 Chromium 的建議（避免 /dev/shm 不足崩潰）。
     container:
-      image: mcr.microsoft.com/playwright/python:v1.56.0-noble
+      image: mcr.microsoft.com/playwright/python:v1.65.2-noble
       options: --ipc=host
     # 測試本身約 8 分鐘，runner 快慢變異可達 42%（見檔頭），25 分鐘留足餘裕。
     timeout-minutes: 25
