@@ -116,7 +116,7 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 ✅ d31227a | 收工 |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；後續待開 | W7-16 取證＋修解析 |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；後續 #534 | #534 獨立審查中（`session_01MQovbCdiL1T8xdpuM8Tjy7`） |
 | S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃親審通過，等業主親打 |
 | S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃親審通過，等業主親打 |
 | S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 | CI／journey 驗證中 |
@@ -134,3 +134,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 13:00 | S2 修 #532 W7-14（紅 155dad8／綠 b04c283：挑單付款滿 1 小時、樣本 >14 天 warning、deploy-smoke 反向判斷、README 字串）；主 session 核 delta、CI 全綠 → **#532 合進 develop（214fc97）**，S2 收工。首批已有合併 → 照 W7-3 開 **S6**。S1 修 #531 W7-13（綠 904891cf）但總 JS raw 超 120 bytes → 業主裁 **W7-15** | S1 調預算＋rebase → 合 #531；develop 驗證 `20261124000001` 已套、正控首輪紀錄 |
 | 11/25 13:15 | #532 develop 驗證：`20261124000001` 已套、表在；正控自 11/24 21:07 UTC 起每小時 **failed／no_matching_trade**，樣本 `20261028185459GUBRXE` 是真 sandbox 已付款單（payuni_response 有 MerID、TradeNo、TradeStatus=1）→ 查詢 SUCCESS 且可解密，但解析找不到同號交易。develop 有 error＋sample_stale warning 各一筆未處理（不標，留作修好後的對照）。主 session 讀碼：既有對帳查單同一解析 → 定 **W7-16**，交 S2 後續 | S2 取證＋修；修好前不晉升 |
 | 11/25 13:20 | S1 修 #531 W7-13／W7-15（審查紅 98ec5ef6、e6a1e600／綠 0fc546f6；預算 3d5191e3：API 分支導頁前寫 context、新碼驗證序號丟棄過期回應、規格書 §6.2 措辭、總 raw 上限 1984）；rebase 到 214fc97、主 session 核 delta、CI 全綠 → **#531 合進 develop（d31227a）**，S1 收工。S6 開 **#533**（Playwright 1.56→1.65.2、image v1.65.2-noble、journey-suite 回 ubuntu-latest；journey dispatch 驗證中） | 必上剩 S4（等業主親打）；W7-16 S2 後續；#533 |
+| 11/25 13:25 | S2 交 **#534**（W7-16；紅 300cd3c／綠 da60442，無 migration）。根因取證：官方「交易查詢 Ver 2.0」回傳統一為 Result 陣列、官方 SDK 以 http_build_query／parse_str 編解碼 → 解密後鍵名 `Result[0][MerTradeNo]`，舊解析只認 JSON／平鋪。新共用 `extractPayUniTrades`；同類：查詢回應付款時間是 `PaymentDay`，舊碼只認 PayTime／AuthDay → 經查詢收斂會用建單時間，一併補；正控對不到時 reason 帶鍵名（不含值）。e2e／journey 從未打真查詢端點（注入 queryFn、自寫夾具），所以沒抓到。主 session 派獨立 Opus 審查 | 審查＋CI → 合併 → 看 develop 下一輪正控轉 success |
