@@ -3580,3 +3580,14 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   `git show 252ebc6:docs/plans/launch-wave-5/plan.md`（§0 裁決表）取回；R5 報告 `git show 252ebc6:docs/plans/launch-wave-5/review.md`。
 
 處置：第 1、2 條列入下次框架整併；第 3 條交主 session（P2-12）；第 4 條為可複用做法。
+
+## 2026-11-25｜第 7 波 S4 金流收尾（payment-closeout）
+
+- **推送守衛在非 push 指令上自動 rebase 執行 session 分支**（誤擋，第 3 次出現）：S4 施工中兩次在跑 python 編輯腳本／`npm install`
+  的 Bash 呼叫上被攔，守衛自行 rebase 到新的 origin/develop、該指令未執行，要求 `--force-with-lease`；紅綠燈 hash 因此全換。
+  同上一節根因（比對字串而非實際 push 子命令）。處置：併入該候選；執行 session 的紅綠燈表一律以 PR 內文為準（派工已規定）。
+- **雲端容器可以自己起本機 Supabase**（可複用做法）：`npm i -g deno supabase`，背景跑 `dockerd`，再 `supabase start`（首次拉 image 約 10 分鐘）；
+  測試要帶 `SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | …SERVICE_ROLE_KEY)`（test-helpers 預設值是另一把）。改 migration 後以
+  `docker exec -i supabase_db_<ref> psql -f` 重套即可，不必重啟。本機 CLI 3.4 下有 3 支 grant 測試（name-write-paths、rls-policies listings、
+  scheduled-job-runs net schema）固定紅、與 diff 無關，疑 CLI 預設權限與 CI 不同；以 CI api-tests 為準。
+- **把關鍵防線做突變驗證**（可複用做法）：P0 級的「呼叫端雙保險」先拿掉再跑對應測試，確認會轉紅，再還原——比只看測試綠更能證明測試守得住。
