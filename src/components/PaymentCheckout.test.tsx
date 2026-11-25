@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { createContext } from 'react';
+import { createContext, useMemo, useState, type ReactNode } from 'react';
 import { formatTwDate, subscriptionLastDay, twDayOf } from '../utils/twDate';
 
 const showToast = vi.fn();
@@ -56,6 +56,8 @@ vi.mock('./notifications/NotificationContext', () => ({
 }));
 
 const { PaymentCheckout } = await import('./PaymentCheckout');
+const { RequireMembershipRoute } = await import('./RequireMembershipRoute');
+const { UserContext } = await import('../App');
 
 /** 記錄所有 fetch 呼叫的 URL；回應給空殼 json。 */
 function spyFetch() {
@@ -633,7 +635,7 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     });
   });
 
-  it('fresh 留空且預設推薦人不可用時，確認框不寫推薦人句、說明寫維持原推薦人', async () => {
+  it('fresh 留空且預設推薦人不可用時，確認框與說明都寫維持原推薦人', async () => {
     spyFetch();
     setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: false });
     seedLongExpired();
@@ -647,7 +649,8 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     );
     fireEvent.click(screen.getByTestId('payuni-pay-button'));
     const dialog = await screen.findByTestId('fresh-confirm-dialog');
-    expect(dialog.textContent).not.toContain('推薦人將');
+    expect(dialog.textContent).not.toContain('推薦人將改');
+    expect(dialog.textContent).toContain('您的推薦人維持不變');
   });
 
   it('fresh 留空且預設推薦人可用時，說明寫推薦人將改變、不提示目前的碼', async () => {
@@ -665,7 +668,7 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
   });
 
   // 第 6 波 S6（W5-63、W6-28）：現任推薦人就是預設推薦人時，留空推薦人不變。
-  it('確認框寫推薦人維持不變、說明寫維持原本的推薦人、不提示目前的碼', async () => {
+  it('預設即現任：確認框、說明、placeholder 與預設不可用時完全相同', async () => {
     spyFetch();
     setSubscription({
       ...RENEWAL,
@@ -680,7 +683,7 @@ describe('PaymentCheckout 補繳進度與付款確認', () => {
     expect(screen.getByTestId('fresh-code-hint').textContent).toContain('維持原本的推薦人');
     expect(screen.getByTestId('fresh-code-hint').textContent).not.toContain('將改變');
     expect((screen.getByTestId('new-referral-code-input') as HTMLInputElement).placeholder).toBe(
-      '輸入推薦碼',
+      '目前：8048901',
     );
     fireEvent.click(screen.getByTestId('payuni-pay-button'));
     const dialog = await screen.findByTestId('fresh-confirm-dialog');
@@ -1120,9 +1123,14 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
       | Array<Record<string, unknown> | 'error'>;
     prepare?: { status: number; body: unknown; raw?: string } | 'network-error';
     validateName?: string;
+    /** validate 直接回這個本體（例如 { valid:false, error:{ message } }）。 */
+    validateBody?: unknown;
+    /** prepare 被呼叫之後，/profile 改回這份（例如另一分頁剛付完款）。 */
+    profileAfterPrepare?: Record<string, unknown>;
   }) {
     const calls: string[] = [];
     let profileCall = 0;
+    let prepared = false;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -1131,17 +1139,24 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
           const p = Array.isArray(opts.profile)
             ? opts.profile[Math.min(profileCall++, opts.profile.length - 1)]
             : opts.profile;
+          if (prepared && opts.profileAfterPrepare) {
+            return new Response(JSON.stringify(opts.profileAfterPrepare), { status: 200 });
+          }
           if (p === 'pending') return new Promise<Response>(() => {});
           if (p === 'error') return new Response('{}', { status: 500 });
           return new Response(JSON.stringify(p ?? { registrationStep: 1 }), { status: 200 });
         }
         if (String(url).includes('/referrals/validate/')) {
+          if (opts.validateBody !== undefined) {
+            return new Response(JSON.stringify(opts.validateBody), { status: 200 });
+          }
           return new Response(
             JSON.stringify({ valid: true, referrer: { userName: opts.validateName ?? '王小明' } }),
             { status: 200 },
           );
         }
         const prepare = opts.prepare;
+        if (String(url).includes('/payuni/prepare')) prepared = true;
         if (String(url).includes('/payuni/prepare') && prepare) {
           if (prepare === 'network-error') throw new TypeError('Failed to fetch');
           if (prepare.raw !== undefined) {
@@ -1163,6 +1178,45 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
           <Route path="/payment/result" element={<p>開通中頁</p>} />
           <Route path="/dashboard" element={<p>會員中心頁</p>} />
         </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  // 真守衛＋有狀態的 context：/dashboard 經 RequireMembershipRoute，context 只在
+  // ingestProfile 之後才變 active（與 App 一致）。stub 路由測不到導頁迴圈（R6 P1-1）。
+  function renderWithGuard(initialUser: Record<string, unknown>) {
+    function Harness({ children }: { children: ReactNode }) {
+      const [user, setUser] = useState<Record<string, unknown> | null>(initialUser);
+      const value = useMemo(
+        () => ({
+          user,
+          isLoggedIn: true,
+          isAdmin: false,
+          isLoadingUser: false,
+          setUser,
+          refreshUser: async () => null,
+          ingestProfile: setUser,
+        }),
+        [user],
+      );
+      return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
+    }
+    return render(
+      <MemoryRouter initialEntries={['/payment/checkout']}>
+        <Harness>
+          <Routes>
+            <Route path="/payment/checkout" element={<PaymentCheckout />} />
+            <Route path="/payment/result" element={<p>開通中頁</p>} />
+            <Route
+              path="/dashboard"
+              element={
+                <RequireMembershipRoute>
+                  <p>會員中心頁</p>
+                </RequireMembershipRoute>
+              }
+            />
+          </Routes>
+        </Harness>
       </MemoryRouter>,
     );
   }
@@ -1368,6 +1422,129 @@ describe('PaymentCheckout 續費身分與建單拒絕', () => {
       body: { success: false, error: '已有有效訂閱，請到期後再續約' },
     });
     expect(await screen.findByText('會員中心頁')).toBeTruthy();
+  });
+
+  it('送單 400 已有有效訂閱時，導頁前把最新會員資料寫進 context，不被守衛彈回結帳頁', async () => {
+    stubBackend({
+      profile: RENEWER_PROFILE,
+      validateName: '一代會員',
+      prepare: { status: 400, body: { success: false, error: '已有有效訂閱，請到期後再續約' } },
+      profileAfterPrepare: { ...RENEWER_PROFILE, accountStatus: 'active' },
+    });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderWithGuard({ ...RENEWER_PROFILE });
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048777' } });
+    fireEvent.blur(input);
+    await screen.findByTestId('new-referrer-name');
+    fireEvent.click(screen.getByTestId('payuni-pay-button'));
+    fireEvent.click(await screen.findByTestId('fresh-confirm-action'));
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('會員中心頁')).toBeTruthy();
+    expect(screen.queryByTestId('payuni-pay-button')).toBeNull();
+  });
+
+  it('掛載時伺服器說會籍已生效，導 /dashboard 前先寫進 context', async () => {
+    stubBackend({ profile: { ...RENEWER_PROFILE, accountStatus: 'active' } });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderWithGuard({ ...RENEWER_PROFILE });
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('會員中心頁')).toBeTruthy();
+  });
+
+  it('新約碼欄填自己的碼時，欄位顯示後端的專屬文案而不是預設的不存在', async () => {
+    stubBackend({
+      profile: RENEWER_PROFILE,
+      validateBody: { valid: false, error: { message: '不能使用自己的推薦碼' } },
+    });
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048901' } });
+    fireEvent.blur(input);
+    expect(await screen.findByText('不能使用自己的推薦碼')).toBeTruthy();
+    expect(screen.queryByText('推薦碼不存在或已失效')).toBeNull();
+  });
+
+  it('沒有本機快照、/profile 回已生效時，導 /dashboard 前先寫進 context，不被守衛彈回', async () => {
+    stubBackend({ profile: { ...RENEWER_PROFILE, accountStatus: 'active' } });
+    renderWithGuard({ ...RENEWER_PROFILE });
+    expect(await screen.findByText('會員中心頁')).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText('會員中心頁')).toBeTruthy();
+  });
+
+  it('輪詢發現會籍已生效時，導 /dashboard 前先寫進 context', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // 第一次（掛載確認）仍是過期，第二次（5 秒輪詢）才是已生效。
+      stubBackend({
+        profile: [RENEWER_PROFILE, { ...RENEWER_PROFILE, accountStatus: 'active' }],
+      });
+      seedPendingUser({ ...RENEWER_PROFILE });
+      renderWithGuard({ ...RENEWER_PROFILE });
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(7000);
+      expect(await screen.findByText('會員中心頁')).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(screen.queryByText('會員中心頁')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('驗證在飛時改碼，晚到的舊回應不得蓋掉新碼的狀態，離開欄位仍會重驗', async () => {
+    let releaseFirst: (r: Response) => void = () => {};
+    const newCodeCalls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (/\/profile(\?|$)/.test(String(url))) {
+          return new Response(JSON.stringify(RENEWER_PROFILE), { status: 200 });
+        }
+        if (String(url).includes('/referrals/validate/')) {
+          // 現任推薦人的碼（掛載時查）不算；只追蹤使用者在新碼欄輸入的兩個碼。
+          if (String(url).endsWith('/8048555')) {
+            newCodeCalls.push('8048555');
+            return new Promise<Response>((r) => (releaseFirst = r));
+          }
+          if (String(url).endsWith('/8048777')) newCodeCalls.push('8048777');
+          return new Response(JSON.stringify({ valid: true, referrer: { userName: '新碼會員' } }), {
+            status: 200,
+          });
+        }
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }),
+    );
+    setSubscription({ ...RENEWAL, freshDefaultReferrerAvailable: true });
+    seedPendingUser({ ...RENEWER_PROFILE });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('renewal-mode-section')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('renewal-mode-fresh'));
+    const input = screen.getByTestId('new-referral-code-input');
+    fireEvent.change(input, { target: { value: '8048555' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(newCodeCalls).toEqual(['8048555']));
+    fireEvent.change(input, { target: { value: '8048777' } });
+    releaseFirst(
+      new Response(JSON.stringify({ valid: false, error: { message: '不能使用自己的推薦碼' } }), {
+        status: 200,
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText('不能使用自己的推薦碼')).toBeNull();
+    fireEvent.blur(input);
+    expect(await screen.findByTestId('new-referrer-name')).toBeTruthy();
+    expect(newCodeCalls).toEqual(['8048555', '8048777']);
+    expect(input.getAttribute('aria-invalid')).toBeNull();
   });
 
   it('REFERRAL_CYCLE 標記後離開碼欄位不重驗，環的原因留在欄位上', async () => {

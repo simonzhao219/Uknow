@@ -250,6 +250,8 @@ export function CompleteProfile() {
               'CompleteProfile: User already completed registration, redirecting to dashboard',
             );
             showToast('您已完成註冊，正在跳轉到會員中心...', 'info');
+            // 先寫進 context，守衛才不會拿舊會籍把人彈回結帳頁（R6 P1-1 同類）。
+            await refreshUser();
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1000);

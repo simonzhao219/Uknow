@@ -1,6 +1,6 @@
 // 新約（fresh）確認框與新推薦碼欄的文案（第 5 波 S6 階段 6；W5-7、W5-51、W5-53、W5-55）。
 // 推薦人句依「建單時會套用的來源」分句：填碼＝改為／維持；留空＋預設推薦人可用＝將改變
-// （不揭露預設推薦人，規格書 §7.4）；留空＋預設不可用＝維持原推薦人，不寫推薦人句。
+// （不揭露預設推薦人，規格書 §7.4）；留空＋預設不可用＝維持原推薦人，與預設即現任同一句「維持不變」。
 import { describe, expect, it } from 'vitest';
 import type { RenewalInfo } from '@contract';
 import {
@@ -65,9 +65,13 @@ describe('freshReferrerSentence', () => {
     expect(freshReferrerSentence(base)).toBe('您的推薦人將改變。');
   });
 
-  it('留空且預設推薦人不可用或未知時，不寫推薦人句', () => {
-    expect(freshReferrerSentence({ ...base, defaultAvailable: false })).toBeNull();
-    expect(freshReferrerSentence({ ...base, defaultAvailable: undefined })).toBeNull();
+  it('留空且預設推薦人不可用或未知時，說推薦人維持不變', () => {
+    expect(freshReferrerSentence({ ...base, defaultAvailable: false })).toBe(
+      '您的推薦人維持不變。',
+    );
+    expect(freshReferrerSentence({ ...base, defaultAvailable: undefined })).toBe(
+      '您的推薦人維持不變。',
+    );
   });
 
   it('填了碼但尚未驗證通過時，不寫推薦人句', () => {
@@ -107,7 +111,10 @@ describe('blankFreshOutcome', () => {
 });
 
 describe('新約留空且預設推薦人即現任', () => {
-  it('確認框說推薦人維持不變，不出現姓名或碼', () => {
+  it('確認框說推薦人維持不變，不出現姓名或碼，且與預設不可用時同一句', () => {
+    expect(freshReferrerSentence({ ...base, defaultIsCurrent: true })).toBe(
+      freshReferrerSentence({ ...base, defaultAvailable: false }),
+    );
     expect(freshReferrerSentence({ ...base, defaultIsCurrent: true })).toBe('您的推薦人維持不變。');
   });
 
@@ -115,8 +122,9 @@ describe('新約留空且預設推薦人即現任', () => {
     expect(freshCodeHint(true, true)).toBe(freshCodeHint(false));
   });
 
-  it('placeholder 不提示目前的碼', () => {
-    expect(freshCodePlaceholder('8048901', false, true, true)).toBe('輸入推薦碼');
+  it('placeholder 與預設不可用時相同，自動綁定者仍不提示碼', () => {
+    expect(freshCodePlaceholder('8048901', false, true, true)).toBe('目前：8048901');
+    expect(freshCodePlaceholder('8048901', true, true, true)).toBe('輸入推薦碼');
   });
 
   it('填了碼時照填碼的規則，不受預設即現任影響', () => {

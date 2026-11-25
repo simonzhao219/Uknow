@@ -70,7 +70,6 @@ export function PaymentCheckout() {
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [referrerInfo, setReferrerInfo] = useState<{ name: string; code: string } | null>(null);
   const [isLoadingReferrer, setIsLoadingReferrer] = useState(false);
-  const [activeOrder, setActiveOrder] = useState<any>(null); // ✅ 新增：活動訂單狀態
   const [isButtonLocked, setIsButtonLocked] = useState(false); // ✅ 新增：按鈕鎖定狀態
   const [lockCountdown, setLockCountdown] = useState(0); // ✅ 新增：倒計時秒數
   // ✅ 過期會員續費雙模式（見 migration 0008）：extend=續約接續原效期；
@@ -93,6 +92,8 @@ export function PaymentCheckout() {
     failed: serverProfileUnconfirmed,
   });
   const newCodeInputRef = useRef<HTMLInputElement>(null);
+  // 新碼驗證的序號：改碼或重驗後，舊請求的回應不得寫回狀態（P2-a）。
+  const newCodeSeq = useRef(0);
   const renewalSectionRef = useRef<HTMLDivElement>(null);
   // S6：送單被拒後的內嵌狀態（toast 會消失，這些要留在畫面上）。
   //   modeUpdated：RENEWAL_MODE_REQUIRED 後重抓到續費身分，請使用者選模式
@@ -104,10 +105,10 @@ export function PaymentCheckout() {
   // 續約者的個資極少變動：預設摺疊成一行摘要，點開才看明細（首購維持全展開）。
   const [profileExpanded, setProfileExpanded] = useState(false);
 
-  const { setUser } = useContext(UserContext);
+  const { setUser, ingestProfile } = useContext(UserContext);
   const funnelLogout = useFunnelLogout();
   const navigate = useNavigate();
-  const { showToast, showSuccess } = useNotification();
+  const { showToast } = useNotification();
   const supabase = createClient();
   // renewal 契約（AC-2/A14/A16/AC-17）的單一來源。本頁是獨立路由，
   // 不與 MemberDashboard/RewardDashboard 同屏，單例限制不成立。
@@ -121,13 +122,6 @@ export function PaymentCheckout() {
   } = useSubscription();
   const renewal = subscriptionData?.renewal ?? null;
   const hasPendingWithdrawal = subscriptionData?.hasPendingWithdrawal ?? false;
-
-  console.log('PaymentCheckout: Component state -', {
-    isLoading,
-    isCheckingUser,
-    hasPendingUser: !!pendingUser,
-    hasActiveOrder: !!activeOrder, // ✅ 新增
-  });
 
   // ✅ 新增：定期檢查用戶狀態（每 5 秒）
   useEffect(() => {
@@ -153,6 +147,8 @@ export function PaymentCheckout() {
           if (redirect === '/dashboard') {
             console.log('PaymentCheckout: 會籍已生效，跳轉到 dashboard');
             showToast('註冊完成！正在跳轉...', 'success');
+            // 先寫進 context：守衛讀的是 context，不是剛抓到的 profile（R6 P1-1）。
+            ingestProfile?.(profile);
             setTimeout(() => {
               navigate('/dashboard', { replace: true });
             }, 1500);
@@ -171,7 +167,7 @@ export function PaymentCheckout() {
 
     // 組件卸載時清除
     return () => clearInterval(intervalId);
-  }, [pendingUser, navigate, showToast, supabase]);
+  }, [pendingUser, navigate, showToast, supabase, ingestProfile]);
 
   // localStorage 分支的背景 /profile（W5-5 停權確認；S6 擴大成以伺服器資料重判身分，W5-54）。
   // 讀不到不擋付款（後端 prepare 兜底），但顯示「暫時無法確認會員狀態」＋只重發這支的重試。
@@ -200,7 +196,11 @@ export function PaymentCheckout() {
           (profile.paidAwaitingActivation && profile.lastTradeNo)
         ) {
           const redirect = resolveCheckoutPageRedirect(profile);
-          if (redirect) navigate(redirect, { replace: true });
+          if (redirect) {
+            // 導 /dashboard 前先寫進 context，否則守衛讀到舊的 expired 又導回本頁（R6 P1-1）。
+            if (redirect === '/dashboard') ingestProfile?.(profile);
+            navigate(redirect, { replace: true });
+          }
           return;
         }
         if (profile.subscriptionEndDate && !snapshotHasEndDate) {
@@ -276,6 +276,7 @@ export function PaymentCheckout() {
               if (redirect === '/auth/complete-profile') {
                 showToast('請先完成個人資料', 'info');
               }
+              if (redirect === '/dashboard') ingestProfile?.(profile);
               navigate(redirect, { replace: true });
               return;
             }
@@ -495,6 +496,8 @@ export function PaymentCheckout() {
       return 'idle';
     }
     setNewCodeStatus('checking');
+    const seq = ++newCodeSeq.current;
+    const stale = () => seq !== newCodeSeq.current;
     // 只有 429（限流）採用後端訊息；5xx、網路錯誤的技術字眼（例「服務暫時無法
     // 使用」）不外露，一律顯示預設的「暫時無法驗證，請稍後再試」。
     const markUnavailable = (message: unknown): NewCodeResult => {
@@ -507,11 +510,13 @@ export function PaymentCheckout() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      if (stale()) return 'idle';
       if (!session) return markUnavailable(null);
       const response = await fetch(buildApiUrl(`/referrals/validate/${trimmed}`), {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       const result = await response.json().catch(() => null);
+      if (stale()) return 'idle';
       if (response.ok && result?.valid && result.referrer) {
         setNewCodeStatus('valid');
         setNewReferrerName(result.referrer.userName);
@@ -520,12 +525,14 @@ export function PaymentCheckout() {
       if (response.ok && result?.valid === false) {
         setNewCodeStatus('invalid');
         setNewReferrerName(null);
+        // 200 的 valid:false 只有三種文案（空碼、查無、自己的碼），都可直接顯示（R6 P2-2）。
+        setNewCodeInvalidMessage(extractApiErrorMessage(result, '') || null);
         return 'invalid';
       }
       // 429、401、5xx：暫時查不到，不是碼無效。
       return markUnavailable(response.status === 429 ? result?.error?.message : null);
     } catch {
-      return markUnavailable(null);
+      return stale() ? 'idle' : markUnavailable(null);
     }
   };
 
@@ -719,10 +726,12 @@ export function PaymentCheckout() {
         // 強制重抓會員資料後導 /dashboard。
         if (rejected === ALREADY_ACTIVE_MESSAGE) {
           showToast(rejected, 'info');
-          await fetchProfileForSession(session as any, {
+          const fresh = await fetchProfileForSession(session as any, {
             force: true,
             timeoutMs: PROFILE_FETCH_TIMEOUT_MS,
           }).catch(() => null);
+          // fetchProfileForSession 不寫 context：拿到 ok 要自己回灌，守衛才看得到 active（R6 P1-1）。
+          if (fresh?.kind === 'ok') ingestProfile?.(fresh.profile);
           refreshSubscription?.();
           navigate('/dashboard', { replace: true });
           return;
@@ -1246,6 +1255,7 @@ export function PaymentCheckout() {
                         onChange={(e) => {
                           // 續約換線的碼與註冊走同一組規則——全形數字一樣要摺。
                           setNewReferralCode(normalizeReferralCode(e.target.value));
+                          newCodeSeq.current++;
                           setNewCodeStatus('idle');
                           setNewReferrerName(null);
                           setNewCodeInvalidMessage(null);
