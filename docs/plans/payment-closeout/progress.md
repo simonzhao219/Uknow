@@ -9,8 +9,8 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | drop wrapper＋改測試 | ✅ 綠 | 849bf5e8 | （本 commit） |
-| 2 | 3b／3d 升 error | ⬜ 未開始 | | |
+| 1 | drop wrapper＋改測試 | ✅ 綠 | 4c94b3a0 | 270a7030 |
+| 2 | 3a-bis／3b／3d 升 error | ✅ 綠 | a7fbb4d6 | （本 commit） |
 | 3 | 單筆開通失敗 message | ⬜ 未開始 | | |
 | 4 | repair 關全量（依 Q1） | ⬜ 未開始 | | |
 | 5 | 文件 | ⬜ 未開始 | | |
@@ -20,5 +20,10 @@
 規劃 r3 完成，Q1～Q7 已裁（W7-9、W7-10、W7-12）；等業主親打 `/tdd-implement payment-closeout` 才開工。
 
 ## Blockers（逃生口紀錄）
+
+## 本機驗證紀錄
+
+- 本機 `supabase start`（CLI 3.4）全套 `deno task test`：890 passed／3 failed——3 支皆是 grant 檢查（name-write-paths、rls-policies listings、scheduled-job-runs net schema），與本 diff 無關，疑本機 CLI 預設權限與 CI 不同；以 CI api-tests 為準。
+- 階段 2 突變驗證：拿掉 3b 呼叫端的雙保險 → 「告警函式本身擲錯」測試轉紅。
 
 ## 框架摩擦

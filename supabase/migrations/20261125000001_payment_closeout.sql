@@ -8,6 +8,21 @@
 --    pg_depend 皆無引用（第 7 波主 session 11/25 代查）。
 --    告警 source 'complete_paid_pending_orders' 由單筆函式沿用——是歷史名，函式本身已不存在。
 --
+-- 2. classify_alert_sqlstate（新）：告警「原因」的固定分類字串（40P01 資料庫互鎖、40001 序列化衝突、
+--    其他系統錯誤）。log_referral_reward_failure（20261115000001）內聯同一張表，本檔不重定義它；
+--    本檔新增的兩處告警共用這支，免分類漂移。
+-- 3. log_referral_side_effect_failure（新）：apply_referral_side_effects 周邊步驟寫入失敗的 error 告警
+--    （W7-9 Q2、W7-10 Q3）。source／step 沿用現行（apply_referral_side_effects；default_referrer、
+--    referral_edge、task_king），context 鍵只加不減。LINE 只看 message 前 60 字（W6-24）：開頭固定
+--    「【結論・請開 Claude 動作】單號 <20 碼>：後果。」；不放姓名、uid、sqlerrm（sqlerrm 只進 context）。
+--    同 step＋同訂閱（無訂閱時同會員）有未處理的 error 就不重寫——/profile 自癒每次載入都可能重跑。
+--    整個本體包 exception：它在呼叫端的 exception handler 內被呼叫，擲錯會回滾整個
+--    apply_referral_side_effects 子交易（含 3c 三代獎金）。
+-- 4. apply_referral_side_effects：基準＝20261115000001（之後無重定義）。唯一差異＝3a-bis（預設推薦人）、
+--    3b（推薦連結）、3d（任務進度／推薦王）的 when others 由 log_system_alert(warning) 改呼叫 3，
+--    外面再包一層 begin…exception（呼叫端雙保險）。3a（推薦碼，repair_orphaned_payments 會自癒）維持 warning。
+--    付款語意不變：各步驟仍在自己的子交易內被吞，函式照常 return。
+--
 -- 歷史檔頭更正（R6 P2-7、P2-8；已套用的 migration 不改，記在這裡）：
 --   * 20261116000001_referral_award_chain 檔頭說對照的發獎函式是 20261113000001；
 --     pay_referral_generations 的最新定義是 20261115000001（語意與 chain 等價，R6 §1.1 已核）。
@@ -20,3 +35,291 @@
 -- 1. drop wrapper
 -- ------------------------------------------------------------
 drop function if exists public.complete_paid_pending_orders(uuid, int);
+
+
+-- ------------------------------------------------------------
+-- 2. classify_alert_sqlstate
+-- ------------------------------------------------------------
+create or replace function public.classify_alert_sqlstate(p_sqlstate text)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select case p_sqlstate
+    when '40P01' then '資料庫互鎖'
+    when '40001' then '序列化衝突'
+    else '系統錯誤'
+  end;
+$$;
+
+revoke execute on function public.classify_alert_sqlstate(text) from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 3. log_referral_side_effect_failure
+-- ------------------------------------------------------------
+create or replace function public.log_referral_side_effect_failure(
+  p_step            text,  -- default_referrer／referral_edge／task_king
+  p_referee         uuid,
+  p_referrer        uuid,  -- 付款人的推薦人（3a-bis 為 null）
+  p_subscription_id uuid,
+  p_sqlstate        text,
+  p_sqlerrm         text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_trade_no text;
+  v_code     text;
+  v_doc      text;
+  v_code_txt text;
+  v_message  text;
+begin
+  -- 去重：同 step＋同訂閱（無訂閱時同會員）已有未處理的 error。
+  if exists (
+    select 1 from public.system_alerts
+    where source = 'apply_referral_side_effects'
+      and severity = 'error'
+      and resolved_at is null
+      and context->>'step' = p_step
+      and case
+            when p_subscription_id is not null
+              then context->>'subscription_id' = p_subscription_id::text
+            else context->>'user_id' = p_referee::text and context->>'subscription_id' is null
+          end
+  ) then
+    return;
+  end if;
+
+  if p_subscription_id is not null then
+    begin
+      select po.transaction_id into v_trade_no
+      from public.subscriptions s
+      join public.payment_orders po on po.id = s.source_payment_order_id
+      where s.id = p_subscription_id;
+    exception when others then
+      v_trade_no := null;
+    end;
+  end if;
+  -- 推薦碼取「付款人的推薦人」的 active 碼，不是付款人自己的碼。
+  if p_referrer is not null then
+    begin
+      select code into v_code
+      from public.referral_codes
+      where user_id = p_referrer and status = 'active'
+      limit 1;
+    exception when others then
+      v_code := null;
+    end;
+  end if;
+
+  v_doc := '單號 ' || coalesce(v_trade_no, '（查無單號）');
+  v_code_txt := '推薦人推薦碼 ' || coalesce(v_code, '（無有效推薦碼）') || '。';
+  v_message := case p_step
+    when 'default_referrer' then
+      '【預設推薦人未套用・請開 Claude 補綁】' || v_doc || '：會員無推薦人、不發獎金。'
+        || '下一步：開一個 Claude Code session，請它依 supabase/README〈補綁預設推薦人〉處理。'
+    when 'referral_edge' then
+      '【推薦連結未寫入・請開 Claude 補寫】' || v_doc || '：之後二代三代獎金會漏發。' || v_code_txt
+        || '下一步：開一個 Claude Code session，請它依 supabase/README〈補寫推薦連結〉處理。'
+    else
+      '【任務進度未計・請開 Claude 核對】' || v_doc || '：推薦人任務少計一位。' || v_code_txt
+        || '下一步：開一個 Claude Code session，請它依 supabase/README〈補計任務進度〉核對。'
+  end || '原因：' || public.classify_alert_sqlstate(p_sqlstate) || '（' || coalesce(p_sqlstate, '?') || '）';
+
+  perform public.log_system_alert('apply_referral_side_effects', 'error',
+    coalesce(v_message, '【周邊寫入失敗・請開 Claude 核對】apply_referral_side_effects'),
+    jsonb_build_object(
+      'step', p_step, 'user_id', p_referee, 'subscription_id', p_subscription_id,
+      'referrer_id', p_referrer, 'trade_no', v_trade_no,
+      'sqlstate', p_sqlstate, 'sqlerrm', p_sqlerrm));
+exception when others then
+  raise warning 'log_referral_side_effect_failure：告警寫入失敗（step=%）: %', p_step, sqlerrm;
+end;
+$$;
+
+revoke execute on function public.log_referral_side_effect_failure(text, uuid, uuid, uuid, text, text)
+  from anon, authenticated, public;
+
+-- ------------------------------------------------------------
+-- 4. apply_referral_side_effects（基準 20261115000001）
+-- ------------------------------------------------------------
+create or replace function public.apply_referral_side_effects(
+  p_user_id         uuid,
+  p_subscription_id uuid,
+  p_paid_at         timestamptz default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_referrer1      uuid;
+  v_code_id        uuid;
+  v_ref_code       text;
+  v_month_key      text;
+  v_applied        text[] := '{}';
+  v_referee_name   text;   -- 被推薦人（p_user_id）當下名，快照（保留鎖時取得）
+  v_reward_amount  int;    -- 每代獎金，取自 reward_config
+  v_king_threshold int;    -- 推薦王月門檻，取自 reward_config
+begin
+  -- 可變常數單一真相：讀 reward_config；讀不到就 fallback 回現值。
+  select referral_reward_amount, referral_king_monthly_threshold
+    into v_reward_amount, v_king_threshold
+  from public.reward_config
+  where id = true;
+  v_reward_amount  := coalesce(v_reward_amount, 100);
+  v_king_threshold := coalesce(v_king_threshold, 8);
+
+  -- 鎖住這位使用者的 profiles 列，序列化「同一人」的周邊業務邏輯全程。
+  select referred_by_user_id, name into v_referrer1, v_referee_name
+  from public.profiles
+  where id = p_user_id
+  for update;
+
+  -- 3a. 推薦碼：續約 / 補償都沿用既有 active 碼，只有完全沒有時才產生新碼。
+  begin
+    select id into v_code_id
+    from public.referral_codes
+    where user_id = p_user_id and status = 'active'
+    limit 1;
+
+    if v_code_id is null then
+      v_ref_code := public.generate_referral_code();
+      insert into public.referral_codes (user_id, code, status, subscription_id)
+      values (p_user_id, v_ref_code, 'active', p_subscription_id)
+      returning id into v_code_id;
+      v_applied := array_append(v_applied, 'referral_code');
+    end if;
+  exception when others then
+    v_code_id := null;
+    perform public.log_system_alert('apply_referral_side_effects', 'warning', sqlerrm,
+      jsonb_build_object('user_id', p_user_id, 'subscription_id', p_subscription_id, 'step', 'referral_code'));
+    raise warning 'apply_referral_side_effects：建立推薦碼失敗（user_id=%): %', p_user_id, sqlerrm;
+  end;
+
+  -- 3a-bis. 預設推薦人（0726 0101）：無推薦人的「首購」自動綁定。
+  --   解析內含首購判準（subscriptions.is_renewal）、碼合法性
+  --  （validate_referral_code：active + 未停權）、自我推薦護欄與
+  --   解析失敗告警；此處只負責回寫。回寫在同一把 for update 鎖內。
+  if v_referrer1 is null then
+    begin
+      v_referrer1 := public.resolve_default_referrer(p_user_id, p_subscription_id);
+      if v_referrer1 is not null then
+        -- S6（W5-52）：changed_at 記付款時點，#167 自癒閘門才放行這筆付款。
+        perform set_config('uknow.referred_by_changed_at', coalesce(p_paid_at, now())::text, true);
+        update public.profiles
+        set referred_by_user_id    = v_referrer1,
+            referred_by_code       = (
+              select nullif(lower(trim(default_referrer_code)), '')
+              from public.reward_config where id = true
+            ),
+            referred_by_is_default = true
+        where id = p_user_id;
+        v_applied := array_append(v_applied, 'default_referrer');
+      end if;
+    exception when others then
+      v_referrer1 := null;  -- 任何例外一律視同無推薦人，不阻斷金流
+      begin  -- 呼叫端雙保險：告警路徑任何錯誤都不得讓外層子交易回滾（第 7 波 S4 review P0）
+        perform public.log_referral_side_effect_failure('default_referrer', p_user_id, null,
+          p_subscription_id, sqlstate, sqlerrm);
+      exception when others then
+        raise warning 'apply_referral_side_effects：告警寫入失敗（step=default_referrer）: %', sqlerrm;
+      end;
+      raise warning 'apply_referral_side_effects：預設推薦人套用失敗（user_id=%): %', p_user_id, sqlerrm;
+    end;
+  end if;
+
+  if v_referrer1 is null then
+    return jsonb_build_object(
+      'success', true, 'user_id', p_user_id,
+      'referral_code_id', v_code_id, 'applied', to_jsonb(v_applied)
+    );
+  end if;
+
+  -- 3b. 推薦關係邊：新約(fresh)換了推薦人時 rewire 到新推薦人；沒變則 no-op。
+  begin
+    insert into public.referral_edges (referee_user_id, referrer_user_id, referral_code_id)
+    values (p_user_id, v_referrer1, v_code_id)
+    on conflict (referee_user_id) do update
+      set referrer_user_id = excluded.referrer_user_id,
+          referral_code_id = excluded.referral_code_id
+      where referral_edges.referrer_user_id is distinct from excluded.referrer_user_id;
+  exception when others then
+    begin  -- 呼叫端雙保險：告警路徑任何錯誤都不得讓外層子交易回滾（第 7 波 S4 review P0）
+      perform public.log_referral_side_effect_failure('referral_edge', p_user_id, v_referrer1,
+        p_subscription_id, sqlstate, sqlerrm);
+    exception when others then
+      raise warning 'apply_referral_side_effects：告警寫入失敗（step=referral_edge）: %', sqlerrm;
+    end;
+    raise warning 'apply_referral_side_effects：建立推薦邊失敗（user_id=%): %', p_user_id, sqlerrm;
+  end;
+
+  -- 3c. Block A：三代 100P，每筆付款都發（首購＋續約）。共用函數在
+  --     rewire 之後才呼叫，確保換線那筆歸新上線。冪等鍵綁 subscription_id。
+  begin
+    v_applied := v_applied || public.pay_referral_generations(
+      p_user_id, v_reward_amount, p_subscription_id, null, '');
+  exception when others then
+    -- 第 6 波 S1（W6-10）：整批沒發出＝漏發錢，error（推 LINE）。
+    perform public.log_referral_reward_failure('apply_referral_side_effects', p_user_id, null,
+      v_referrer1, v_reward_amount, p_subscription_id, null, sqlstate, sqlerrm);
+    raise warning 'apply_referral_side_effects：三代發獎失敗（referee=%): %', p_user_id, sqlerrm;
+  end;
+
+  -- 3d. Block B：task +1（pair-history）＋推薦王對帳（可自癒、可多張）。
+  --     月份 key 錨定付款時點（p_paid_at）。
+  begin
+    v_month_key := to_char(coalesce(p_paid_at, now()) at time zone 'Asia/Taipei', 'YYYY-MM');
+
+    -- pair-history：R 從未被 U 計過才算「新下線」。S6（W5-8）：名單另存在
+    -- referral_pair_history（新約清當月桶不會刪到它）；插得進去＝第一次配對。
+    insert into public.referral_pair_history (referrer_user_id, referee_user_id, first_month_key)
+    values (v_referrer1, p_user_id, v_month_key)
+    on conflict (referrer_user_id, referee_user_id) do nothing;
+    if found then
+      insert into public.task_progress (user_id, total_referrals, monthly_referrals)
+      values (
+        v_referrer1, 1,
+        jsonb_build_object(v_month_key, jsonb_build_array(p_user_id::text))
+      )
+      on conflict (user_id) do update set
+        total_referrals   = task_progress.total_referrals + 1,
+        monthly_referrals = jsonb_set(
+          task_progress.monthly_referrals,
+          array[v_month_key],
+          coalesce(task_progress.monthly_referrals -> v_month_key, '[]'::jsonb)
+            || to_jsonb(p_user_id::text)
+        ),
+        updated_at = now();
+      v_applied := array_append(v_applied, 'task');
+    end if;
+
+    -- 推薦王：獨立於上面的 if 做當月冪等對帳——即使某次 append 成功而
+    -- 這裡失敗，下一次任何付款都會把漏發的 credit 補上（自癒）。
+    perform public.reconcile_king_credits(v_referrer1, v_month_key, v_king_threshold);
+  exception when others then
+    begin  -- 呼叫端雙保險：告警路徑任何錯誤都不得讓外層子交易回滾（第 7 波 S4 review P0）
+      perform public.log_referral_side_effect_failure('task_king', p_user_id, v_referrer1,
+        p_subscription_id, sqlstate, sqlerrm);
+    exception when others then
+      raise warning 'apply_referral_side_effects：告警寫入失敗（step=task_king）: %', sqlerrm;
+    end;
+    raise warning 'apply_referral_side_effects：任務/推薦王處理失敗（referee=%): %', p_user_id, sqlerrm;
+  end;
+
+  return jsonb_build_object(
+    'success',          true,
+    'user_id',          p_user_id,
+    'referral_code_id', v_code_id,
+    'applied',          to_jsonb(v_applied)
+  );
+end;
+$$;
+
+revoke execute on function public.apply_referral_side_effects(uuid, uuid, timestamptz)
+  from anon, authenticated, public;
