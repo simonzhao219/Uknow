@@ -2,7 +2,7 @@
 // 自癒「已付款待開通」單（pending 但 payuni_response 已存 SUCCESS）：逐筆呼叫單筆 RPC，
 // 一筆一個交易（第 6 波 S1；R5 P2-5）。
 //
-// 為什麼不是一次 RPC：complete_paid_pending_orders 是單一交易，前一位付款人的 profiles 鎖
+// 為什麼不是一次 RPC：舊的 complete_paid_pending_orders（第 7 波 S4 已 drop）是單一交易，前一位付款人的 profiles 鎖
 // 留到整批結束，與線上付款互鎖（見 migration 20261115000001 檔頭）。PostgREST 的每次 rpc()
 // 是獨立交易，逐筆呼叫就讓每筆 commit 即放鎖。
 //
@@ -14,7 +14,7 @@ export type HealRpc = (
   args: Record<string, unknown>,
 ) => Promise<{ data: unknown; error: { message: string } | null }>;
 
-/** 與舊 complete_paid_pending_orders 回傳同形，另加 truncated。 */
+/** 與舊 complete_paid_pending_orders（已 drop）回傳同形，另加 truncated。 */
 export type HealResult = {
   candidates_found: number;
   completed_count: number;

@@ -1,0 +1,22 @@
+-- ============================================================
+-- 金流收尾（第 7 波 S4；W6-14→W6-30、W7-9、W7-10；見 payment-closeout.test.ts）
+-- ============================================================
+--
+-- 1. drop complete_paid_pending_orders（20261115000001 §3 的單交易 wrapper）。
+--    前提（W6-30）：正式站與 develop 的 Edge 都已是 #524 版本，只經 paid-pending-heal.ts
+--    逐筆呼叫 list_paid_pending_order_ids＋complete_paid_pending_order；cron.job、其他函式本體、
+--    pg_depend 皆無引用（第 7 波主 session 11/25 代查）。
+--    告警 source 'complete_paid_pending_orders' 由單筆函式沿用——是歷史名，函式本身已不存在。
+--
+-- 歷史檔頭更正（R6 P2-7、P2-8；已套用的 migration 不改，記在這裡）：
+--   * 20261116000001_referral_award_chain 檔頭說對照的發獎函式是 20261113000001；
+--     pay_referral_generations 的最新定義是 20261115000001（語意與 chain 等價，R6 §1.1 已核）。
+--   * 20261116000005_admin_referral_ledger_audit 檔頭「批次自癒（complete_paid_pending_orders，
+--     單一交易內處理多筆）期間的清空同理」：本檔 drop 後已無單交易批次自癒，該句不再成立；
+--     其餘「別筆交易同時寫入可能差一筆」的競態說明仍成立。
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. drop wrapper
+-- ------------------------------------------------------------
+drop function if exists public.complete_paid_pending_orders(uuid, int);

@@ -2533,7 +2533,7 @@ async function logSystemAlert(
  * 無聲消失。拿不到識別碼時(例如解密失敗,連 MerTradeNo 都讀不出來)才退
  * 而求其次只用 reason——那種情況下「持續失敗」本來就是唯一有意義的訊號。
  *
- * 範式取自 `complete_paid_pending_orders`(migration 20260716000007):
+ * 範式取自自癒的金額不符告警(migration 20260716000007 起;現由單筆 `complete_paid_pending_order` 寫):
  * 它是按 **order_id** 去重,不是按 reason——實體鍵才是那個範式的重點。
  * SELECT 與 INSERT 之間有競態,併發爆量時可能多寫幾筆——與 Postgres 側
  * 那版同一個取捨:上限從「無上限」降到「併發數」就達到目的了,不值得上鎖。
@@ -2609,7 +2609,7 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
 // 工具：自癒卡單訂單（pending 但 payuni_response 已存 SUCCESS，見
 // migration 0007）。best-effort——失敗只記 log；回傳是否真的補完了
 // 任何訂單，讓呼叫端知道要不要重讀最新狀態。第 6 波 S1：逐筆一個交易
-// （paid-pending-heal.ts），不再一次呼叫單一交易的 complete_paid_pending_orders。
+// （paid-pending-heal.ts）；單一交易的 complete_paid_pending_orders 已於第 7 波 S4 drop。
 // ============================================================
 // supabase-js 的 rpc() 回 thenable builder，await 一次包成 Promise 給 HealRpc。
 // deno-lint-ignore no-explicit-any
@@ -2750,7 +2750,7 @@ async function resolveOrderFromPayUni(
     // 訂單維持 pending,所以 reconcile 會掃到它——但 reconcile 的告警說的是
     // 「這筆卡著」,不是「金額不符」。診斷若被錯位到下游,查的人會先懷疑
     // webhook 沒送達。在事發點點名原因,省掉那一輪。
-    // 註:`complete_paid_pending_orders` 對同一情境已有 Postgres 側告警,
+    // 註:單筆自癒 `complete_paid_pending_order` 對同一情境已有 Postgres 側告警,
     // 兩者 source 不同(那支是自癒 pass 掃到時記),不是重複。⚠️ 但兩側的
     // 識別欄位命名不一致(這裡 merTradeNo、那裡 trade_no),人工比對時要注意。
     await logSystemAlertOnce(
@@ -2853,7 +2853,7 @@ export async function reconcilePendingOrders(
   // 過濾），永不會被誤標。
   const expireCutoffMs = Date.now() - (opts.expireAfterDays ?? 4) * 24 * 60 * 60_000;
 
-  // .or(...)：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
+  // .or(...)：已存有 SUCCESS 回應的卡單走逐筆自癒（complete_paid_pending_order）
   // 自癒（reconcile 路由的 heal pre-pass），這裡只處理「完全沒有存檔
   // 判決」的訂單——金額不符的卡單已有自己的去重告警，不該每輪對帳都
   // 再被 queryPayUniTradeStatus 的佔位錯誤重複告警一次。

@@ -9,7 +9,7 @@
 
 | # | 階段 | 狀態 | 紅燈 commit | 綠燈 commit |
 |---|---|---|---|---|
-| 1 | drop wrapper＋改測試 | ⬜ 未開始 | | |
+| 1 | drop wrapper＋改測試 | ✅ 綠 | 849bf5e8 | （本 commit） |
 | 2 | 3b／3d 升 error | ⬜ 未開始 | | |
 | 3 | 單筆開通失敗 message | ⬜ 未開始 | | |
 | 4 | repair 關全量（依 Q1） | ⬜ 未開始 | | |
