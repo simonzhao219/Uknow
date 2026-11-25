@@ -56,6 +56,8 @@
 | W7-17 | #534 獨立審查（P0 0、P1 1 條件式、P2 4） | **本 PR 修**：P1 同一單號回多列時，有任一列 TradeStatus=1 才取，狀態衝突回 unknown（不下結論；否則已付款單可能被標 failed）；P2-2 查詢路徑缺 TradeAmt 不開通；P2-3 reason 只輸出合格鍵名；P2-4 拒絕前導 0 索引；P2-5 補測試；PR 內文逐字引用官方欄名 |
 | W7-18 | S4：`open_failed` 告警只在 heal 本輪開通成功時自動標處理；改由 notify 完成時會一直掛著 | **接受**，列第 8 波候選（要改 `process_successful_payment`，本波不碰）；README〈已付款未開通〉第 1 步兜底 |
 | W7-19 | #536 獨立審查（P0 0、P1 0、P2 5） | **本 PR 修** P2-1～3（README 補救手冊三處：補計任務綁 `if found` 防重複計數、補綁預設推薦人防查無寫髒列、補寫推薦連結前先查舊邊）＋P2-4 補分類直呼測試；P2-5（去重 exists 掃整個 source）接受、列第 8 波 |
+| W7-20 | #535 偏離：768–1023px 詳情頁標題 3xl→2xl（雙欄後標題欄約 356px，10 全形字會換行） | **接受**（業主 2026-11-25 實機看完：「OK」） |
+| W7-21 | 晉升時點 | **等 #535 合併後一起晉升**（被推翻：現在晉升、#535 留第 8 波）（業主 2026-11-25） |
 | W7-7 | 5 張 `QUERY03001` 過期單 | **結案**（業主 11/24 PayUni 後台查無、告警已標處理）；第 6 波業主待辦 #1 關閉。S2 測試夾具可引用這組事實當情境，但不得把單號寫進產品碼 |
 
 ## 1. 時程
@@ -123,7 +125,7 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 ✅ d31227a | 收工 |
 | S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；#534 ✅ 9de8043 | 收工（develop 正控 11/25 06:07 UTC success） |
 | S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | #536 ✅ bc0f86a | 收工 |
-| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | #535 | CI 綠；等業主裁標題字級偏離 |
+| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | #535 ✅ b7e5e85 | 收工 |
 | S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 ✅ 27db22e | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
@@ -145,3 +147,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 14:02 | S4 交 **#536**（業主 11/25 在 S4 互動選項裁規劃「修訂後通過」並親打 /tdd-implement；六階段紅綠，hash 以 PR 內文為準；實作審查 P0 0、P1 2 已修；bundle 總 raw 1983.1／1984）。主 session 定 **W7-18**，派獨立 Opus 審查 | 審查＋CI → 合 #536 → 必上三項齊 → 晉升 |
 | 11/25 14:06 | #536 獨立 Opus 審查：**P0 0、P1 0**、P2 5——逐函式 diff -w 只含宣稱差異、P0 防線三層齊、3b 失敗 3c 照跑、去重互不遮蔽、wrapper 無殘留、前 60 字實算 55～59。主 session 定 **W7-19**，退回修 README 三處與兩支測試 | S4 修 → CI 綠 → 合 #536 |
 | 11/25 | S4 修 #536 W7-19（c747acc2：README 三節＋分類直呼測試兩支）；主 session 核 delta（另核 `validate_referral_code` 回傳欄位 `referrer_user_id` 存在）、CI 全綠 → **#536 合進 develop（bc0f86a）**，S4 收工。**必上三項（S1、S2、S4）全數合併**。develop 驗證：`payuni_query_controls` 06:07 UTC **success**（同一張 10/28 sandbox 樣本，前一輪 05:07 仍 no_matching_trade）→ W7-16 修正在真 PayUni sandbox 證實；schema_migrations 到 `20261125000001`、wrapper 已 drop、`log_referral_side_effect_failure` 在；reconcile 至 17:07 UTC 皆 succeeded。develop 仍有 2 筆未處理的正控告警（error control_failed、warning sample_stale；sample_stale 因 develop 無 14 天內新付款會持續存在），主 session 未標 | 業主裁 #535 偏離與晉升時點 → 開晉升 PR |
+| 11/25 17:30 | 業主裁 **W7-20**（#535 標題字級偏離實機看過接受）、**W7-21**（#535 合併後一起晉升）。S3 已自行 rebase（head 14007888，紅綠 hash 以 PR 內文為準）、CI 全綠 → **#535 合進 develop（b7e5e85）**，S3 收工。本波程式 PR 全數合併：#531 S1、#532＋#534 S2、#535 S3、#536 S4、#533 S6（S5 未開，留第 8 波） | develop push CI 綠 → 開晉升 PR |
