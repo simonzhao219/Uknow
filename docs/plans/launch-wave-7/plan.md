@@ -117,10 +117,10 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | ID | session | 模型 | 分支 | PR | 狀態 |
 |---|---|---|---|---|---|
 | S1 | `session_01MQovbDabamShr6Fkx2Lt2J` | Sonnet | `fix/checkout-dashboard-loop` | #531 ✅ d31227a | 收工 |
-| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；後續 #534 | #534 審查 P1 退回修（W7-17；審查員 `session_01MQovbCdiL1T8xdpuM8Tjy7`） |
+| S2 | `session_01MQovbEZhJ3VifEeRuWhKcD` | Opus | `fix/payuni-query-positive-control`；後續 `fix/payuni-query-result-shape` | #532 ✅ 214fc97；#534 ✅ 9de8043 | 收工（待 develop 正控轉 success） |
 | S4 | `session_01MQovbCnBaBPj9q5RuMCWqf` | Opus | `feature/payment-closeout` | — | 規劃親審通過，等業主親打 |
-| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | — | 規劃親審通過，等業主親打 |
-| S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 | CI／journey 驗證中 |
+| S3 | `session_01MQovbEmiLwz2w5g6WJa6nT` | Sonnet | `feature/foldable-tablet-layout` | #535 | CI 綠；等業主裁標題字級偏離 |
+| S6 | `session_01MQovbE6b87q2pL3QQTXwmv` | Sonnet | `chore/playwright-upgrade` | #533 ✅ 27db22e | 收工 |
 
 ## 8. 進度與異動紀錄（主 session 每次被事件喚醒記一列；hash 以 PR 內文為準）
 
@@ -137,3 +137,4 @@ W7-8 留下的：首頁 `public_listings` 全撈、後台提領姓名搜尋 `pro
 | 11/25 13:20 | S1 修 #531 W7-13／W7-15（審查紅 98ec5ef6、e6a1e600／綠 0fc546f6；預算 3d5191e3：API 分支導頁前寫 context、新碼驗證序號丟棄過期回應、規格書 §6.2 措辭、總 raw 上限 1984）；rebase 到 214fc97、主 session 核 delta、CI 全綠 → **#531 合進 develop（d31227a）**，S1 收工。S6 開 **#533**（Playwright 1.56→1.65.2、image v1.65.2-noble、journey-suite 回 ubuntu-latest；journey dispatch 驗證中） | 必上剩 S4（等業主親打）；W7-16 S2 後續；#533 |
 | 11/25 13:25 | S2 交 **#534**（W7-16；紅 300cd3c／綠 da60442，無 migration）。根因取證：官方「交易查詢 Ver 2.0」回傳統一為 Result 陣列、官方 SDK 以 http_build_query／parse_str 編解碼 → 解密後鍵名 `Result[0][MerTradeNo]`，舊解析只認 JSON／平鋪。新共用 `extractPayUniTrades`；同類：查詢回應付款時間是 `PaymentDay`，舊碼只認 PayTime／AuthDay → 經查詢收斂會用建單時間，一併補；正控對不到時 reason 帶鍵名（不含值）。e2e／journey 從未打真查詢端點（注入 queryFn、自寫夾具），所以沒抓到。主 session 派獨立 Opus 審查 | 審查＋CI → 合併 → 看 develop 下一輪正控轉 success |
 | 11/25 13:30 | #534 獨立 Opus 審查：P0 0、**P1 1**（同號多列取第一筆→可能把已付款單標 failed；舊碼同形但走不到，本 PR 讓它可觸發）、P2 4；已核實：同號比對未放寬、PaymentDay 時區與 notify 一致、金額不符仍走 amount_mismatch、兩個呼叫端都改用共用 parser → 主 session 定 **W7-17**，退回 S2 | S2 修 → CI 綠 → 合 #534 |
+| 11/25 13:58 | S2 修 #534 W7-17（紅 235fffb／綠 7ddf16c：`pickSameTrade` 同號多列任一 TradeStatus=1 才取、衝突回 unknown；查詢路徑缺 TradeAmt 不開通；鍵名白名單；PR 內文逐字引用官方欄位表——有 TradeAmt、PaymentDay、DataSource，**沒有 AuthDay**）；主 session 核 delta、CI 全綠 → **#534 合進 develop（9de8043）**。S6 rebase 兩次後 CI 綠、journey run 45551228386（ubuntu-latest）success → **#533 合進 develop（27db22e）**，W4-23 退場條件達成，S6 收工。S3 交 **#535**（業主 11/25 親打 /tdd-implement；CI 綠；偏離：768–1023px 詳情頁標題 3xl→2xl 待業主裁；bundle +82 B，預算內） | 業主裁 #535 偏離；業主到 S4 親打；排程 06:35 UTC 查 develop 正控 |
