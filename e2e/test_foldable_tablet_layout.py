@@ -99,3 +99,82 @@ def test_home_shows_exactly_one_card_set_across_the_md_boundary(page, rest_mock,
     assert desktop_visible == (len(listings) if desktop_cards else 0), (
         f"{width}px 可見的桌面版卡片數 {desktop_visible}"
     )
+
+
+DETAIL_LISTING = build_public_listing(
+    name="林小美專業髮型設計師",
+    category="美髮",
+    gender="女",
+    districts=["大安區", "信義區"],
+    photos=[f"https://example.com/{i}.jpg" for i in (1, 2, 3)],
+    contacts={"instagram": "test_ig", "line": "test_line", "facebook": "test.fb"},
+    description="專業剪髮染髮，十年經驗。\n歡迎預約，週一公休。\n地點近捷運站，停車方便。",
+)
+
+_DETAIL_COLUMNS_JS = """
+() => {
+  const grid = document.querySelector('[data-browse-content]');
+  if (!grid) return null;
+  const [media, info] = grid.children;
+  const head = info.children[0];
+  const r = (el) => el.getBoundingClientRect();
+  return {
+    mediaTop: Math.round(r(media).top),
+    mediaBottom: Math.round(r(media).bottom),
+    infoTop: Math.round(r(info).top),
+    nameBottom: Math.round(r(head.children[0]).bottom),
+    categoryBottom: Math.round(r(head.children[1]).bottom),
+    locationBottom: Math.round(r(head.children[2]).bottom),
+    viewport: window.innerHeight,
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  };
+}
+"""
+
+
+def _open_detail(page, rest_mock, service_provider_detail_page, width, height):
+    page.set_viewport_size({"width": width, "height": height})
+    rest_mock.set_public_listing(DETAIL_LISTING)
+    page.goto(f"/service-providers/{DETAIL_LISTING['id']}")
+    expect(service_provider_detail_page.name_heading(DETAIL_LISTING["name"])).to_be_visible()
+    measured = page.evaluate(_DETAIL_COLUMNS_JS)
+    assert measured, "找不到 [data-browse-content]——結構探針過時了，不是版面問題"
+    return measured
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize(
+    "width,height",
+    [(768, 1024), (841, 701), (884, 1104), (1023, 768)],
+    ids=["768", "841x701", "884", "1023"],
+)
+def test_detail_is_two_columns_from_md_with_the_summary_above_the_fold(
+    page, rest_mock, service_provider_detail_page, width, height
+):
+    """詳情頁 md（768）起雙欄：照片與資訊並排，名稱／類別／地區在首屏內，且無橫向溢出。"""
+    m = _open_detail(page, rest_mock, service_provider_detail_page, width, height)
+
+    assert abs(m["infoTop"] - m["mediaTop"]) <= TOLERANCE_PX, (
+        f"{width}px 應為雙欄（資訊欄與照片欄同 top），實際 {m}"
+    )
+    for key in ("nameBottom", "categoryBottom", "locationBottom"):
+        assert m[key] <= m["viewport"], f"{width}×{height} 首屏看不到 {key}：{m}"
+    assert m["scrollWidth"] <= m["clientWidth"], f"{width}px 出現橫向溢出：{m}"
+
+
+@pytest.mark.compatibility
+@pytest.mark.parametrize("width,height", [(375, 844), (767, 1024)], ids=["375", "767"])
+def test_detail_stays_single_column_below_md(page, rest_mock, service_provider_detail_page, width, height):
+    """詳情頁 <768 維持單欄：資訊欄在照片欄下方。"""
+    m = _open_detail(page, rest_mock, service_provider_detail_page, width, height)
+
+    assert m["infoTop"] >= m["mediaBottom"] - TOLERANCE_PX, f"{width}px 應為單欄，實際 {m}"
+
+
+@pytest.mark.compatibility
+def test_detail_stays_two_columns_on_desktop(page, rest_mock, service_provider_detail_page):
+    """詳情頁 1280 桌機維持雙欄（不因斷點下移而改變）。"""
+    m = _open_detail(page, rest_mock, service_provider_detail_page, 1280, 900)
+
+    assert abs(m["infoTop"] - m["mediaTop"]) <= TOLERANCE_PX, f"實際 {m}"
