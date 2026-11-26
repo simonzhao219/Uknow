@@ -44,6 +44,7 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `system_alerts` | 背景失敗告警（error 級推 LINE，見下方〈告警 severity〉） | N |
 | `rate_limits` | 端點限流計數（pg_cron 每小時清掉超過 2 天的列） | N |
 | `scheduled_job_runs` | 排程端點（對帳、刊登照片清理）的執行帳本兼租約；GitHub 看門狗與準時度量測都讀它（見下方〈排程〉） | N |
+| `payuni_query_controls` | PayUni 交易查詢正控紀錄（約每日 1 列）；最近一次 success 且 36 小時內，對帳才把 `QUERY03001` 判棄單（見〈告警 severity〉） | N |
 
 ## 衍生 View / 函數（即時計算）
 
@@ -66,10 +67,11 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 | `register_profile` | Step 2 資料寫入：與付款完成共用 profiles 列鎖，註冊完成後拒寫（只給 service_role） |
 | `request_withdrawal` / `confirm_withdrawal_collection` | 提領申請與查收 |
 | `admin_update_withdrawal_status` | 管理端審核（含退件退款） |
-| `repair_orphaned_payments` / `repair_orphaned_claim_rewards` | 兩條路徑的自癒補償 |
+| `repair_orphaned_payments` / `repair_orphaned_claim_rewards` / `repair_orphaned_forfeitures` | 付款／任務續約／新約清帳本的自癒補償。**必須帶 `p_user_id` 逐人呼叫**（Edge `repairOrphanedPaymentsBestEffort`）；null 全量路徑一個交易跨多位會員會與線上付款互鎖，第 7 波 S4 起擲 `U6R02` |
 | `log_referral_reward_failure` | 三代獎金沒發出的 error 告警（訊息含單號／第幾代／點數／推薦碼／下一步；補發步驟見〈補發漏發獎金〉） |
-| `list_paid_pending_order_ids` / `complete_paid_pending_order` | 「已付款待開通」單的自癒：Edge（`paid-pending-heal.ts`）逐筆呼叫，一筆一個交易，不與線上付款互鎖；單筆在委派前以 `lock_timeout` 3s 預取付款人 profiles 鎖，拿不到記 `skipped_locked`（只給 service_role） |
-| `complete_paid_pending_orders` | 上兩支的單交易 wrapper，只給舊 Edge 相容（互鎖風險同舊版）。退場條件：正式站 `/health` sha 已含 #524 的 Edge 之後的下一次晉升才 drop（migration 先於 Edge 套用，正式站仍是舊 Edge 時 drop 會讓 `/profile` heal 與對帳失敗；第 6 波 W6-30 延第 7 波） |
+| `log_referral_side_effect_failure` | `apply_referral_side_effects` 周邊寫入失敗的 error 告警：預設推薦人（step `default_referrer`）、推薦連結（`referral_edge`）、任務進度／推薦王（`task_king`）；同 step＋同訂閱未處理就不重寫，本體與呼叫端各包一層 exception，告警壞掉不連坐三代發獎（處理見〈補綁預設推薦人〉〈補寫推薦連結〉〈補計任務進度〉） |
+| `classify_alert_sqlstate` | 告警「原因」的固定分類字串（40P01 資料庫互鎖、40001 序列化衝突、其他系統錯誤），不讓 sqlerrm 進 message |
+| `list_paid_pending_order_ids` / `complete_paid_pending_order` | 「已付款待開通」單的自癒：Edge（`paid-pending-heal.ts`）逐筆呼叫，一筆一個交易，不與線上付款互鎖；單筆在委派前以 `lock_timeout` 3s 預取付款人 profiles 鎖，拿不到記 `skipped_locked`（只給 service_role）。單筆開通失敗寫 error（message 是行動句、sqlerrm 只進 context，`kind=open_failed` 同單去重，之後開通成功自動標處理；見〈已付款未開通〉）。告警 `source` 仍是 `complete_paid_pending_orders`——歷史名，舊的單交易 wrapper 已於第 7 波 S4 drop |
 | ~~`referral_tree`~~ | 已於 20261110000002 移除(無呼叫者,且曾以真名暴露三代下線;三代樹由 Edge Function 組出並遮罩) |
 | `validate_referral_code` | 註冊頁推薦碼驗證（排除停權推薦人；只給 service_role，經 `GET /referrals/validate/:code`） |
 | `find_auth_user_by_email` | 以 email 精確查 auth.users 的帳號狀態（只給 service_role；由 `/auth/check-email` 與 Email 邀請的 `/referrals/invites`、`/auth/invite/accept` 呼叫） |
@@ -93,13 +95,38 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
 
 **告警 severity**：`system_alerts` 分 info／warning／error，**只有 error 會推 LINE**（`reconcile-payments.yml` 的看門狗
 每小時呼叫 `/internal/system-alerts/recent` 撈 error），warning 只在後台「系統告警」頁看得到。
-- **error**：錢或會籍需要人確認的——已付款但收斂失敗、找不到訂單、金額不符、查詢層失敗下將標 expired、notify／return
-  驗章失敗、SQL 側 `repair_*` 失敗、Email 邀請寄送失敗，以及 PayUni 拒絕中「每個人都付不了」的兩種：商店級
+- **error**：錢或會籍需要人確認的——已付款但收斂失敗、找不到訂單、金額不符、查詢層失敗下將標 expired、PayUni 查詢正控失敗、notify／return
+  驗章失敗、SQL 側 `repair_*` 失敗、付款周邊寫入失敗（預設推薦人、推薦連結、任務進度——`apply_referral_side_effects` 的 `default_referrer`／`referral_edge`／`task_king`）、Email 邀請寄送失敗，以及 PayUni 拒絕中「每個人都付不了」的兩種：商店級
   （`payuni-merchant`：`DEF01006`、`UPP02085`、或非 SUCCESS 且無 `ResCode`，碼表在 `payuni-rejection.ts` 檔頭）與
   一小時內 ≥3 位不同使用者連續失敗（`payuni-failure-burst`）。
   排程類：對帳查詢**擲錯**全滅（`checked ≥ 2`，502）或過半（`checked ≥ 3`）——`query_all_failed`／`query_majority_failed`，
-  加 UTC 小時桶；PayUni 回了判讀不了的 TradeStatus（`unknown_trade_status`：8＝訂單待確認、碼表外、缺欄位、查不到同號交易、`DataSource=B` 持續超過 4 天；
+  加 UTC 小時桶；PayUni 回了判讀不了的 TradeStatus（`unknown_trade_status`：8＝訂單待確認、碼表外、缺欄位、查不到同號交易、同號多列狀態衝突、`DataSource=B` 持續超過 4 天；
   按訂單號去重，該單永不自動標 expired，`payment_orders.reconcile_unknown_at` 記時間、掃描排到後段）；pg_cron 觸發的照片清理失敗（斷路器、`sweep_failed`，加 UTC 日期桶）。
+  碼表出處是 PayUni 官方「API／交易查詢／單筆交易查詢 Ver 2.0」（TradeStatus）與「錯誤代碼／交易查詢」（查詢層 Status），2026-11 查證：
+  查詢回應解密後是 http_build_query 的 query string，結果列是 `Result[i][欄位]` 鍵名（官方「回傳資料統一為 Result 陣列（由 0 開始）」；
+  解析在 `payuni-query-result.ts`，另接 JSON 字串 `Result` 與平鋪欄位；付款時間欄位叫 `PaymentDay`，交給收斂前補成 `PayTime`）。
+  同號多列：任一列已付款就取那列，狀態互相衝突且無已付款 → unknown `multiple_matching_trades`；查詢回已付款但缺 `TradeAmt` → unknown `missing_field`（不開通）。
+  TradeStatus 0／9／4＝未付款（建單滿 4 天標 expired）、1＝已付款、2／3＝失敗／取消、8 與碼表外＝unknown；`DataSource=B` 一律本輪不下結論，
+  持續超過 4 天才轉 unknown。查詢層非 SUCCESS（`QUERY01xxx` 基礎參數、`QUERY02xxx` 解密參數、`QUERY03001`＝查無符合訂單資料、`QUERY04xxx` 異常）
+  預設當「查詢層失敗」：`payuni-query` 按 Status＋Message 去重一筆、滿 4 天標 expired 前另寫 `expired_query_failed`（error）。
+  **`QUERY03001` 的例外（W6-36、W7-2）**：只有「最近一次正控是 success、且 `checked_at` 在 36 小時內（含）」時，判「確認查無」＝棄單——
+  與 TradeStatus 0／9／4 同路徑：不寫 `payuni-query`、滿 4 天直接 expired、不寫 `expired_query_failed`，帳本 summary 另計 `notFound`（不計 `queryFailures`）。
+  正控最近一次是 failed／no_sample、超過 36 小時、或紀錄讀不到 → 完全照上一句的預設行為。護欄：已存 `payuni_response`（notify／return 到過）的單
+  回 03001 → 不改判、另按單號寫 `not_found_with_response`（error）；標過 `reconcile_unknown_at` 的單回 03001 → 不改判。其他 `QUERY0xxxx` 一律照預設。
+- **PayUni 查詢正控**（`payuni-positive-control.ts`、表 `payuni_query_controls`）：併在每小時的 reconcile 端點，最近一次 success 未滿 23 小時
+  就不跑，否則（無紀錄、失敗、無樣本、已滿 23 小時）本輪跑一次——成功約每天一次，失敗每小時重試。挑本環境最近一張 `completed`、
+  `payuni_response->>Status = 'SUCCESS'`、`completed_at` 早於 1 小時前的單（剛付款的單 PayUni 可能還沒定案；develop 挑的是 sandbox 單；
+  沒有就記 `no_sample`，不算成功），斷言查詢回 `Status=SUCCESS`
+  且**同號**交易 `TradeStatus=1`（比對帳嚴格：不接受單筆缺 MerTradeNo、DataSource=B）。結果每次一列（時間、單號、outcome、reason），帳本
+  summary 帶 `positiveControl`（ran／outcome／fresh／error／sampleCompletedAt）。失敗寫 `payuni-positive-control`／`control_failed`（error，去重到標處理）；
+  讀寫紀錄失敗只寫 warning（`control_read_failed`／`control_record_failed`），本輪一律不改判。樣本的付款完成時間記在
+  `sample_completed_at`（summary 的 `positiveControl.sampleCompletedAt`）；超過 14 天寫 warning `sample_stale`（不影響改判）——
+  一直挑不到新樣本，代表新單可能都卡在 pending（例如送出的 MerTradeNo 與存的 `transaction_id` 不一致）。
+  **收到「【PayUni查詢正控失敗・請開Claude查查詢層】」時**：開 Claude Code session，看告警 context 的 `failReason`——`query_status:QUERY01/02xxx`＝商店代號／金鑰／
+  加解密或單號格式（查 Edge Secrets 的 `PAYUNI_*` 與 `PAYUNI_SANDBOX`、最近改過的建單／查詢程式）；`query_status:QUERY03001`＝已付款的單查不到，
+  正是 03001 改判的前提失效，**先查單號格式**（`payment_orders.transaction_id` 與 PayUni 後台的商店訂單編號是否一致）；`trade_status:*`／
+  `no_matching_trade`＝PayUni 回了別的狀態或別張單；`query_threw`＝HTTP／網路。修好後下一輪自動重試，成功了再把告警標已處理。
+  確認第一個成功樣本：`select checked_at, outcome, trade_no, reason from payuni_query_controls order by checked_at desc limit 5;`
 - **持卡人級拒絕**（帶 `ResCode` 的 `CREDIT*`）單筆不告警：使用者自己看得到、可以重試。
 - **warning**：對帳的單筆例外（標 expired 失敗、單筆查詢例外）——下一輪排程會自行重試，沒有持久後果。
   pg_cron 觸發的照片清理有物件刪不掉（`not_removed`）也是 warning。
@@ -116,13 +143,22 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
    ```sql
    select id, created_at, message, context from public.system_alerts
     where source in ('pay_referral_generations', 'apply_referral_side_effects', 'claim_referral_king_reward')
+      and message like '【獎金未發%'   -- 同 source 的周邊寫入失敗另有手冊（見下面三節）
       and resolved_at is null
     order by created_at desc;
    ```
 
-2. 查這一代是否已補上（會員載入個人頁的自癒、或他人先處理）。`generation` 為 null 的是三代整批失敗
-   （`source` 為 `apply_referral_side_effects`，或任務續約的 `claim_referral_king_reward`），三代都要查；`beneficiary` 只是第 1 代，第 2、3 代沿
-   `referral_edges` 往上找：
+2. 先在後台推薦樹打開這位付款人（`referee`），看該筆付款三代的判定：**「無法判定」**（付款後推薦人或推薦連結變過、
+   或付款單找不到訂閱）就停下回報業主——現況推薦關係已不是付款當下的樣子，照現況補可能補給換線後的新推薦人。
+   不是無法判定，才以 `referral_award_chain` 回的收獎人為準（`beneficiary` 只是第 1 代；第 2、3 代不要自己沿
+   `referral_edges` 找——chain 與發獎函式同一套讀法與成環停發條件）：
+
+   ```sql
+   select generation, recipient_id, stop_reason from public.referral_award_chain('<referee>');
+   ```
+
+   再查這一代是否已補上（會員載入個人頁的自癒、或他人先處理）。`generation` 為 null 的是三代整批失敗
+   （`source` 為 `apply_referral_side_effects`，或任務續約的 `claim_referral_king_reward`），三代都要查：
 
    ```sql
    select generation, user_id, amount from public.reward_transactions
@@ -147,6 +183,151 @@ SQL / Edge / 前端皆讀它，不各自硬編（見 `20260719000002` 檔頭的�
    任務續約路徑改成 `subscription_id` 填 null、`source_claim_id` 填 context 的 `claim_id`。
 
 4. 標成已處理：`update public.system_alerts set resolved_at = now() where id = <告警 id>;`
+
+以下四節同一格式：何時看到 → 先讀哪些 context 鍵 → 步驟 → 完成後怎麼確認。**動資料的步驟（insert／update）先把要執行的 SQL
+與查到的現況回報業主，同意後才執行**；只查詢、標處理不必等。告警去重只留第一次的 `sqlerrm`，要看當下錯誤就請會員重新載入
+個人頁（觸發自癒）後看資料庫 log 的 warning。
+
+## 補寫推薦連結
+
+**何時看到**：LINE「【推薦連結未寫入・請開 Claude 補寫】單號 …：之後二代三代獎金會漏發。」（`source=apply_referral_side_effects`、
+`context.step=referral_edge`）。這位會員付款時推薦人已在，但 `referral_edges` 沒寫成；之後**以這位會員為第 1 代推薦人**的付款，
+第 2、3 代都會查不到人而靜默不發。這不會自癒（`repair_orphaned_payments` 只看第 1 代缺漏）。
+
+**context**：`user_id`（會員）、`referrer_id`（付款當下的推薦人）、`subscription_id`、`trade_no`、`sqlstate`、`sqlerrm`。
+
+1. 確認推薦人沒再變：`select referred_by_user_id from public.profiles where id = '<user_id>';` 不等於 `referrer_id` 就停下回報業主。
+   再查連結現值：`select referrer_user_id from public.referral_edges where referee_user_id = '<user_id>';`——**已有一列且指向別人**
+   （舊推薦人，換線沒寫成）就停下回報業主：這時之後的二代三代不是「沒發」而是**發錯人**，第 3 步的「缺幾代」查詢抓不到，要改逐筆比
+   `reward_transactions` 的收獎人與 `referral_award_chain`。查無列才往下。
+2. 補寫連結（與 `apply_referral_side_effects` 3b 同一句；先回報業主）：
+
+   ```sql
+   insert into public.referral_edges (referee_user_id, referrer_user_id, referral_code_id)
+   values ('<user_id>', '<referrer_id>',
+           (select id from public.referral_codes where user_id = '<user_id>' and status = 'active' limit 1))
+   on conflict (referee_user_id) do update
+     set referrer_user_id = excluded.referrer_user_id, referral_code_id = excluded.referral_code_id
+     where referral_edges.referrer_user_id is distinct from excluded.referrer_user_id;
+   ```
+
+3. 找出告警之後、以這位會員為第 1 代推薦人的付款有沒有缺第 2、3 代（後台推薦樹這位會員的下游節點標「付款未發獎」，或逐位查）：
+
+   ```sql
+   select p.id as referee, s.id as subscription_id, rt.generation
+     from public.profiles p
+     join public.subscriptions s on s.user_id = p.id and s.created_at >= '<告警 created_at>'
+     left join public.reward_transactions rt
+       on rt.referee_user_id = p.id and rt.subscription_id = s.id and rt.type = 'referral_reward'
+    where p.referred_by_user_id = '<user_id>'
+    order by s.created_at, rt.generation;
+   ```
+
+   判讀：每組 `(referee, subscription_id)` 應有 generation 1～3；缺的那代再以 `referral_award_chain('<referee>')` 確認該代
+   有收獎人（`stop_reason='none'`）才算漏發——該代本來就沒人（`no_referrer`）或成環停發（`cycle`）不補。
+4. 缺的照〈補發漏發獎金〉第 2、3 步補（收獎人以 `referral_award_chain` 為準）。
+5. **確認**：`select referrer_user_id from public.referral_edges where referee_user_id = '<user_id>';` 等於 `referrer_id`；標告警處理。
+
+## 補計任務進度
+
+**何時看到**：LINE「【任務進度未計・請開 Claude 核對】單號 …：推薦人任務少計一位。」（`context.step=task_king`）。
+付款時「新推薦人數 +1」與推薦王對帳整段沒寫成（`referral_pair_history`、`task_progress`、推薦王 credit 一起回滾）。
+**多數情況核對後只需標處理、不動資料**：推薦王由同一推薦人之後任何一筆付款的對帳補上；新推薦人數會在**這位會員下一次付款**時
+被當成第一次而補計（月份記在那次付款的月份，可能晚一個月以上）。
+
+**context**：`user_id`（會員）、`referrer_id`（推薦人）、`subscription_id`、`trade_no`。
+
+1. 查是否已補計：
+
+   ```sql
+   select first_month_key from public.referral_pair_history
+    where referrer_user_id = '<referrer_id>' and referee_user_id = '<user_id>';
+   select key as month_key from public.task_progress, jsonb_each(monthly_referrals)
+    where user_id = '<referrer_id>' and value ? '<user_id>';
+   ```
+
+   任一有結果＝已補計（之後的付款補上了）→ 直接到第 4 步。
+2. 都沒有：回報業主兩個選項——等這位會員下次付款自動補計（月份記在那次），或現在以原付款月份手動補。業主選等就到第 4 步；
+   選手動補，月份＝付款時點的台北月（`to_char(<付款 completed_at> at time zone 'Asia/Taipei', 'YYYY-MM')`），
+   執行（與 `apply_referral_side_effects` 3d 同一段寫法：**只有 pair-history 插得進去才 +1**——第 1 步查完到執行前若已被
+   下次付款補計，`on conflict do nothing` 後不會再 +1）：
+
+   ```sql
+   do $$
+   begin
+     insert into public.referral_pair_history (referrer_user_id, referee_user_id, first_month_key)
+     values ('<referrer_id>', '<user_id>', '<YYYY-MM>') on conflict do nothing;
+     if found then
+       insert into public.task_progress (user_id, total_referrals, monthly_referrals)
+       values ('<referrer_id>', 1, jsonb_build_object('<YYYY-MM>', jsonb_build_array('<user_id>')))
+       on conflict (user_id) do update set
+         total_referrals   = task_progress.total_referrals + 1,
+         monthly_referrals = jsonb_set(task_progress.monthly_referrals, array['<YYYY-MM>'],
+           coalesce(task_progress.monthly_referrals -> '<YYYY-MM>', '[]'::jsonb) || to_jsonb('<user_id>'::text)),
+         updated_at = now();
+     end if;
+   end $$;
+   ```
+
+3. 手動補了才做：對帳推薦王（會補發推薦王 credit，與第 2 步一起回報；門檻讀設定，不寫死）：
+
+   ```sql
+   select public.reconcile_king_credits('<referrer_id>', '<YYYY-MM>',
+     (select referral_king_monthly_threshold from public.reward_config where id = true));
+   ```
+
+4. **確認**：第 1 步查得到列；標告警處理。
+
+## 補綁預設推薦人
+
+**何時看到**：LINE「【預設推薦人未套用・請開 Claude 補綁】單號 …：會員無推薦人、不發獎金。」（`context.step=default_referrer`）。
+首購沒填推薦碼、應自動綁定預設推薦人（規格書 §7.4），但寫入失敗；這位會員目前沒有推薦人，這筆與之後的付款都不發三代獎金。
+一般續約不會再套預設推薦人，要到他下一次選新約才可能補上。
+
+**context**：`user_id`、`subscription_id`、`trade_no`、`sqlstate`、`sqlerrm`。
+
+1. 確認仍沒有推薦人：`select referred_by_user_id from public.profiles where id = '<user_id>';` 已有值就到第 4 步。
+2. 確認預設推薦碼現況（是付款當下那個碼、推薦人未停權、不是會員自己）：
+
+   ```sql
+   select default_referrer_code from public.reward_config where id = true;
+   select * from public.validate_referral_code('<預設碼>');   -- 有效才回推薦人；停權或無此碼回空
+   ```
+
+   推薦人就是 `<user_id>` 本人（自我推薦）就停下回報業主。
+3. 回報業主（補綁後該筆付款的三代獎金也要補），同意後：以付款時點補綁（`referred_by_changed_at` 記付款時點，自癒才補得到那筆）。
+   **`set_config` 與 `update` 必須在同一個交易**（第三參數 `true`＝只在本交易有效；分開執行或用 `false` 會讓時點沒生效、
+   或殘留到同連線之後的推薦人變更）——
+
+   ```sql
+   begin;
+   select set_config('uknow.referred_by_changed_at', '<付款 completed_at>', true);
+   update public.profiles
+      set referred_by_user_id = (select referrer_user_id from public.validate_referral_code('<預設碼>')),
+          referred_by_code = '<預設碼>', referred_by_is_default = true
+    where id = '<user_id>' and referred_by_user_id is null
+      and exists (select 1 from public.validate_referral_code('<預設碼>'))   -- 碼在第 2 步後被停用就不寫出空推薦人
+      and (select referrer_user_id from public.validate_referral_code('<預設碼>')) <> '<user_id>';
+   commit;
+   ```
+
+   再請會員重新載入個人頁（`repair_orphaned_payments` 會補推薦連結、三代獎金與任務進度），或依〈補發漏發獎金〉手動補。
+4. **確認**：`referred_by_user_id` 有值、該筆付款三代依 `referral_award_chain` 已發；標告警處理。
+
+## 已付款未開通
+
+**何時看到**：LINE「【已付款未開通・請開 Claude 處理】單號 …：會員已付款但自動開通失敗。」（`source=complete_paid_pending_orders`、
+`context.kind=open_failed`）。PayUni 已回 SUCCESS，但自動開通（`complete_paid_pending_order`）擲錯；每小時的對帳與會員載入
+個人頁都會自動重試，**下一輪開通成功時這則告警會自動標處理**——還沒標，代表仍在失敗。
+
+**context**：`order_id`、`trade_no`、`sqlstate`、`sqlerrm`。
+
+1. 查訂單現況：`select status, completed_at from public.payment_orders where id = '<order_id>';` 已 `completed` 就只標處理。
+2. 依 `sqlerrm` 判斷原因（資料錯誤、約束、函式錯誤）；`40P01`／`40001` 是暫時性，等下一輪。連續幾輪失敗看
+   `GET /internal/scheduler-health` 的 reconcile `healFailedStreak`。
+3. 修好原因後（動資料或程式都先回報業主；重跑會開通訂閱並發獎，也要先回報）可立即重跑一次：`select public.complete_paid_pending_order('<order_id>');`
+   回 `completed` 即成功；`amount_mismatch` 改走金額不符的人工裁決。
+4. **確認**：訂單 `completed`、`subscriptions` 有一列 `source_payment_order_id = '<order_id>'`；告警已自動標處理（或手動標）。
 
 ## 排程
 
@@ -237,6 +418,7 @@ migration 的檔名即時序（`YYYYMMDDNNNNNN_描述.sql`，版本號唯一由
 | `20261017000004_register_profile_payment_lock` | Step 2 資料寫入改走 `register_profile`:與付款完成共用 profiles 列鎖,註冊完成後拒寫 |
 | `20261112000001_scheduled_job_runs` | 對帳與照片清理改由 pg_cron 經 pg_net 觸發；排程帳本兼租約、`scheduler_health`、Vault 憑證（見〈排程〉） |
 | `20261115000001_batch_heal_lock_split` | 自癒改逐筆一個交易（拆掉批次 heal 與線上付款的 profiles 互鎖）；三代獎金失敗改 error 告警；帳本 summary 記 heal 計數與 `unknownByReason`；`invoke_internal_endpoint` 加 `p_trigger` |
+| `20261124000001_payuni_query_controls` | PayUni 查詢正控紀錄表（W6-36、W7-2）；純新增，新舊 Edge／DB 任意組合都不 500 |
 
 > **不要編輯已套用的 migration。** 修正一律新增一個 migration，並在檔頭寫明
 > 基準版本與唯一差異——這是本專案覆寫金流函數時的既定寫法。

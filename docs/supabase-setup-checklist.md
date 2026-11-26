@@ -667,11 +667,12 @@ KYC。稽核查詢（誰被自動綁定）：`select id from profiles where refe
    | `skipped/vault_missing` | Vault 沒設好，回第 2 步 |
    | 沒有任何列 | 查 `select status_code, content from net._http_response order by id desc limit 1;`。401 是密鑰不一致；404 是 Edge 還沒部署；連 `_http_response` 都沒有列，是 pg_net 沒裝（migration 沒套到） |
 
-**輪替 `RECONCILE_SECRET`**：依序改三處，然後照第 4 步驗證。
+**輪替 `RECONCILE_SECRET`**：正式站與 develop **兩個環境都要改**，共五處同值——GitHub 只有一份 `secrets.RECONCILE_SECRET`，
+兩個環境的 Edge Secret 與 Vault 都必須跟它一致。每個環境依序改 1、2，最後改 3，然後照第 4 步在兩個環境各驗證一次。
 
 1. Edge Secret；
 2. Vault 的 `uknow_internal_secret`；
-3. GitHub 的 `secrets.RECONCILE_SECRET`。
+3. GitHub 的 `secrets.RECONCILE_SECRET`（只改一次）。
 
 三步盡量在幾分鐘內做完。空檔內會有 401：
 - pg_cron 那輪會失敗；

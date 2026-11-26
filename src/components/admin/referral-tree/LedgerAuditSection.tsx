@@ -144,7 +144,7 @@ export function LedgerSection({
                       </p>
                       {counts.has('reset_amount') ? (
                         <p className="mt-1 text-xs">
-                          清空當下若有別筆交易同時寫入，金額可能差一筆（多算或少算都有可能），批次自癒期間的清空同樣可能有差；請先對照該時段的帳本再判斷。
+                          清空當下若有別筆交易同時寫入，金額可能差一筆（多算或少算都有可能）；請先對照該時段的帳本再判斷。
                         </p>
                       ) : null}
                     </>

@@ -5,7 +5,7 @@
 // (鍵是 transaction_id,兩筆不同訂單各自的列,互不阻擋),算效期錨點時
 // 對 subscriptions 是無鎖的 select max(end_date)——兩個並發呼叫都可能
 // 讀到同一個 max,各自 insert 出相同效期:使用者付了 2,400 只得一年。
-// 觸發面不只雙開分頁:complete_paid_pending_orders 與
+// 觸發面不只雙開分頁:逐筆自癒 complete_paid_pending_order 與
 // /internal/reconcile-pending-payments 也直接呼叫同一支函數。
 //
 // 修復:在算錨點前加 user 層級鎖

@@ -32,6 +32,8 @@ import {
 } from './reconcile-handler.ts';
 import { healPaidPendingOrders, type HealRpc } from './paid-pending-heal.ts';
 import { parseScheduledTrigger, scheduledRunDeps } from './scheduled-runs.ts';
+import { positiveControlDbDeps, runPositiveControl } from './payuni-positive-control.ts';
+import { extractPayUniTrades, pickSameTrade, withQueryPayTime } from './payuni-query-result.ts';
 import { createReferralInviteHandlers, type ReferralInviteDeps } from './referral-invite.ts';
 import { adminAuthorizer, createAdminReferralTreeHandlers } from './admin-referral-tree.ts';
 import { deriveNodeStatus } from './node-status.ts';
@@ -2531,7 +2533,7 @@ async function logSystemAlert(
  * 無聲消失。拿不到識別碼時(例如解密失敗,連 MerTradeNo 都讀不出來)才退
  * 而求其次只用 reason——那種情況下「持續失敗」本來就是唯一有意義的訊號。
  *
- * 範式取自 `complete_paid_pending_orders`(migration 20260716000007):
+ * 範式取自自癒的金額不符告警(migration 20260716000007 起;現由單筆 `complete_paid_pending_order` 寫):
  * 它是按 **order_id** 去重,不是按 reason——實體鍵才是那個範式的重點。
  * SELECT 與 INSERT 之間有競態,併發爆量時可能多寫幾筆——與 Postgres 側
  * 那版同一個取捨:上限從「無上限」降到「併發數」就達到目的了,不值得上鎖。
@@ -2590,6 +2592,8 @@ async function timingSafeEqual(a: string, b: string): Promise<boolean> {
 // 請求剛好經過某個時機點」，排程覆蓋「完全沒人再碰這筆資料」的情況。
 // ============================================================
 async function repairOrphanedPaymentsBestEffort(userId: string) {
+  // supabase-js 會省略 undefined 參數＝p_user_id null，DB 端已關閉全量路徑（U6R02，第 7 波 S4）。
+  if (!userId) return;
   try {
     await sb().rpc('repair_orphaned_payments', { p_user_id: userId });
     // 任務續約（claim）發獎的自癒：與付款路徑對稱，補回 cascade 當下失敗、
@@ -2607,7 +2611,7 @@ async function repairOrphanedPaymentsBestEffort(userId: string) {
 // 工具：自癒卡單訂單（pending 但 payuni_response 已存 SUCCESS，見
 // migration 0007）。best-effort——失敗只記 log；回傳是否真的補完了
 // 任何訂單，讓呼叫端知道要不要重讀最新狀態。第 6 波 S1：逐筆一個交易
-// （paid-pending-heal.ts），不再一次呼叫單一交易的 complete_paid_pending_orders。
+// （paid-pending-heal.ts）；單一交易的 complete_paid_pending_orders 已於第 7 波 S4 drop。
 // ============================================================
 // supabase-js 的 rpc() 回 thenable builder，await 一次包成 Promise 給 HealRpc。
 // deno-lint-ignore no-explicit-any
@@ -2748,7 +2752,7 @@ async function resolveOrderFromPayUni(
     // 訂單維持 pending,所以 reconcile 會掃到它——但 reconcile 的告警說的是
     // 「這筆卡著」,不是「金額不符」。診斷若被錯位到下游,查的人會先懷疑
     // webhook 沒送達。在事發點點名原因,省掉那一輪。
-    // 註:`complete_paid_pending_orders` 對同一情境已有 Postgres 側告警,
+    // 註:單筆自癒 `complete_paid_pending_order` 對同一情境已有 Postgres 側告警,
     // 兩者 source 不同(那支是自癒 pass 掃到時記),不是重複。⚠️ 但兩側的
     // 識別欄位命名不一致(這裡 merTradeNo、那裡 trade_no),人工比對時要注意。
     await logSystemAlertOnce(
@@ -2819,14 +2823,30 @@ const UNKNOWN_STATUS_LABEL: Record<UnknownReason, string> = {
   missing_field: 'PayUni 回應缺少交易狀態',
   no_matching_trade: 'PayUni 回應裡找不到這張單',
   incomplete_too_long: 'PayUni 超過 4 天仍回「處理中未完整」',
+  multiple_matching_trades: 'PayUni 回了多筆同號交易且狀態互相衝突',
 } as const;
+
+/** PayUni 查詢層「查無符合訂單資料」（官方錯誤代碼／交易查詢；R6 §3.1）。 */
+const QUERY_NOT_FOUND_STATUS = 'QUERY03001';
 
 export async function reconcilePendingOrders(
   client: any,
   queryFn: (merTradeNo: string) => Promise<QueryResult>,
   resolveFn: typeof resolveOrderFromPayUni,
-  opts: { thresholdMinutes: number; limit: number; expireAfterDays?: number },
+  opts: {
+    thresholdMinutes: number;
+    limit: number;
+    expireAfterDays?: number;
+    /**
+     * W7-2：最近一次正控成功且在 36 小時內（payuni-positive-control.ts）。只有 true 時
+     * QUERY03001 才判「確認查無」；缺省＝false＝改判前行為。
+     */
+    notFoundConfirmed?: boolean;
+    /** 測試縫：預設 logSystemAlertOnce。 */
+    alertOnce?: typeof logSystemAlertOnce;
+  },
 ): Promise<ReconcileSummary> {
+  const alertOnce = opts.alertOnce ?? logSystemAlertOnce;
   const cutoff = new Date(Date.now() - opts.thresholdMinutes * 60_000).toISOString();
   // 殭屍單終態門檻：建單後棄付的訂單 PayUni 永遠查無此單（stillProcessing），
   // 沒有終態會累積在掃描視窗最前端（created_at ascending + limit），把真正
@@ -2835,13 +2855,13 @@ export async function reconcilePendingOrders(
   // 過濾），永不會被誤標。
   const expireCutoffMs = Date.now() - (opts.expireAfterDays ?? 4) * 24 * 60 * 60_000;
 
-  // .or(...)：已存有 SUCCESS 回應的卡單走 complete_paid_pending_orders
+  // .or(...)：已存有 SUCCESS 回應的卡單走逐筆自癒（complete_paid_pending_order）
   // 自癒（reconcile 路由的 heal pre-pass），這裡只處理「完全沒有存檔
   // 判決」的訂單——金額不符的卡單已有自己的去重告警，不該每輪對帳都
   // 再被 queryPayUniTradeStatus 的佔位錯誤重複告警一次。
   const { data: stuck, error } = await client
     .from('payment_orders')
-    .select('id, transaction_id, user_id, created_at, reconcile_unknown_at')
+    .select('id, transaction_id, user_id, created_at, reconcile_unknown_at, payuni_response')
     .eq('status', 'pending')
     .or('payuni_response.is.null,payuni_response->>Status.neq.SUCCESS')
     .lt('created_at', cutoff)
@@ -2868,8 +2888,10 @@ export async function reconcilePendingOrders(
       missing_field: 0,
       no_matching_trade: 0,
       incomplete_too_long: 0,
+      multiple_matching_trades: 0,
     },
     incomplete: 0,
+    notFound: 0,
   };
 
   for (const order of stuck ?? []) {
@@ -2888,13 +2910,33 @@ export async function reconcilePendingOrders(
           unknownStatus: { tradeStatus: '', reason: 'incomplete_too_long' },
         };
       }
+      if (
+        result.stillProcessing && result.queryFailure?.status === QUERY_NOT_FOUND_STATUS &&
+        opts.notFoundConfirmed === true
+      ) {
+        // W7-2：正控有效時，QUERY03001＝PayUni 端沒有這張單＝棄單（R6 §3.1）。
+        // 護欄：PayUni 曾回過這張單（存過 notify／return 的 payuni_response，或對帳
+        // 標過 reconcile_unknown_at）卻查無 → 不改判，照改判前路徑；前者另按單號寫 error。
+        if (order.payuni_response) {
+          await alertOnce(
+            'reconcile-pending-payments',
+            { reason: 'not_found_with_response', tradeNo: order.transaction_id! },
+            { storedStatus: order.payuni_response?.Status ?? null },
+            `【對帳異常・請到PayUni後台查單】訂單 ${order.transaction_id} 曾收過 PayUni 回應，查詢卻回查無此單（QUERY03001）。不會當棄單處理，請人工確認是否已付款。`,
+            'error',
+          );
+        } else if (!order.reconcile_unknown_at) {
+          summary.notFound++;
+          result = { stillProcessing: true };
+        }
+      }
       if (result.stillProcessing && result.unknownStatus) {
         // pay P1-3：不確定的狀態不論天數都不標 expired，按訂單號告警交人工
         // （去重到 resolve 為止，單子在視窗後段輪流時不會重複告警）。
         const { tradeStatus, reason } = result.unknownStatus;
         summary.unknownStatus++;
         summary.unknownByReason[reason]++;
-        await logSystemAlertOnce(
+        await alertOnce(
           'reconcile-pending-payments',
           { reason: 'unknown_trade_status', tradeNo: order.transaction_id! },
           { tradeStatus, statusReason: reason },
@@ -2937,7 +2979,7 @@ export async function reconcilePendingOrders(
           // 紀錄按訂單號記。Message 也進鍵：碼表未經 sandbox 驗證，同一
           // Status 可能配不同 Message，「查無此單」與「參數錯」必須分得開。
           // error 級：每組最多一筆，不會因棄付單數量而洗版。
-          await logSystemAlertOnce(
+          await alertOnce(
             'payuni-query',
             {
               reason: 'query_not_success',
@@ -2961,7 +3003,7 @@ export async function reconcilePendingOrders(
           // 的棄付收尾，不告警：status='expired' 本身就是可查紀錄，每張留一
           // 筆會把真告警擠出 admin 告警頁（預設只列未解決的前 100 筆）。
           if (failure) {
-            await logSystemAlertOnce(
+            await alertOnce(
               'reconcile-pending-payments',
               { reason: 'expired_query_failed', tradeNo: order.transaction_id! },
               { payuniStatus: failure.status, payuniMessage: failure.message },
@@ -2996,7 +3038,7 @@ export async function reconcilePendingOrders(
       } else {
         // PayUni 說已付、我方收斂失敗：錢已收、會籍沒開。error 才推得到 LINE
         // （#460 P1-3）；同一單每輪對帳都會再撞，所以按訂單號去重。
-        await logSystemAlertOnce(
+        await alertOnce(
           'reconcile-pending-payments',
           { reason: 'resolve_failed', tradeNo: order.transaction_id! },
           { message: outcome.message },
@@ -3031,7 +3073,14 @@ export async function reconcilePendingOrders(
 //     絕不拿來標記訂單，寧可下一輪再查。
 // ⚠️ 欄位名稱以 PayUni 官方文件為準；上線前先在 sandbox 用
 // workflow_dispatch 手動驗證一輪，確認無誤再打開 cron。
-export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
+/**
+ * 送一次 PayUni 交易查詢，回最外層 JSON 與解開的 EncryptInfo（Status 非 SUCCESS 或
+ * 缺 EncryptInfo 時 decrypted＝null）。HTTP 非 2xx、非 JSON、解密失敗擲錯。
+ * 對帳（queryPayUniTradeStatus）與正控（payuni-positive-control.ts）共用。
+ */
+export async function payUniQueryRaw(
+  merTradeNo: string,
+): Promise<{ raw: Record<string, string>; decrypted: Record<string, string> | null }> {
   const config = payuniConfig();
 
   const encryptInfo = await encryptPayUni(
@@ -3047,7 +3096,8 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
 
   const res = await fetch(config.queryUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    // User-Agent: payuni——PayUni 官方 API 文件建議（R6 §3.2-4）。
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'payuni' },
     body: new URLSearchParams({
       MerID: config.merID,
       Version: config.version,
@@ -3059,10 +3109,21 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
 
   const raw = await res.json().catch(() => null) as Record<string, string> | null;
   if (!raw) throw new Error('PayUni 查詢回應不是 JSON');
+  if (raw.Status !== 'SUCCESS' || !raw.EncryptInfo) return { raw, decrypted: null };
+
+  const decrypted = Object.fromEntries(
+    new URLSearchParams(await decryptPayUni(raw.EncryptInfo, config.hashKey, config.hashIV)),
+  );
+  return { raw, decrypted };
+}
+
+export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryResult> {
+  const { raw, decrypted } = await payUniQueryRaw(merTradeNo);
 
   // 查詢層失敗（例如查無交易、參數錯）：不代表付款失敗，只代表這輪還無法
   // 判定——但要把 PayUni 的原文帶出去，由對帳迴圈告警（issue #395）。
-  if (raw.Status !== 'SUCCESS' || !raw.EncryptInfo) {
+  // QUERY03001 是否改判「確認查無」由對帳迴圈依正控決定（W7-2），這裡不分。
+  if (!decrypted) {
     return {
       stillProcessing: true,
       queryFailure: {
@@ -3072,11 +3133,8 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
     };
   }
 
-  const decrypted = Object.fromEntries(
-    new URLSearchParams(await decryptPayUni(raw.EncryptInfo, config.hashKey, config.hashIV)),
-  );
-
-  // 結果可能是 Result（JSON 陣列字串）或平鋪欄位——兩種都接。
+  // 結果列由 extractPayUniTrades 解析（W7-16）：官方形狀是 `Result[i][欄位]` 鍵名，
+  // 另接 JSON 字串的 Result 與平鋪欄位（見 payuni-query-result.ts 檔頭）。
   // 同號比對（pay P1-3）：只取 MerTradeNo 相同的那筆；舊行為 `?? list[0]` 會拿到
   // 別張單的狀態。比對一律 String().trim()（數字型也對得上）。只有一筆且沒帶
   // MerTradeNo 時照舊接受，避免已付款單因欄位缺漏永遠收斂不了。
@@ -3087,20 +3145,22 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
     unknownStatus: { tradeStatus: '', reason: 'no_matching_trade' },
   };
   let trade: Record<string, unknown> = decrypted;
-  if (decrypted.Result) {
-    try {
-      const list = JSON.parse(decrypted.Result);
-      if (Array.isArray(list) && list.length) {
-        const match = list.find((t: any) => t && typeof t === 'object' && sameTrade(t));
-        if (match) {
-          trade = match;
-        } else if (list.length === 1 && list[0] && !('MerTradeNo' in list[0])) {
-          trade = list[0];
-        } else {
-          return noMatch;
-        }
-      }
-    } catch { /* Result 不是 JSON → 沿用平鋪欄位 */ }
+  const list = extractPayUniTrades(decrypted);
+  if (list && list.length) {
+    // 同號多列：有已付款取已付款、狀態衝突不下結論（pickSameTrade，W7-17 審查 P1）。
+    const picked = pickSameTrade(list, merTradeNo);
+    if (picked.kind === 'one') {
+      trade = picked.trade;
+    } else if (picked.kind === 'conflict') {
+      return {
+        stillProcessing: true,
+        unknownStatus: { tradeStatus: '', reason: 'multiple_matching_trades' },
+      };
+    } else if (list.length === 1 && !('MerTradeNo' in list[0])) {
+      trade = list[0];
+    } else {
+      return noMatch;
+    }
   }
   if (trade === decrypted && 'MerTradeNo' in trade && !sameTrade(trade)) return noMatch;
 
@@ -3120,7 +3180,13 @@ export async function queryPayUniTradeStatus(merTradeNo: string): Promise<QueryR
   // 付款時間，會籍起算日會錯。
   if ((flat.DataSource ?? '').trim() === 'B') return { stillProcessing: true, incomplete: true };
   if (tradeStatus === '1') {
-    return { stillProcessing: false, data: { ...flat, Status: 'SUCCESS' } };
+    // 查詢路徑缺 TradeAmt 不開通（W7-17 審查 P2-2）：resolveOrderFromPayUni 的金額比對
+    // 在缺 TradeAmt 時放行，查詢路徑現在真的會開通，所以在這裡擋，交人工。notify 路徑不動。
+    if (!(flat.TradeAmt ?? '').trim()) {
+      return { stillProcessing: true, unknownStatus: { tradeStatus, reason: 'missing_field' } };
+    }
+    // 查詢回應的付款時間叫 PaymentDay，補成 PayTime 讓 payuni_paid_at 認得（W7-16）。
+    return { stillProcessing: false, data: { ...withQueryPayTime(flat), Status: 'SUCCESS' } };
   }
   if (tradeStatus === '2' || tradeStatus === '3') {
     // 付款失敗 / 付款取消 → 讓 resolveOrderFromPayUni 標 failed
@@ -3159,13 +3225,36 @@ app.post('/internal/reconcile-pending-payments', async (c) => {
       parseScheduledTrigger(body),
       {
         heal: () => healPaidPendingOrders(rpcOf(sb())),
-        reconcile: () =>
-          reconcilePendingOrders(
+        reconcile: async () => {
+          // 正控先跑（到期才查 PayUni），本輪對帳讀本輪結果（W7-2）。runPositiveControl 設計上
+          // 不擲錯；萬一擲錯也只當「本輪不改判」，不能讓對帳停擺。
+          const positiveControl = await runPositiveControl({
+            ...positiveControlDbDeps(sb),
+            query: payUniQueryRaw,
+            alertOnce: logSystemAlertOnce,
+            now: () => new Date(),
+          }).catch((e) => {
+            console.error('[reconcile-pending-payments] 正控例外，本輪不改判:', e);
+            return {
+              ran: false,
+              outcome: null,
+              fresh: false,
+              error: true,
+              sampleCompletedAt: null,
+            } as const;
+          });
+          const summary = await reconcilePendingOrders(
             sb(),
             queryPayUniTradeStatus,
             resolveOrderFromPayUni,
-            { thresholdMinutes: RECONCILE_THRESHOLD_MINUTES, limit: RECONCILE_BATCH_LIMIT },
-          ),
+            {
+              thresholdMinutes: RECONCILE_THRESHOLD_MINUTES,
+              limit: RECONCILE_BATCH_LIMIT,
+              notFoundConfirmed: positiveControl.fresh,
+            },
+          );
+          return { ...summary, positiveControl };
+        },
         alertOnce: logSystemAlertOnce,
         now: () => new Date(),
         logError: (message, ...detail) => console.error(message, ...detail),

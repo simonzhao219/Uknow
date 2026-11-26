@@ -3467,7 +3467,7 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
 
 處置：第 1 條待下次框架整併；其餘為測試／規劃寫法教訓，不另立規則。
 
-## 2026-11-07｜誤擋／漏網（流程、環境）｜第 5 波審查（`docs/plans/launch-wave-5/review.md`）
+## 2026-11-07｜誤擋／漏網（流程、環境）｜第 5 波審查（`git show 252ebc6:docs/plans/launch-wave-5/review.md`）
 
 - **容器重啟讓背景審查員的結果遺失**（漏網，環境）：#509 的獨立 Opus 審查第一次派出後，主 session 的雲端 worker 重啟，
   背景 agent 的回報沒有送達，只能重派（plan §8 11/07 14:20）。背景 agent 的結論只活在 session 記憶體裡，重啟就沒了；
@@ -3559,3 +3559,35 @@ expired 前依訂單號寫 warning，確認未付款不告警（`status='expired
   候選：雙週整併時盤點 entry 內可 lazy 的頁面，留出餘裕。
 
 處置：第 1 條（shim 腳本化）與第 2 條（守衛比對範圍）列入下次框架整併；第 3 條為可複用做法；第 4 條列第 7 波候選。
+
+## 2026-11-17｜誤擋／漏網（環境、流程）｜第 6 波審查（`docs/plans/launch-wave-6/review.md`）
+
+- **worker 重啟讓排程查詢延後一週才跑**（漏網，環境）：W6-35 排在 11/10 23:30 UTC 的上線後現場查詢，因主 session 的 worker 重啟沒有觸發，
+  11/18 才跑。期間 `QUERY03001` 的 3 則 error 告警已推 LINE，判讀晚了一週。第 5 波已記「排程任務打進長 session 常被重啟打斷」（10/29），
+  本波再次發生。處置：〈慣例〉雲端須知已加「排定時間的查詢重啟後要自己補跑」；候選：上線後查詢改成 `create_new_session_on_fire` 的
+  獨立排程（每次一個新 session，不依賴長 session 存活），結果寫回 plan §8。
+- **推送守衛在 `git fetch` 時自動 rebase 主 session 分支**（誤擋）：S6 節已記守衛在 `npm run check:full` 上動作；本波主 session 在
+  `git fetch` 時也被 rebase。同一根因：守衛比對的是指令字串含 `git`／`fetch` 而非實際的 push 子命令。處置：併入 S6 節的候選（守衛只在 push 時動作）。
+- **PayUni sandbox 偶發 403 重複出現**（環境）：11/09、11/11（run 42975735705）、11/14（run 43626325532）deploy-smoke 的 sandbox
+  `api/upp` 探測回 403、正式端點 200，下一輪自己綠，每次都推 LINE [P1]。plan §8 11/09 寫「再出現就記」，後兩次沒記。處置：R6 P2-12
+  （sandbox 單次 403 不推 P1）；業主詢問 PayUni。教訓：寫了「再出現就記」的事，要有人在下次出現時看得到這句——放進告警文案本身最可靠。
+- **外部碼表要以官方文件查證**（漏網，流程）：`QUERY03001` 從 11/12 起每輪都出現，主 session 判讀時碼義「待確認」。PayUni 文件站是
+  showdoc，網頁版只有標題，但 `https://docs.payuni.com.tw/server/index.php?s=/api/page/info`（`page_id=30` 交易查詢錯誤碼、`164` 單筆交易
+  查詢 Ver 2.0、`156` 通用錯誤碼）從雲端容器直接拿得到 JSON。處置：碼表出處已寫進 `supabase/README.md`；可複用於其他 PayUni 碼。
+- **確認已在 friction-log 的**：LINE 通道截 60 字（S1 節第 6 條；教訓「寫告警文案前先讀推播端實際截斷」，R6 補：這類截斷要有 `slice(0,60)`
+  的斷言，S1 已做）；Management API 以真實回應驗證（S6 節第 3 條，暫時探針 workflow 的做法）。
+- **第 5 波裁決原文的取回**：`launch-wave-5/` 已隨 R6 退場。產品碼、workflow、規則檔裡約 78 處 `W5-x` 編號的原文用
+  `git show 252ebc6:docs/plans/launch-wave-5/plan.md`（§0 裁決表）取回；R5 報告 `git show 252ebc6:docs/plans/launch-wave-5/review.md`。
+
+處置：第 1、2 條列入下次框架整併；第 3 條交主 session（P2-12）；第 4 條為可複用做法。
+
+## 2026-11-25｜第 7 波 S4 金流收尾（payment-closeout）
+
+- **推送守衛在非 push 指令上自動 rebase 執行 session 分支**（誤擋，第 3 次出現）：S4 施工中兩次在跑 python 編輯腳本／`npm install`
+  的 Bash 呼叫上被攔，守衛自行 rebase 到新的 origin/develop、該指令未執行，要求 `--force-with-lease`；紅綠燈 hash 因此全換。
+  同上一節根因（比對字串而非實際 push 子命令）。處置：併入該候選；執行 session 的紅綠燈表一律以 PR 內文為準（派工已規定）。
+- **雲端容器可以自己起本機 Supabase**（可複用做法）：`npm i -g deno supabase`，背景跑 `dockerd`，再 `supabase start`（首次拉 image 約 10 分鐘）；
+  測試要帶 `SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | …SERVICE_ROLE_KEY)`（test-helpers 預設值是另一把）。改 migration 後以
+  `docker exec -i supabase_db_<ref> psql -f` 重套即可，不必重啟。本機 CLI 3.4 下有 3 支 grant 測試（name-write-paths、rls-policies listings、
+  scheduled-job-runs net schema）固定紅、與 diff 無關，疑 CLI 預設權限與 CI 不同；以 CI api-tests 為準。
+- **把關鍵防線做突變驗證**（可複用做法）：P0 級的「呼叫端雙保險」先拿掉再跑對應測試，確認會轉紅，再還原——比只看測試綠更能證明測試守得住。

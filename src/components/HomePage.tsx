@@ -1171,9 +1171,9 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
   const displayDistrict = formatDistrict(serviceProvider);
 
   return (
-    <ListingLink id={serviceProvider.id}>
-      <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-        <CardContent className="p-0">
+    <ListingLink id={serviceProvider.id} className="block h-full">
+      <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
+        <CardContent className="flex h-full flex-col p-0">
           <div className="aspect-video relative overflow-hidden rounded-t-lg">
             <ImageWithFallback
               src={serviceProvider.photos?.[0]}
@@ -1181,7 +1181,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
               className="w-full h-full object-cover"
             />
           </div>
-          <div className="p-4 space-y-3">
+          <div className="flex flex-1 flex-col space-y-3 p-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2 flex-1 min-w-0">
                 <h3 className="font-semibold line-clamp-1">{serviceProvider.name}</h3>
@@ -1196,7 +1196,7 @@ function ServiceProviderCard({ serviceProvider }: { serviceProvider: PublicListi
               {serviceProvider.description}
             </p>
 
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="mt-auto flex items-center gap-2 text-sm text-muted-foreground">
               <MapPin className="h-4 w-4" />
               <span>
                 {serviceProvider.city} {displayDistrict}

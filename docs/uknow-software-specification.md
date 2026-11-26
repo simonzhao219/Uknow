@@ -314,8 +314,9 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 補繳中途改選 fresh 時另列「已付款項不退還、效期不保留」警語。確認框依資產列出後果，
 並說明推薦人會怎麼變：填了別人的碼＝「將改為 {姓名}」、填回現任推薦人的碼＝「維持
 {姓名}」、留空且預設推薦人可用＝「將改變」（不揭露預設推薦人，§7.4）、留空且預設推薦人
-就是現任推薦人＝「維持不變」（不出現姓名與碼）、留空且預設推薦人
-不可用＝不寫推薦人句（付款時維持原推薦人）；新推薦碼欄的說明與 placeholder 說同一件事
+就是現任推薦人＝「維持不變」（確認框不出現姓名與碼）、留空且預設推薦人
+不可用＝同樣「維持不變」（付款時維持原推薦人；與前一態文案、placeholder「目前：{碼}」
+完全相同，使用者無從由畫面推論預設推薦人是誰；自動綁定者兩態皆顯示「輸入推薦碼」）；新推薦碼欄的說明與 placeholder 說同一件事
 （`/subscriptions/status` 的 `freshDefaultReferrerAvailable` 與 `freshDefaultReferrerIsCurrent`；
 預設推薦人在本人推薦樹內時判為不可用，與付款時的環判定一致；「即現任」讀不到時省略該欄，
 文案退回前兩種）。句子依讀取 status 當下的狀態寫：之後才成環、或建單前後台換了預設推薦碼，
@@ -333,6 +334,7 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 `fresh_rewire_failed`；`fresh_referrer_invalid` 對未填碼的單另分「預設推薦碼已更換」與
 「預設推薦人機制已停用」）。曾訂閱者的付款若沒有續費模式（prepare 以外的路徑漏網），
 照常開通並寫 error 告警 `renewal_without_mode`。
+新約清帳本以**開通當下**的餘額為準：付款通知遺失、由自癒延遲開通的新約單，付款到開通之間因被推薦人付款新得的點數也一併清空（窗口多在一小時內；業主 2026-11-20 接受）。
 〔實作〕`20261113000002_renewal_referrer_intent.sql`、`20261117000001_fresh_rewire_order_code.sql`
 
 **重複付款**：建單只擋「此刻已 active」，舊的待付款單不作廢——PayUni 付款頁在付款期限前
@@ -563,10 +565,16 @@ Step 2 的身分資料（姓名、身分證字號、生日、手機）與推薦�
 「【獎金未發・請開 Claude 補發】單號 第N代X點」，W6-24），訊息接著寫明單號（或任務續約）、
 第幾代、點數、推薦人的推薦碼與下一步「開一個 Claude Code session，請它依 supabase/README〈補發漏發獎金〉核對並補發」，不承諾自動補發（W6-10、W6-12）。
 〔實作〕`20261115000001_batch_heal_lock_split.sql` 的 `log_referral_reward_failure`。兩條路徑各有自癒補償
-（`repair_orphaned_payments` / `repair_orphaned_claim_rewards`）；自癒先鎖該會員的
+（`repair_orphaned_payments` / `repair_orphaned_claim_rewards`，只逐人呼叫——一次跨多位會員的全量路徑會與線上付款互鎖、已關閉）；自癒先鎖該會員的
 `profiles` 列再重查，並行的補發不會各插一份。自癒只補「事件發生時推薦關係已存在」的
 付款（`referred_by_changed_at` ≤ 付款時點）；付款交易內寫推薦人時（首購套用預設推薦人、
 新約換線），`referred_by_changed_at` 記的是付款時點而非處理當下，這筆付款才補得到。
+
+付款周邊的三個寫入——首購套用預設推薦人、寫推薦連結（第 2、3 代靠它往上找人）、新推薦人數 +1 與推薦王對帳——
+失敗時**付款開通與三代發獎照常完成**，各寫一則 **error** 告警（推 LINE；前 60 字依序為「【預設推薦人未套用・請開 Claude 補綁】」
+「【推薦連結未寫入・請開 Claude 補寫】」「【任務進度未計・請開 Claude 核對】」＋單號＋後果，原始錯誤只放 context），同一筆未處理前不重推
+（W7-9、W7-10）。推薦連結與預設推薦人不會自癒，交 `supabase/README` 的補救手冊；新推薦人數會在該會員下一次付款時補計（月份可能晚到）。
+〔實作〕`20261125000001_payment_closeout.sql` 的 `log_referral_side_effect_failure`
 
 冪等的最後一道在資料庫：`reward_transactions` 對上表兩組鍵、`ledger_reset` 的
 `subscription_id`、提領退件退款的 `withdrawal_id` 各有唯一索引，同一事件的第二列存不進去。
@@ -628,7 +636,8 @@ repair_orphaned_forfeitures 補沖時以快照為準——不用補沖當下餘�
   `20261113000003_referral_pair_history.sql`
 - **月份 key** 錨定**付款時間**（非執行時間），時區 `Asia/Taipei`。
 - **計數自癒**：credit 發放獨立於計數 append，每次付款都重新對帳補足差額
-  （`reconcile_king_credits`），漏發會被下一筆付款補上。
+  （`reconcile_king_credits`），漏發會被下一筆付款補上。計數 append 與對帳整段失敗時（§8.3 的任務進度告警），
+  該位被推薦人會在他下一次付款時被當成第一次而補計。
 
 ### 9.2 「新下線」的判準：pair-history
 
@@ -989,7 +998,7 @@ email。
 不符」：(1) 每張提領單（含退件）恰有一筆金額 −(金額＋手續費) 的扣款；(2) 退件的提領恰有一筆
 +(金額＋手續費) 的退款，未退件的不得有退款；(3) 沒有對不上本人提領單的扣款，也沒有指向別人提領單的退款；(4) 新約清空的金額＝
 −max(清空前的餘額, 0)，「清空前」只算時間早於清空那一筆的帳。延遲補沖的清空（§8.4 新約重置）以告警
-快照為準，只寫資訊。清空當下若有別筆交易同時寫入（含批次自癒期間），(4) 可能差一筆，畫面會寫出這點。
+快照為準，只寫資訊。清空當下若有別筆交易同時寫入，(4) 可能差一筆，畫面會寫出這點。
 
 〔實作〕`supabase/migrations/20261116000001_referral_award_chain.sql`～`20261116000005_admin_referral_ledger_audit.sql`、
 `supabase/functions/api/admin-referral-tree.ts`、`supabase/functions/_shared/admin-referral-contract.ts`、

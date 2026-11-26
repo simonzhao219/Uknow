@@ -298,7 +298,7 @@ export function ServiceProviderDetail({
 
   return shell(
     'page',
-    <div data-browse-content="" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div data-browse-content="" className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {/* 圖片區域：正方形輪播（Instagram 式），結構與 DetailSkeleton 第一欄同形 */}
       <PhotoCarousel
         photos={serviceProvider.photos}
@@ -316,11 +316,11 @@ export function ServiceProviderDetail({
             <h1
               ref={headingRef}
               tabIndex={-1}
-              className="min-w-0 text-2xl md:text-3xl font-bold scroll-mt-20 outline-none"
+              className="min-w-0 text-2xl lg:text-3xl font-bold scroll-mt-20 outline-none"
             >
               {serviceProvider.name}
             </h1>
-            <GenderBadge gender={serviceProvider.gender} className="mt-1.5 md:mt-2" />
+            <GenderBadge gender={serviceProvider.gender} className="mt-1.5 lg:mt-2" />
           </div>
           {/* flex（不是 inline-flex）：徽章自成一個區塊，不坐在行盒裡多吃 3px 行高 */}
           <CategoryBadge category={serviceProvider.category} className="flex w-fit" />
@@ -428,7 +428,7 @@ function DetailSkeleton({ outputRef }: { outputRef: Ref<HTMLOutputElement> }) {
       aria-busy="true"
       className="block scroll-mt-20 outline-none"
     >
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <Skeleton className="aspect-square w-full rounded-lg" />
           <div className="h-6 pointer-coarse:h-11" />
@@ -437,8 +437,8 @@ function DetailSkeleton({ outputRef }: { outputRef: Ref<HTMLOutputElement> }) {
         <div className="space-y-6">
           <div className="space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <Skeleton className="h-8 md:h-9 w-1/2" />
-              <Skeleton className="mt-1.5 md:mt-2 h-[22px] w-10" />
+              <Skeleton className="h-8 lg:h-9 w-1/2" />
+              <Skeleton className="mt-1.5 lg:mt-2 h-[22px] w-10" />
             </div>
             <Skeleton className="h-[22px] w-14" />
             <Skeleton className="h-6 w-2/3" />

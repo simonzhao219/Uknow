@@ -21,8 +21,6 @@ const DB_URL = Deno.env.get('SUPABASE_DB_URL') ??
 type Sql = postgres.Sql;
 type Alert = { severity: string; message: string; context: Record<string, unknown> };
 
-let seq = 0;
-const tradeNo = (tag: string) => `S1A-${tag}-${Date.now()}-${seq++}`;
 const BANNED = ['上線', '下線', '傳銷', '直銷'];
 
 // W6-24：LINE 推播每則只取 message 前 60 字（reconcile-payments.yml），行動與單號要在那裡面。
@@ -183,107 +181,6 @@ Deno.test('pay_referral_generations：查不到付款單號 → 告警照寫、�
     assertEquals(al.context.sqlstate, '23503');
     assertReadable(al);
   } finally {
-    await sql.end();
-    await deleteTestUsers(client, ids);
-  }
-});
-
-Deno.test('complete_paid_pending_orders：舊 wrapper 與線上付款互鎖 → 受害那代寫 error 帶 40P01', async () => {
-  const client = adminClient();
-  const sql = postgres(DB_URL, { max: 2, connection: { statement_timeout: 20_000 } });
-  const healConn = postgres(DB_URL, { max: 1, connection: { statement_timeout: 20_000 } });
-  const holder = postgres(DB_URL, { max: 1, connection: { statement_timeout: 20_000 } });
-  const ids: string[] = [];
-  try {
-    const foreign = await sql`
-      select id from public.payment_orders
-      where status = 'pending' and payuni_response->>'Status' = 'SUCCESS'`;
-    assertEquals(foreign.map((r) => r.id), [], '資料庫裡不該有本測試以外的待開通單');
-
-    const u1 = (await createTestUser(client, { name: '舊批 一' })).id;
-    ids.push(u1);
-    assertEquals((await payForUser(client, u1)).error, null);
-    const x = (await createTestUser(client, { name: '舊批 叉' })).id;
-    ids.push(x);
-    await sql`update public.profiles set referred_by_user_id = ${u1} where id = ${x}`;
-    assertEquals((await payForUser(client, x)).error, null);
-    const u2 = (await createTestUser(client, { name: '舊批 二' })).id;
-    ids.push(u2);
-    await sql`update public.profiles set referred_by_user_id = ${x} where id = ${u2}`;
-    await sql`
-      update public.subscriptions
-      set end_date = now() - interval '10 days', grace_period_end = now() - interval '10 days'
-      where user_id in (${u1}, ${x})`;
-    const codes = {
-      [u1]: await getActiveReferralCode(client, u1),
-      [x]: await getActiveReferralCode(client, x),
-    };
-
-    const paid = { Status: 'SUCCESS', TradeAmt: '1200' };
-    const tU1 = tradeNo('U1');
-    const tU2 = tradeNo('U2');
-    const tX = tradeNo('X');
-    await sql`
-      insert into public.payment_orders
-        (user_id, amount, status, payment_method, transaction_id, renewal_mode, payuni_response, created_at)
-      values
-        (${u1}, 1200, 'pending', 'payuni', ${tU1}, 'extend', ${
-      sql.json(paid)
-    }, now() - interval '2 minutes'),
-        (${u2}, 1200, 'pending', 'payuni', ${tU2}, null, ${
-      sql.json(paid)
-    }, now() - interval '1 minute'),
-        (${x}, 1200, 'pending', 'payuni', ${tX}, 'extend', null, now())`;
-    const since = new Date().toISOString();
-
-    let releaseB!: () => void;
-    const healBlocked = new Promise<void>((r) => (releaseB = r));
-    let bPid = 0;
-    let bReady!: () => void;
-    const bLocked = new Promise<void>((r) => (bReady = r));
-    const online = holder.begin(async (tx) => {
-      const [{ pid }] = await tx`select pg_backend_pid() as pid`;
-      bPid = pid;
-      await tx`select 1 from public.profiles where id = ${x} for update`;
-      bReady();
-      await healBlocked;
-      await tx`select public.process_successful_payment(${x}::uuid, ${tX}, ${tX}, ${
-        tx.json(paid)
-      })`;
-    });
-    await bLocked;
-    // 舊 Edge 的呼叫方式：一次 RPC＝一個交易跑完整批。
-    const heal = healConn`select public.complete_paid_pending_orders(null, 50) as r`.execute();
-
-    let blocked = false;
-    for (let i = 0; i < 100 && !blocked; i++) {
-      const rows = await sql`
-        select 1 from pg_stat_activity where ${bPid}::int = any(pg_blocking_pids(pid))`;
-      blocked = rows.length > 0;
-      if (!blocked) await new Promise((r) => setTimeout(r, 100));
-    }
-    releaseB();
-    assert(blocked, '編排失敗：wrapper 沒有在 10 秒內被 profiles(X) 擋住');
-    await online.catch(() => {});
-    await heal.catch(() => {});
-
-    const victims = [
-      ...(await alertsSince(sql, since, x)).map((a) => ({ a, trade: tX, beneficiary: u1 })),
-      ...(await alertsSince(sql, since, u2)).map((a) => ({ a, trade: tU2, beneficiary: x })),
-    ];
-    assertEquals(victims.length, 1, JSON.stringify(victims.map((v) => v.a.message)));
-    const [{ a, trade, beneficiary }] = victims;
-    assertEquals(a.severity, 'error');
-    assertEquals(a.context.sqlstate, '40P01');
-    assertEquals(a.context.beneficiary, beneficiary);
-    assertLineHead(a, trade);
-    assert(a.message.includes('第1代100點'), a.message);
-    assert(a.message.includes(`推薦碼 ${codes[beneficiary]}`), a.message);
-    assert(a.message.includes('資料庫互鎖'), a.message);
-    assertReadable(a);
-  } finally {
-    await holder.end();
-    await healConn.end();
     await sql.end();
     await deleteTestUsers(client, ids);
   }
